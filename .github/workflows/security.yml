@@ -1,0 +1,56 @@
+name: UI Security
+run-name: UI Security / ${{ github.event_name }} / ${{ github.ref_name }}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-audit:
+    name: dependency-audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout UI repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: asset-allocation-ui
+
+      - name: Checkout contracts repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ vars.CONTRACTS_REPOSITORY || format('{0}/asset-allocation-contracts', github.repository_owner) }}
+          ref: ${{ vars.CONTRACTS_REF || 'main' }}
+          path: asset-allocation-contracts
+
+      - name: Audit UI dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -v "${{ github.workspace }}/artifacts:/artifacts" \
+            -w /workspace/asset-allocation-ui \
+            node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
+            bash -lc 'set -euo pipefail; corepack enable; pnpm install --no-frozen-lockfile; pnpm audit --json > /artifacts/pnpm-audit.json || true; pnpm audit --audit-level=high'
+
+      - name: Upload UI audit artifacts
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: ui-pnpm-audit
+          path: artifacts/pnpm-audit.json
+          if-no-files-found: error
+          retention-days: 14
