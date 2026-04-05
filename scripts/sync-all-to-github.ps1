@@ -1,0 +1,70 @@
+param(
+    [switch]$DryRun
+)
+
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$envPath = Join-Path $repoRoot ".env.web"
+$contractPath = Join-Path $repoRoot "docs\ops\env-contract.csv"
+
+function Parse-EnvFile {
+    param([string]$Path)
+    $map = @{}
+    foreach ($rawLine in (Get-Content $Path)) {
+        $line = $rawLine.Trim()
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith("#") -or $line -notmatch "^([^=]+)=(.*)$") { continue }
+        $map[$matches[1].Trim()] = $matches[2]
+    }
+    return $map
+}
+
+function Load-EnvContract {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { throw "Env contract not found at $Path" }
+    $map = @{}
+    foreach ($row in (Import-Csv -Path $Path)) {
+        $name = (($row.name | Out-String).Trim())
+        if ($name) { $map[$name] = $row }
+    }
+    return $map
+}
+
+if (-not (Test-Path $envPath)) { throw ".env.web not found at $envPath. Run scripts/setup-env.ps1 first." }
+if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI (gh) is required to sync vars and secrets." }
+
+$envMap = Parse-EnvFile -Path $envPath
+$contractMap = Load-EnvContract -Path $contractPath
+$undocumented = @($envMap.Keys | Where-Object { -not $contractMap.ContainsKey($_) } | Sort-Object -Unique)
+if ($undocumented.Count -gt 0) { throw ".env.web contains undocumented keys: $($undocumented -join ', ')" }
+
+$expectedVars = New-Object System.Collections.Generic.List[string]
+foreach ($key in ($contractMap.Keys | Sort-Object)) {
+    $entry = $contractMap[$key]
+    $storage = (($entry.github_storage | Out-String).Trim()).ToLowerInvariant()
+    if ($storage -ne "var") { continue }
+    $expectedVars.Add($key)
+    $value = if ($envMap.ContainsKey($key)) { $envMap[$key] } else { "" }
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        Write-Host "Skipping empty var: $key" -ForegroundColor Yellow
+        continue
+    }
+    if ($DryRun) {
+        Write-Host "[DRY RUN] Would set var: $key"
+        continue
+    }
+    $value | gh variable set $key
+    Write-Host "Synced var: $key" -ForegroundColor Green
+}
+
+$remote = @(gh variable list --json name --jq ".[].name" 2>$null)
+$unexpected = @($remote | Where-Object { $_ -and $_ -notin $expectedVars } | Sort-Object -Unique)
+foreach ($name in $unexpected) {
+    if ($DryRun) {
+        Write-Host "[DRY RUN] Would delete unexpected variable: $name"
+        continue
+    }
+    gh variable delete $name
+    Write-Host "Deleted unexpected variable: $name" -ForegroundColor Yellow
+}

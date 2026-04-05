@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+import csv
+import re
+import subprocess
+from pathlib import Path
+
+
+WORKFLOW_VAR_PATTERN = re.compile(r"\bvars\.([A-Z][A-Z0-9_]+)\b")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def contract_rows() -> list[dict[str, str]]:
+    path = repo_root() / "docs" / "ops" / "env-contract.csv"
+    with path.open(encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def contract_map() -> dict[str, dict[str, str]]:
+    return {row["name"]: row for row in contract_rows()}
+
+
+def env_keys(path: Path) -> set[str]:
+    keys: set[str] = set()
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        keys.add(line.split("=", 1)[0].strip())
+    return keys
+
+
+def workflow_refs() -> set[str]:
+    refs: set[str] = set()
+    for path in (repo_root() / ".github" / "workflows").glob("*.yml"):
+        refs.update(WORKFLOW_VAR_PATTERN.findall(path.read_text(encoding="utf-8")))
+    return refs
+
+
+def powershell_exe() -> str:
+    for candidate in ("pwsh", "powershell"):
+        try:
+            subprocess.run([candidate, "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"], check=True, capture_output=True, text=True)
+            return candidate
+        except Exception:
+            continue
+    raise AssertionError("PowerShell executable not found for setup-env dry-run test")
+
+
+def test_template_matches_contract_surface() -> None:
+    assert env_keys(repo_root() / ".env.template") == set(contract_map())
+
+
+def test_workflow_refs_are_documented() -> None:
+    contract = contract_map()
+    for name in workflow_refs():
+        assert name in contract
+        assert contract[name]["github_storage"] == "var"
+
+
+def test_ui_repo_has_bootstrap_scripts_and_no_shared_provisioner() -> None:
+    scripts_dir = repo_root() / "scripts"
+    assert (scripts_dir / "setup-env.ps1").exists()
+    assert (scripts_dir / "sync-all-to-github.ps1").exists()
+    assert not (scripts_dir / "provision_azure.ps1").exists()
+
+
+def test_ui_deploy_workflow_uses_api_upstream_repo_var_fallback() -> None:
+    text = (repo_root() / ".github" / "workflows" / "deploy-prod.yml").read_text(encoding="utf-8")
+    assert "vars.API_UPSTREAM" in text
+    assert "api_upstream is required either as workflow input, repository_dispatch payload, or vars.API_UPSTREAM" in text
+
+
+def test_setup_env_dry_run_reports_sources_without_prompting() -> None:
+    script = repo_root() / "scripts" / "setup-env.ps1"
+    completed = subprocess.run(
+        [powershell_exe(), "-NoProfile", "-File", str(script), "-DryRun"],
+        cwd=repo_root(),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    stdout = completed.stdout
+    assert "source=azure" in stdout or "source=default" in stdout or "source=git" in stdout
+    assert "prompt_required=" in stdout

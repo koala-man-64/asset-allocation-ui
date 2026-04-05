@@ -10,7 +10,7 @@ on:
         type: string
       api_upstream:
         description: Reachable control-plane host or host:port for /config.js and /api/*
-        required: true
+        required: false
         type: string
       contracts_version:
         description: Optional contracts version for the rollout summary
@@ -38,6 +38,7 @@ jobs:
       DISPATCH_IMAGE_DIGEST: ${{ github.event.client_payload.image_digest }}
       DISPATCH_API_UPSTREAM: ${{ github.event.client_payload.api_upstream }}
       DISPATCH_CONTRACTS_VERSION: ${{ github.event.client_payload.contracts_version }}
+      DEFAULT_API_UPSTREAM: ${{ vars.API_UPSTREAM }}
       RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
       ACR_NAME: ${{ vars.ACR_NAME }}
       ACR_PULL_IDENTITY_NAME: ${{ vars.ACR_PULL_IDENTITY_NAME || 'asset-allocation-acr-pull-mi' }}
@@ -61,8 +62,11 @@ jobs:
             api_upstream="${DISPATCH_API_UPSTREAM}"
             contracts_version="${DISPATCH_CONTRACTS_VERSION}"
           fi
+          if [ -z "${api_upstream}" ]; then
+            api_upstream="${DEFAULT_API_UPSTREAM}"
+          fi
           : "${image_digest:?image_digest is required}"
-          : "${api_upstream:?api_upstream is required}"
+          : "${api_upstream:?api_upstream is required either as workflow input, repository_dispatch payload, or vars.API_UPSTREAM}"
           echo "image_digest=${image_digest}" >> "$GITHUB_OUTPUT"
           echo "api_upstream=${api_upstream}" >> "$GITHUB_OUTPUT"
           echo "contracts_version=${contracts_version}" >> "$GITHUB_OUTPUT"

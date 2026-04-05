@@ -1,0 +1,13 @@
+name,class,github_storage,source_of_truth,template,notes
+AZURE_CLIENT_ID,deploy_var,var,deploy_config,true,GitHub OIDC client id for UI release and deploy workflows.
+AZURE_TENANT_ID,deploy_var,var,deploy_config,true,Azure tenant id discovered from az account show when available.
+AZURE_SUBSCRIPTION_ID,deploy_var,var,deploy_config,true,Azure subscription id discovered from az account show when available.
+RESOURCE_GROUP,deploy_var,var,deploy_config,true,Shared runtime resource group owned by control-plane provisioning.
+ACR_NAME,deploy_var,var,deploy_config,true,Shared Azure Container Registry name.
+ACR_PULL_IDENTITY_NAME,deploy_var,var,deploy_config,true,User-assigned identity used by the UI Container App to pull from ACR.
+CONTAINER_APPS_ENVIRONMENT_NAME,deploy_var,var,deploy_config,true,Shared Container Apps environment name.
+SERVICE_ACCOUNT_NAME,deploy_var,var,deploy_config,true,Shared workload identity or service account name.
+UI_APP_NAME,deploy_var,var,deploy_config,true,Standalone UI Container App name.
+CONTRACTS_REPOSITORY,deploy_var,var,deploy_config,true,Sibling contracts repo slug used by workflows.
+CONTRACTS_REF,deploy_var,var,deploy_config,true,Contracts ref to validate against by default.
+API_UPSTREAM,deploy_var,var,deploy_config,true,Reachable control-plane host used by the UI proxy for /config.js and /api.

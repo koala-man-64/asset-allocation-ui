@@ -21,4 +21,6 @@ Canonical workflows live under `.github/workflows/`.
 - `release.yml` builds the UI image and writes `release-manifest.json`.
 - `deploy-prod.yml` is the only workflow allowed to deploy the standalone `asset-allocation-ui` Container App.
 - `contracts-compat.yml` validates the UI against a candidate or released contracts ref.
-- `DEPLOYMENT_SETUP.md` is the canonical deploy/operate/rollback runbook.
+- `scripts/setup-env.ps1` builds repo-local `.env.web` using Azure and git discovery where possible.
+- `scripts/sync-all-to-github.ps1` syncs the `.env.web` surface into repo vars.
+- `DEPLOYMENT_SETUP.md` is the canonical deploy, operate, and rollback runbook.

@@ -42,6 +42,19 @@ jobs:
           ref: ${{ vars.CONTRACTS_REF || 'main' }}
           path: asset-allocation-contracts
 
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.14"
+
+      - name: Run env-contract static tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip pytest
+          cd asset-allocation-ui
+          python -m pytest tests/test_env_contract.py -q
+
       - name: Lint, test, and build UI
         shell: bash
         run: |
