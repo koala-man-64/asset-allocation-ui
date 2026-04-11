@@ -25,12 +25,34 @@ jobs:
         with:
           path: asset-allocation-ui
 
-      - name: Checkout contracts repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: ${{ vars.CONTRACTS_REPOSITORY || format('{0}/asset-allocation-contracts', github.repository_owner) }}
-          ref: ${{ vars.CONTRACTS_REF || 'main' }}
-          path: asset-allocation-contracts
+      - name: Resolve package versions
+        id: versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          package = json.loads(Path("asset-allocation-ui/package.json").read_text(encoding="utf-8"))
+          contracts = package["dependencies"]["@asset-allocation/contracts"]
+          with Path("ui-versions.txt").open("w", encoding="utf-8") as handle:
+              handle.write(f"contracts_version={contracts}\n")
+              handle.write(f"ui_version={package['version']}\n")
+          PY
+          cat ui-versions.txt >> "$GITHUB_OUTPUT"
+
+      - name: Write required npmrc
+        id: npmrc
+        env:
+          NPMRC_CONTENT: ${{ secrets.NPMRC }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${NPMRC_CONTENT:?Set repository secret NPMRC to a complete .npmrc file with read access to @asset-allocation/contracts.}"
+          path="${RUNNER_TEMP}/ui.npmrc"
+          printf '%s' "${NPMRC_CONTENT}" > "${path}"
+          echo "path=${path}" >> "$GITHUB_OUTPUT"
 
       - name: Azure login
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
@@ -52,7 +74,11 @@ jobs:
           set -euo pipefail
           registry="$(az acr show --name "${{ vars.ACR_NAME }}" --resource-group "${{ vars.RESOURCE_GROUP }}" --query loginServer -o tsv)"
           image_ref="${registry}/asset-allocation-ui:${GITHUB_SHA}"
-          docker build --file asset-allocation-ui/Dockerfile --tag "${image_ref}" .
+          DOCKER_BUILDKIT=1 docker build \
+            --file asset-allocation-ui/Dockerfile \
+            --tag "${image_ref}" \
+            --secret "id=npmrc,src=${{ steps.npmrc.outputs.path }}" \
+            .
           docker push "${image_ref}"
           image_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "${image_ref}")"
           echo "image_ref=${image_ref}" >> "$GITHUB_OUTPUT"
@@ -65,24 +91,23 @@ jobs:
           mkdir -p artifacts
           python - <<'PY'
           import json
-          import subprocess
-          import tomllib
           import os
           from pathlib import Path
 
-          contracts = tomllib.loads(Path("asset-allocation-contracts/python/pyproject.toml").read_text(encoding="utf-8"))
-          contracts_sha = subprocess.check_output(
-              ["git", "-C", "asset-allocation-contracts", "rev-parse", "HEAD"],
-              text=True,
-          ).strip()
+          package = json.loads(Path("asset-allocation-ui/package.json").read_text(encoding="utf-8"))
           manifest = {
               "repo": os.environ["GITHUB_REPOSITORY"],
               "git_sha": os.environ["GITHUB_SHA"],
               "artifact_kind": "container-image",
               "artifact_ref": os.environ["IMAGE_REF"],
               "image_digest": os.environ["IMAGE_DIGEST"],
-              "contracts_version": contracts["project"]["version"],
-              "contracts_sha": contracts_sha,
+              "version_matrix": {
+                  "contracts": package["dependencies"]["@asset-allocation/contracts"],
+                  "runtime_common": None,
+                  "control_plane": None,
+                  "jobs": None,
+                  "ui": package["version"],
+              },
           }
           Path("artifacts/release-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
           PY
@@ -107,5 +132,6 @@ jobs:
             echo "## UI release"
             echo ""
             echo "- Image: \`${IMAGE_DIGEST}\`"
+            echo "- Contracts: \`${{ steps.versions.outputs.contracts_version }}\`"
             echo "- Manifest: \`artifacts/release-manifest.json\`"
           } >> "${GITHUB_STEP_SUMMARY}"

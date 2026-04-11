@@ -7,10 +7,14 @@ from pathlib import Path
 
 
 WORKFLOW_VAR_PATTERN = re.compile(r"\bvars\.([A-Z][A-Z0-9_]+)\b")
+WORKFLOW_SECRET_PATTERN = re.compile(r"\bsecrets\.([A-Z][A-Z0-9_]+)\b")
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "package.json").exists() and (candidate / ".github" / "workflows").is_dir():
+            return candidate
+    raise AssertionError("Could not resolve repository root from test path")
 
 
 def contract_rows() -> list[dict[str, str]]:
@@ -33,10 +37,10 @@ def env_keys(path: Path) -> set[str]:
     return keys
 
 
-def workflow_refs() -> set[str]:
+def workflow_refs(pattern: re.Pattern[str]) -> set[str]:
     refs: set[str] = set()
     for path in (repo_root() / ".github" / "workflows").glob("*.yml"):
-        refs.update(WORKFLOW_VAR_PATTERN.findall(path.read_text(encoding="utf-8")))
+        refs.update(pattern.findall(path.read_text(encoding="utf-8")))
     return refs
 
 
@@ -56,9 +60,12 @@ def test_template_matches_contract_surface() -> None:
 
 def test_workflow_refs_are_documented() -> None:
     contract = contract_map()
-    for name in workflow_refs():
+    for name in workflow_refs(WORKFLOW_VAR_PATTERN):
         assert name in contract
         assert contract[name]["github_storage"] == "var"
+    for name in workflow_refs(WORKFLOW_SECRET_PATTERN):
+        assert name in contract
+        assert contract[name]["github_storage"] == "secret"
 
 
 def test_ui_repo_has_bootstrap_scripts_and_no_shared_provisioner() -> None:

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM node:20-slim AS builder
 WORKDIR /workspace/asset-allocation-ui
 
@@ -8,9 +9,9 @@ ENV VITE_PORT=${VITE_PORT}
 
 RUN npm install -g pnpm
 
-COPY asset-allocation-contracts/ /workspace/asset-allocation-contracts/
 COPY asset-allocation-ui/package.json asset-allocation-ui/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true \
+    pnpm install --frozen-lockfile
 
 COPY asset-allocation-ui/ ./
 RUN pnpm run build

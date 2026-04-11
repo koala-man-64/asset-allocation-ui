@@ -27,12 +27,17 @@ jobs:
         with:
           path: asset-allocation-ui
 
-      - name: Checkout contracts repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: ${{ vars.CONTRACTS_REPOSITORY || format('{0}/asset-allocation-contracts', github.repository_owner) }}
-          ref: ${{ vars.CONTRACTS_REF || 'main' }}
-          path: asset-allocation-contracts
+      - name: Write required npmrc
+        id: npmrc
+        env:
+          NPMRC_CONTENT: ${{ secrets.NPMRC }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${NPMRC_CONTENT:?Set repository secret NPMRC to a complete .npmrc file with read access to @asset-allocation/contracts.}"
+          path="${RUNNER_TEMP}/ui.npmrc"
+          printf '%s' "${NPMRC_CONTENT}" > "${path}"
+          echo "path=${path}" >> "$GITHUB_OUTPUT"
 
       - name: Audit UI dependencies
         shell: bash
@@ -42,9 +47,10 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -v "${{ github.workspace }}/artifacts:/artifacts" \
+            -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
             -w /workspace/asset-allocation-ui \
             node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
-            bash -lc 'set -euo pipefail; corepack enable; pnpm install --no-frozen-lockfile; pnpm audit --json > /artifacts/pnpm-audit.json || true; pnpm audit --audit-level=high'
+            bash -lc 'set -euo pipefail; corepack enable; pnpm install --frozen-lockfile; pnpm audit --json > /artifacts/pnpm-audit.json || true; pnpm audit --audit-level=high'
 
       - name: Upload UI audit artifacts
         if: always()

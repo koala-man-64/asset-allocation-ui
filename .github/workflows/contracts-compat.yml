@@ -52,6 +52,18 @@ jobs:
           ref: ${{ steps.contracts.outputs.ref }}
           path: asset-allocation-contracts
 
+      - name: Write required npmrc
+        id: npmrc
+        env:
+          NPMRC_CONTENT: ${{ secrets.NPMRC }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${NPMRC_CONTENT:?Set repository secret NPMRC to a complete .npmrc file with read access to @asset-allocation/contracts.}"
+          path="${RUNNER_TEMP}/ui.npmrc"
+          printf '%s' "${NPMRC_CONTENT}" > "${path}"
+          echo "path=${path}" >> "$GITHUB_OUTPUT"
+
       - name: Run compatibility suite
         shell: bash
         run: |
@@ -59,9 +71,10 @@ jobs:
           docker run --rm \
             -e VITE_PORT="5174" \
             -v "${{ github.workspace }}:/workspace" \
-            -w /workspace/asset-allocation-ui \
+            -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
+            -w /workspace \
             node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
-            bash -lc 'set -euo pipefail; corepack enable; pnpm install --no-frozen-lockfile; pnpm exec tsc --noEmit; pnpm vitest run src/app/__tests__/App.auth.test.tsx src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/hooks/useRealtime.test.tsx; pnpm build'
+            bash -lc 'set -euo pipefail; corepack enable; cd /workspace/asset-allocation-contracts/ts; pnpm install --frozen-lockfile; cd /workspace/asset-allocation-ui; pnpm install --frozen-lockfile; pnpm add --no-save /workspace/asset-allocation-contracts/ts; pnpm exec tsc --noEmit; pnpm vitest run src/app/__tests__/App.auth.test.tsx src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/hooks/useRealtime.test.tsx; pnpm build'
 
       - name: Write compatibility summary
         shell: bash

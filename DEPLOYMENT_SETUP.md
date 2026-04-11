@@ -78,14 +78,22 @@ GitHub variables:
 
 `API_UPSTREAM` must point to the control-plane host that serves `/config.js`, `/healthz`, `/readyz`, and `/api/*`.
 
+GitHub secrets:
+
+- `NPMRC`
+
+`NPMRC` must contain a complete `.npmrc` file with read access to `@asset-allocation/contracts`. This repo fails fast when that secret is missing or invalid because normal UI validation and release use the published contracts package, not a sibling checkout.
+
 ## Deployment Steps
 
 1. Publish the contracts repo first and pin the version consumed here.
 2. Deploy the control-plane first. The UI depends on `/config.js` from the API.
-3. Run `powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1`.
+3. Run `powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1 -NpmrcPath C:\path\to\ui.npmrc`.
 4. Run `powershell -ExecutionPolicy Bypass -File scripts\sync-all-to-github.ps1`.
 5. Run the UI validation steps:
    - `python -m pytest tests/test_env_contract.py -q`
+   - `$env:NPM_CONFIG_USERCONFIG = "C:\path\to\ui.npmrc"`
+   - `corepack pnpm install --frozen-lockfile`
    - `corepack pnpm build`
    - `corepack pnpm vitest run`
 6. Build the UI image from `Dockerfile`.
@@ -103,14 +111,15 @@ GitHub variables:
 
 ## Troubleshoot
 
-- If `ci.yml` fails, verify the sibling contracts repo was checked out and that Docker or Node can resolve `../asset-allocation-contracts/ts`.
-- If `release.yml` fails to build the image, verify Docker is building from the shared workspace root and that the contracts repo is present beside `asset-allocation-ui`.
+- If `ci.yml`, `security.yml`, or `release.yml` fails with `404` for `@asset-allocation/contracts`, the `NPMRC` secret is missing, malformed, or does not have package read access.
+- If local lockfile refresh fails with `404` for `@asset-allocation/contracts`, set `NPM_CONFIG_USERCONFIG` to a valid `.npmrc` file and rerun `corepack pnpm install --lockfile-only --no-frozen-lockfile`.
+- If Docker build fails before install, verify the build was invoked with `--secret id=npmrc,src=<path-to-npmrc>`.
 - If `deploy-prod.yml` fails before apply, verify `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APPS_ENVIRONMENT_NAME`, and `API_UPSTREAM`.
 - If `deploy-prod.yml` fails verification, inspect the public FQDN, `/`, and `/config.js`, then confirm the proxied control-plane host is reachable.
 
 ## Dependencies
 
-- Sibling contracts repo for CI and release builds
+- Published `@asset-allocation/contracts` package plus registry read credentials in `NPMRC`
 - Control-plane host exposed via `API_UPSTREAM`
 - Azure OIDC credentials in GitHub variables
 - `prod` GitHub environment for deploy workflow
@@ -119,6 +128,7 @@ GitHub variables:
 ## Notes
 
 - `API_UPSTREAM` is now a repo-synced GitHub variable and `deploy-prod.yml` falls back to it when the workflow input is omitted.
+- `NPMRC` is now a repo-synced GitHub secret and normal install paths use `--frozen-lockfile`.
 - This repo does not own shared Azure provisioning scripts.
 
 ## Evidence

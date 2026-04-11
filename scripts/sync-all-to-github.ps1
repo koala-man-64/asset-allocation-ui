@@ -19,6 +19,11 @@ function Parse-EnvFile {
     }
     return $map
 }
+function ConvertTo-GitHubSecretValue {
+    param([AllowNull()][string]$Value)
+    if ($null -eq $Value) { return "" }
+    return $Value.Replace("\n", "`n")
+}
 
 function Load-EnvContract {
     param([string]$Path)
@@ -40,31 +45,42 @@ $undocumented = @($envMap.Keys | Where-Object { -not $contractMap.ContainsKey($_
 if ($undocumented.Count -gt 0) { throw ".env.web contains undocumented keys: $($undocumented -join ', ')" }
 
 $expectedVars = New-Object System.Collections.Generic.List[string]
+$expectedSecrets = New-Object System.Collections.Generic.List[string]
 foreach ($key in ($contractMap.Keys | Sort-Object)) {
     $entry = $contractMap[$key]
     $storage = (($entry.github_storage | Out-String).Trim()).ToLowerInvariant()
-    if ($storage -ne "var") { continue }
-    $expectedVars.Add($key)
+    if ($storage -notin @("var", "secret")) { continue }
     $value = if ($envMap.ContainsKey($key)) { $envMap[$key] } else { "" }
+    if ($storage -eq "var") { $expectedVars.Add($key) } else { $expectedSecrets.Add($key) }
     if ([string]::IsNullOrWhiteSpace($value)) {
-        Write-Host "Skipping empty var: $key" -ForegroundColor Yellow
+        Write-Host "Skipping empty ${storage}: $key" -ForegroundColor Yellow
         continue
     }
     if ($DryRun) {
-        Write-Host "[DRY RUN] Would set var: $key"
+        Write-Host "[DRY RUN] Would set ${storage}: $key"
         continue
     }
-    $value | gh variable set $key
-    Write-Host "Synced var: $key" -ForegroundColor Green
+    if ($storage -eq "var") {
+        $value | gh variable set $key
+    } else {
+        (ConvertTo-GitHubSecretValue -Value $value) | gh secret set $key
+    }
+    Write-Host "Synced ${storage}: $key" -ForegroundColor Green
 }
 
-$remote = @(gh variable list --json name --jq ".[].name" 2>$null)
-$unexpected = @($remote | Where-Object { $_ -and $_ -notin $expectedVars } | Sort-Object -Unique)
-foreach ($name in $unexpected) {
-    if ($DryRun) {
-        Write-Host "[DRY RUN] Would delete unexpected variable: $name"
-        continue
+function Remove-UnexpectedItems {
+    param([string]$Kind, [string[]]$Expected)
+    $remote = @(gh $Kind list --json name --jq ".[].name" 2>$null)
+    $unexpected = @($remote | Where-Object { $_ -and $_ -notin $Expected } | Sort-Object -Unique)
+    foreach ($name in $unexpected) {
+        if ($DryRun) {
+            Write-Host "[DRY RUN] Would delete unexpected ${Kind}: $name"
+            continue
+        }
+        gh $Kind delete $name
+        Write-Host "Deleted unexpected ${Kind}: $name" -ForegroundColor Yellow
     }
-    gh variable delete $name
-    Write-Host "Deleted unexpected variable: $name" -ForegroundColor Yellow
 }
+
+Remove-UnexpectedItems -Kind "variable" -Expected $expectedVars.ToArray()
+Remove-UnexpectedItems -Kind "secret" -Expected $expectedSecrets.ToArray()

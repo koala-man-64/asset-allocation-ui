@@ -35,13 +35,6 @@ jobs:
         with:
           path: asset-allocation-ui
 
-      - name: Checkout contracts repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: ${{ vars.CONTRACTS_REPOSITORY || format('{0}/asset-allocation-contracts', github.repository_owner) }}
-          ref: ${{ vars.CONTRACTS_REF || 'main' }}
-          path: asset-allocation-contracts
-
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
@@ -53,7 +46,19 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip pytest
           cd asset-allocation-ui
-          python -m pytest tests/test_env_contract.py -q
+          python -m pytest tests/test_env_contract.py tests/test_multirepo_dependency_contract.py -q
+
+      - name: Write required npmrc
+        id: npmrc
+        env:
+          NPMRC_CONTENT: ${{ secrets.NPMRC }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${NPMRC_CONTENT:?Set repository secret NPMRC to a complete .npmrc file with read access to @asset-allocation/contracts.}"
+          path="${RUNNER_TEMP}/ui.npmrc"
+          printf '%s' "${NPMRC_CONTENT}" > "${path}"
+          echo "path=${path}" >> "$GITHUB_OUTPUT"
 
       - name: Lint, test, and build UI
         shell: bash
@@ -62,6 +67,7 @@ jobs:
           docker run --rm \
             -e VITE_PORT="5174" \
             -v "${{ github.workspace }}:/workspace" \
+            -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
             -w /workspace/asset-allocation-ui \
             node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
-            bash -lc 'set -euo pipefail; corepack enable; pnpm install --no-frozen-lockfile; pnpm lint; pnpm exec tsc --noEmit; pnpm vitest run src/app/__tests__/App.auth.test.tsx src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/hooks/useRealtime.test.tsx; pnpm build'
+            bash -lc 'set -euo pipefail; corepack enable; pnpm install --frozen-lockfile; pnpm lint; pnpm exec tsc --noEmit; pnpm vitest run src/app/__tests__/App.auth.test.tsx src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/hooks/useRealtime.test.tsx; pnpm build'
