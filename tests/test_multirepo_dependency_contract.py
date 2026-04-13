@@ -60,3 +60,4 @@ def test_contracts_compat_workflow_is_the_only_checkout_exception() -> None:
     assert "DISPATCH_CONTRACTS_VERSION" in text
     assert "pnpm install --lockfile-only --no-frozen-lockfile" in text
     assert "git push origin HEAD:${{ steps.contracts.outputs.ui_ref }}" in text
+    assert text.index("Pin released contracts version") < text.index("Run compatibility suite")
