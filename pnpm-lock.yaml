@@ -19,8 +19,8 @@ importers:
   .:
     dependencies:
       '@asset-allocation/contracts':
-        specifier: 0.1.2
-        version: 0.1.2
+        specifier: 2026.4.13-dev.9001
+        version: 2026.4.13-dev.9001
       '@azure/msal-browser':
         specifier: 5.3.0
         version: 5.3.0
@@ -308,8 +308,8 @@ packages:
   '@asamuzakjp/nwsapi@2.3.9':
     resolution: {integrity: sha512-n8GuYSrI9bF7FFZ/SjhwevlHc8xaVlb/7HmHelnc/PZXBD2ZR49NnN9sMMuDdEGPeeRQ5d0hqlSlEpgCX3Wl0Q==}
 
-  '@asset-allocation/contracts@0.1.2':
-    resolution: {integrity: sha512-MH5LusmnlB5fgUfEsh6OqizWqRodrJJSLr84Hx1kn2kIdpwEOJM8QvVeZSSk4Wt2ycDntV/iCfUl/s1vSDKXzQ==}
+  '@asset-allocation/contracts@2026.4.13-dev.9001':
+    resolution: {integrity: sha512-kgl499AZwHJ56UXLAayVuSbl3Cdcv9sBZLpE/mQtrepTVnV8VFO8Ib+sZIdpVBUrdUgc00FWl/bZcitDQUXAqQ==}
 
   '@azure/msal-browser@5.3.0':
     resolution: {integrity: sha512-WqIN2GJe6H8OfmEiXjf8y+N0LedO6lkE3JeLZqEVurvoHoHltpl3gMyfKPycAfOgNMMmlukB6XUhbXDRRSdhEQ==}
@@ -3792,7 +3792,7 @@ snapshots:
 
   '@asamuzakjp/nwsapi@2.3.9': {}
 
-  '@asset-allocation/contracts@0.1.2': {}
+  '@asset-allocation/contracts@2026.4.13-dev.9001': {}
 
   '@azure/msal-browser@5.3.0':
     dependencies:
