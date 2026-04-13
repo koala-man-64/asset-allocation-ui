@@ -1,10 +1,12 @@
 name: UI Release
-run-name: UI Release / ${{ github.event_name }} / ${{ github.ref_name }}
+run-name: UI Release / ${{ github.event_name }} / ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows:
+      - UI CI
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -12,18 +14,29 @@ permissions:
   id-token: write
 
 concurrency:
-  group: ui-release-${{ github.ref }}
+  group: ui-release-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   release:
     name: release
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
     runs-on: ubuntu-22.04
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - name: Checkout UI repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: asset-allocation-ui
+          ref: ${{ env.RELEASE_SHA }}
 
       - name: Resolve package versions
         id: versions
@@ -73,7 +86,7 @@ jobs:
         run: |
           set -euo pipefail
           registry="$(az acr show --name "${{ vars.ACR_NAME }}" --resource-group "${{ vars.RESOURCE_GROUP }}" --query loginServer -o tsv)"
-          image_ref="${registry}/asset-allocation-ui:${GITHUB_SHA}"
+          image_ref="${registry}/asset-allocation-ui:${RELEASE_SHA}"
           DOCKER_BUILDKIT=1 docker build \
             --file asset-allocation-ui/Dockerfile \
             --tag "${image_ref}" \
@@ -97,7 +110,7 @@ jobs:
           package = json.loads(Path("asset-allocation-ui/package.json").read_text(encoding="utf-8"))
           manifest = {
               "repo": os.environ["GITHUB_REPOSITORY"],
-              "git_sha": os.environ["GITHUB_SHA"],
+              "git_sha": os.environ["RELEASE_SHA"],
               "artifact_kind": "container-image",
               "artifact_ref": os.environ["IMAGE_REF"],
               "image_digest": os.environ["IMAGE_DIGEST"],
@@ -114,6 +127,7 @@ jobs:
         env:
           IMAGE_REF: ${{ steps.image.outputs.image_ref }}
           IMAGE_DIGEST: ${{ steps.image.outputs.image_digest }}
+          RELEASE_SHA: ${{ env.RELEASE_SHA }}
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

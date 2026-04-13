@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -10,17 +11,23 @@ def repo_root() -> Path:
     raise AssertionError("Could not resolve repository root from test path")
 
 
+def contracts_version() -> str:
+    package_json = json.loads((repo_root() / "package.json").read_text(encoding="utf-8"))
+    return package_json["dependencies"]["@asset-allocation/contracts"]
+
+
 def test_package_json_uses_versioned_contracts_dependency() -> None:
     text = (repo_root() / "package.json").read_text(encoding="utf-8")
-    assert '"@asset-allocation/contracts": "0.1.0"' in text
+    assert f'"@asset-allocation/contracts": "{contracts_version()}"' in text
     assert "file:../asset-allocation-contracts/ts" not in text
 
 
 def test_lockfile_uses_published_contracts_package() -> None:
+    version = contracts_version()
     text = (repo_root() / "pnpm-lock.yaml").read_text(encoding="utf-8")
-    assert "specifier: 0.1.0" in text
-    assert "version: 0.1.0" in text
-    assert "@asset-allocation/contracts@0.1.0" in text
+    assert f"specifier: {version}" in text
+    assert f"version: {version}" in text
+    assert f"@asset-allocation/contracts@{version}" in text
     assert "file:../asset-allocation-contracts/ts" not in text
     assert "directory: ../asset-allocation-contracts/ts" not in text
 
@@ -50,3 +57,6 @@ def test_contracts_compat_workflow_is_the_only_checkout_exception() -> None:
     assert "Checkout contracts repository" in text
     assert "pnpm install --frozen-lockfile" in text
     assert "pnpm add --no-save /workspace/asset-allocation-contracts/ts" in text
+    assert "DISPATCH_CONTRACTS_VERSION" in text
+    assert "pnpm install --lockfile-only --no-frozen-lockfile" in text
+    assert "git push origin HEAD:${{ steps.contracts.outputs.ui_ref }}" in text
