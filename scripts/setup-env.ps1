@@ -155,7 +155,7 @@ function Resolve-DiscoveredValue {
         "API_UPSTREAM" {
             $app = Invoke-JsonCommand -FilePath "az" -ArgumentList @("containerapp", "show", "--name", "asset-allocation-api", "--resource-group", "AssetAllocationRG", "-o", "json")
             if ($app -and $app.properties.configuration.ingress.fqdn) {
-                return (New-Resolution -Value "https://$($app.properties.configuration.ingress.fqdn)" -Source "azure")
+                return (New-Resolution -Value $app.properties.configuration.ingress.fqdn -Source "azure")
             }
         }
         "AZURE_CLIENT_ID" {

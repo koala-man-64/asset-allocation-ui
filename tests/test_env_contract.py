@@ -81,6 +81,19 @@ def test_ui_deploy_workflow_uses_api_upstream_repo_var_fallback() -> None:
     assert "api_upstream is required either as workflow input, repository_dispatch payload, or vars.API_UPSTREAM" in text
 
 
+def test_setup_env_discovers_api_upstream_as_host_only() -> None:
+    text = (repo_root() / "scripts" / "setup-env.ps1").read_text(encoding="utf-8")
+    assert '$app.properties.configuration.ingress.fqdn' in text
+    assert '"https://$($app.properties.configuration.ingress.fqdn)"' not in text
+
+
+def test_ui_release_workflow_fails_fast_when_azure_repo_vars_are_missing() -> None:
+    text = (repo_root() / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "Verify required Azure repo vars" in text
+    assert "Missing required UI release repo vars" in text
+    assert "AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID ACR_NAME RESOURCE_GROUP" in text
+
+
 def test_setup_env_dry_run_reports_sources_without_prompting() -> None:
     script = repo_root() / "scripts" / "setup-env.ps1"
     completed = subprocess.run(

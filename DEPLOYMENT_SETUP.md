@@ -76,7 +76,7 @@ GitHub variables:
 - `UI_APP_NAME`
 - `API_UPSTREAM`
 
-`API_UPSTREAM` must point to the control-plane host that serves `/config.js`, `/healthz`, `/readyz`, and `/api/*`.
+`API_UPSTREAM` must point to the control-plane host that serves `/config.js`, `/healthz`, `/readyz`, and `/api/*`. Store the host or host:port only, without `https://`.
 
 GitHub secrets:
 
