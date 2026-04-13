@@ -125,7 +125,7 @@ jobs:
               rm -rf "${compat_dir}"
               mkdir -p "${compat_dir}"
               tar -C /workspace/asset-allocation-ui --exclude=.git --exclude=node_modules -cf - . | tar -C "${compat_dir}" -xf -
-              node --input-type=module -e "import { readFileSync, writeFileSync } from 'node:fs'; const packageJsonPath = '${compat_dir}/package.json'; const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')); packageJson.dependencies['@asset-allocation/contracts'] = 'file:/workspace/asset-allocation-contracts/ts'; writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');"
+              node --input-type=module -e "import { readFileSync, writeFileSync } from \"node:fs\"; const packageJsonPath = process.argv[1]; const packageJson = JSON.parse(readFileSync(packageJsonPath, \"utf8\")); packageJson.dependencies[\"@asset-allocation/contracts\"] = \"file:/workspace/asset-allocation-contracts/ts\"; writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + \"\\n\");" "${compat_dir}/package.json"
               cd "${compat_dir}"
               pnpm install --no-frozen-lockfile
               pnpm exec tsc --noEmit
