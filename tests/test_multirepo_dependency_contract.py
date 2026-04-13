@@ -56,7 +56,11 @@ def test_contracts_compat_workflow_is_the_only_checkout_exception() -> None:
     text = (repo_root() / ".github" / "workflows" / "contracts-compat.yml").read_text(encoding="utf-8")
     assert "Checkout contracts repository" in text
     assert "pnpm install --frozen-lockfile" in text
-    assert "pnpm add --no-save /workspace/asset-allocation-contracts/ts" in text
+    assert "file:/workspace/asset-allocation-contracts/ts" in text
+    assert "node --input-type=module -e" in text
+    assert "compat_dir=/tmp/asset-allocation-ui-compat" in text
+    assert "pnpm install --no-frozen-lockfile" in text
+    assert "pnpm add --no-save /workspace/asset-allocation-contracts/ts" not in text
     assert "DISPATCH_CONTRACTS_VERSION" in text
     assert "pnpm install --lockfile-only --no-frozen-lockfile" in text
     assert "git push origin HEAD:${{ steps.contracts.outputs.ui_ref }}" in text

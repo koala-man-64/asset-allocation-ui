@@ -114,7 +114,24 @@ jobs:
             -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
             -w /workspace \
             node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
-            bash -lc 'set -euo pipefail; corepack enable; cd /workspace/asset-allocation-contracts/ts; pnpm install --frozen-lockfile; cd /workspace/asset-allocation-ui; pnpm install --frozen-lockfile; pnpm add --no-save /workspace/asset-allocation-contracts/ts; pnpm exec tsc --noEmit; pnpm vitest run src/app/__tests__/App.auth.test.tsx src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/hooks/useRealtime.test.tsx; pnpm build'
+            bash -lc '
+              set -euo pipefail
+              corepack enable
+              cd /workspace/asset-allocation-contracts/ts
+              pnpm install --frozen-lockfile
+              cd /workspace/asset-allocation-ui
+              pnpm install --frozen-lockfile
+              compat_dir=/tmp/asset-allocation-ui-compat
+              rm -rf "${compat_dir}"
+              mkdir -p "${compat_dir}"
+              tar -C /workspace/asset-allocation-ui --exclude=.git --exclude=node_modules -cf - . | tar -C "${compat_dir}" -xf -
+              node --input-type=module -e "import { readFileSync, writeFileSync } from 'node:fs'; const packageJsonPath = '${compat_dir}/package.json'; const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')); packageJson.dependencies['@asset-allocation/contracts'] = 'file:/workspace/asset-allocation-contracts/ts'; writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');"
+              cd "${compat_dir}"
+              pnpm install --no-frozen-lockfile
+              pnpm exec tsc --noEmit
+              pnpm vitest run src/app/__tests__/App.auth.test.tsx src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/hooks/useRealtime.test.tsx
+              pnpm build
+            '
 
       - name: Commit pinned contracts version
         if: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.contracts_version != '' }}
