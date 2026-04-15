@@ -54,19 +54,8 @@ jobs:
               --method GET \
               -H "Accept: application/vnd.github+json" \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?branch=main&per_page=20" > workflow-runs.json
-            run_id="$(python - <<'PY'
-            import json
-            from pathlib import Path
-
-            runs = json.loads(Path("workflow-runs.json").read_text(encoding="utf-8"))["workflow_runs"]
-            for run in runs:
-                if run.get("head_branch") == "main" and run.get("conclusion") == "success":
-                    print(run["id"])
-                    break
-            else:
-                raise SystemExit("No successful UI Release run on main was found.")
-            PY
-            )"
+            run_id="$(jq -r '.workflow_runs[] | select(.head_branch == "main" and .conclusion == "success") | .id' workflow-runs.json | head -n 1)"
+            : "${run_id:?No successful UI Release run on main was found.}"
           fi
           echo "release_run_id=${run_id}" >> "$GITHUB_OUTPUT"
 
@@ -80,57 +69,38 @@ jobs:
             --method GET \
             -H "Accept: application/vnd.github+json" \
             "repos/${GITHUB_REPOSITORY}/actions/runs/${{ steps.release-run.outputs.release_run_id }}/artifacts" > artifacts.json
-          artifact_id="$(python - <<'PY'
-          import json
-          from pathlib import Path
-
-          artifacts = json.loads(Path("artifacts.json").read_text(encoding="utf-8"))["artifacts"]
-          for artifact in artifacts:
-              if artifact.get("name") == "ui-release" and not artifact.get("expired"):
-                  print(artifact["id"])
-                  break
-          else:
-              raise SystemExit("Artifact 'ui-release' was not found on the selected UI Release run.")
-          PY
-          )"
+          artifact_id="$(jq -r '.artifacts[] | select(.name == "ui-release" and (.expired | not)) | .id' artifacts.json | head -n 1)"
+          : "${artifact_id:?Artifact 'ui-release' was not found on the selected UI Release run.}"
           gh api \
             --method GET \
             -H "Accept: application/vnd.github+json" \
             "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > ui-release.zip
-          python - <<'PY'
-          from pathlib import Path
-          from zipfile import ZipFile
-
-          artifact_dir = Path("release-artifact")
-          artifact_dir.mkdir(exist_ok=True)
-          with ZipFile("ui-release.zip") as archive:
-              archive.extractall(artifact_dir)
-          manifest_path = artifact_dir / "release-manifest.json"
-          if not manifest_path.exists():
-              raise SystemExit("Artifact 'ui-release' did not contain release-manifest.json.")
-          PY
+          rm -rf release-artifact
+          mkdir -p release-artifact
+          unzip -q ui-release.zip -d release-artifact
+          test -f release-artifact/release-manifest.json || {
+            echo "Artifact 'ui-release' did not contain release-manifest.json." >&2
+            exit 1
+          }
 
       - name: Resolve image digest
         id: manifest
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          manifest = json.loads(Path("release-artifact/release-manifest.json").read_text(encoding="utf-8"))
-          image_digest = manifest.get("image_digest")
-          if not image_digest:
-              raise SystemExit("release-manifest.json is missing image_digest.")
-          if manifest.get("artifact_kind") != "container-image":
-              raise SystemExit("release-manifest.json did not describe a container-image artifact.")
-          if manifest.get("repo") != os.environ["GITHUB_REPOSITORY"]:
-              raise SystemExit("release-manifest.json repo did not match the current repository.")
-          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
-              handle.write(f"image_digest={image_digest}\n")
-          PY
+          image_digest="$(jq -r '.image_digest // empty' release-artifact/release-manifest.json)"
+          artifact_kind="$(jq -r '.artifact_kind // empty' release-artifact/release-manifest.json)"
+          repo="$(jq -r '.repo // empty' release-artifact/release-manifest.json)"
+          : "${image_digest:?release-manifest.json is missing image_digest.}"
+          test "${artifact_kind}" = "container-image" || {
+            echo "release-manifest.json did not describe a container-image artifact." >&2
+            exit 1
+          }
+          test "${repo}" = "${GITHUB_REPOSITORY}" || {
+            echo "release-manifest.json repo did not match the current repository." >&2
+            exit 1
+          }
+          echo "image_digest=${image_digest}" >> "$GITHUB_OUTPUT"
 
   deploy-prod:
     name: deploy-prod
