@@ -44,6 +44,10 @@ def workflow_refs(pattern: re.Pattern[str]) -> set[str]:
     return refs
 
 
+def workflow_text(name: str) -> str:
+    return (repo_root() / ".github" / "workflows" / name).read_text(encoding="utf-8")
+
+
 def powershell_exe() -> str:
     for candidate in ("pwsh", "powershell"):
         try:
@@ -75,10 +79,35 @@ def test_ui_repo_has_bootstrap_scripts_and_no_shared_provisioner() -> None:
     assert not (scripts_dir / "provision_azure.ps1").exists()
 
 
-def test_ui_deploy_workflow_uses_api_upstream_repo_var_fallback() -> None:
-    text = (repo_root() / ".github" / "workflows" / "deploy-prod.yml").read_text(encoding="utf-8")
+def test_ui_deploy_workflow_is_release_driven_and_uses_repo_var() -> None:
+    text = workflow_text("deploy-prod.yml")
+    assert "workflow_dispatch:\n    inputs:" not in text
+    assert "repository_dispatch:" not in text
+    assert "deploy_runtime" not in text
+    assert "workflow_run:" in text
+    assert "- UI Release" in text
+    assert "branches:\n      - main" in text
+    assert "actions: read" in text
     assert "vars.API_UPSTREAM" in text
-    assert "api_upstream is required either as workflow input, repository_dispatch payload, or vars.API_UPSTREAM" in text
+    assert "actions/workflows/release.yml/runs?branch=main&per_page=20" in text
+    assert "actions/runs/${{ steps.release-run.outputs.release_run_id }}/artifacts" in text
+
+
+def test_ui_runtime_deploy_workflow_uses_repo_var_only() -> None:
+    text = workflow_text("deploy-ui-runtime.yml")
+    assert "workflow_call:" in text
+    assert "image_digest:" in text
+    assert "vars.API_UPSTREAM" in text
+    assert "contracts_version" not in text
+
+
+def test_ui_rollback_workflow_requires_only_image_digest() -> None:
+    text = workflow_text("rollback-prod.yml")
+    assert "workflow_dispatch:" in text
+    assert "image_digest:" in text
+    assert "api_upstream:" not in text
+    assert "contracts_version:" not in text
+    assert "uses: ./.github/workflows/deploy-ui-runtime.yml" in text
 
 
 def test_setup_env_discovers_api_upstream_as_host_only() -> None:
@@ -88,10 +117,17 @@ def test_setup_env_discovers_api_upstream_as_host_only() -> None:
 
 
 def test_ui_release_workflow_fails_fast_when_azure_repo_vars_are_missing() -> None:
-    text = (repo_root() / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    text = workflow_text("release.yml")
     assert "Verify required Azure repo vars" in text
     assert "Missing required UI release repo vars" in text
     assert "AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID ACR_NAME RESOURCE_GROUP" in text
+
+
+def test_ui_release_workflow_publishes_release_manifest_artifact() -> None:
+    text = workflow_text("release.yml")
+    assert "name: ui-release" in text
+    assert "path: artifacts/release-manifest.json" in text
+    assert '"image_digest": os.environ["IMAGE_DIGEST"]' in text
 
 
 def test_setup_env_dry_run_reports_sources_without_prompting() -> None:

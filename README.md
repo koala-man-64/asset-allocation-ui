@@ -36,8 +36,10 @@ Canonical workflows live under `.github/workflows/`.
 
 - `ci.yml` is the required validation path for PRs and `main`.
 - `security.yml` runs dependency audits.
-- `release.yml` builds the UI image and writes `release-manifest.json`.
-- `deploy-prod.yml` is the only workflow allowed to deploy the standalone `asset-allocation-ui` Container App.
+- `release.yml` builds the UI image, writes `release-manifest.json`, and is the release artifact producer for prod deploys.
+- `deploy-prod.yml` auto-deploys successful `UI Release` runs on `main` and can manually redeploy the latest successful main release.
+- `rollback-prod.yml` deploys a specific prior UI image digest to prod.
+- `deploy-ui-runtime.yml` is the reusable prod apply-and-verify workflow used by deploy and rollback entry points.
 - `contracts-compat.yml` validates the UI against a candidate or released contracts ref.
 - `scripts/setup-env.ps1` builds repo-local `.env.web` using Azure and git discovery where possible, and can ingest `NPMRC` from a file path.
 - `scripts/sync-all-to-github.ps1` syncs the `.env.web` surface into repo vars and secrets.

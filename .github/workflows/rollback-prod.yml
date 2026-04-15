@@ -1,0 +1,43 @@
+name: UI Rollback Prod
+run-name: UI Rollback Prod / ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: Full container image reference with digest
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ui-prod
+  cancel-in-progress: false
+
+jobs:
+  validate-dispatch-ref:
+    name: validate-dispatch-ref
+    runs-on: ubuntu-22.04
+    env:
+      API_UPSTREAM: ${{ vars.API_UPSTREAM }}
+    steps:
+      - name: Validate dispatch branch and repo deploy vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "rollback-prod.yml must be run from main because it deploys production workflow definitions." >&2
+            exit 1
+          fi
+          : "${API_UPSTREAM:?vars.API_UPSTREAM is required}"
+
+  rollback-prod:
+    name: rollback-prod
+    needs: validate-dispatch-ref
+    uses: ./.github/workflows/deploy-ui-runtime.yml
+    with:
+      image_digest: ${{ inputs.image_digest }}
+    secrets: inherit

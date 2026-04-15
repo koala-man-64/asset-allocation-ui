@@ -1,26 +1,18 @@
 name: UI Deploy Prod
-run-name: UI Deploy Prod / ${{ github.event_name }} / ${{ github.ref_name }}
+run-name: UI Deploy Prod / ${{ github.event_name }} / ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
 on:
   workflow_dispatch:
-    inputs:
-      image_digest:
-        description: Full container image reference with digest
-        required: true
-        type: string
-      api_upstream:
-        description: Reachable control-plane host or host:port for /config.js and /api/*
-        required: false
-        type: string
-      contracts_version:
-        description: Optional contracts version for the rollout summary
-        required: false
-        type: string
-  repository_dispatch:
+  workflow_run:
+    workflows:
+      - UI Release
+    branches:
+      - main
     types:
-      - deploy_runtime
+      - completed
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
@@ -29,127 +21,121 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy-prod:
-    name: deploy-prod
+  resolve-release:
+    name: resolve-release
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-22.04
-    environment:
-      name: prod
     env:
-      DISPATCH_IMAGE_DIGEST: ${{ github.event.client_payload.image_digest }}
-      DISPATCH_API_UPSTREAM: ${{ github.event.client_payload.api_upstream }}
-      DISPATCH_CONTRACTS_VERSION: ${{ github.event.client_payload.contracts_version }}
-      DEFAULT_API_UPSTREAM: ${{ vars.API_UPSTREAM }}
-      RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
-      ACR_NAME: ${{ vars.ACR_NAME }}
-      ACR_PULL_IDENTITY_NAME: ${{ vars.ACR_PULL_IDENTITY_NAME || 'asset-allocation-acr-pull-mi' }}
-      CONTAINER_APPS_ENVIRONMENT_NAME: ${{ vars.CONTAINER_APPS_ENVIRONMENT_NAME || 'asset-allocation-env' }}
-      SERVICE_ACCOUNT_NAME: ${{ vars.SERVICE_ACCOUNT_NAME || 'asset-allocation-sa' }}
-      UI_APP_NAME: ${{ vars.UI_APP_NAME || 'asset-allocation-ui' }}
+      API_UPSTREAM: ${{ vars.API_UPSTREAM }}
+    outputs:
+      image_digest: ${{ steps.manifest.outputs.image_digest }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Resolve rollout inputs
-        id: inputs
+      - name: Validate dispatch branch and repo deploy vars
         shell: bash
         run: |
           set -euo pipefail
-          image_digest="${{ inputs.image_digest }}"
-          api_upstream="${{ inputs.api_upstream }}"
-          contracts_version="${{ inputs.contracts_version }}"
-          if [ "${GITHUB_EVENT_NAME}" = "repository_dispatch" ]; then
-            image_digest="${DISPATCH_IMAGE_DIGEST}"
-            api_upstream="${DISPATCH_API_UPSTREAM}"
-            contracts_version="${DISPATCH_CONTRACTS_VERSION}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "deploy-prod.yml must be run from main because it redeploys the latest successful main release." >&2
+            exit 1
           fi
-          if [ -z "${api_upstream}" ]; then
-            api_upstream="${DEFAULT_API_UPSTREAM}"
-          fi
-          : "${image_digest:?image_digest is required}"
-          : "${api_upstream:?api_upstream is required either as workflow input, repository_dispatch payload, or vars.API_UPSTREAM}"
-          {
-            echo "image_digest=${image_digest}"
-            echo "api_upstream=${api_upstream}"
-            echo "contracts_version=${contracts_version}"
-          } >> "$GITHUB_OUTPUT"
+          : "${API_UPSTREAM:?vars.API_UPSTREAM is required}"
 
-      - name: Azure login
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Resolve Azure resource identifiers
-        id: azure
-        shell: bash
-        run: |
-          set -euo pipefail
-          az config set extension.use_dynamic_install=yes_without_prompt > /dev/null
-          identity_id="$(az identity show --name "${ACR_PULL_IDENTITY_NAME}" --resource-group "${RESOURCE_GROUP}" --query id -o tsv)"
-          acr_login_server="$(az acr show --name "${ACR_NAME}" --resource-group "${RESOURCE_GROUP}" --query loginServer -o tsv)"
-          env_id="/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.App/managedEnvironments/${CONTAINER_APPS_ENVIRONMENT_NAME}"
-          previous_image="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || true)"
-          {
-            echo "identity_id=${identity_id}"
-            echo "acr_login_server=${acr_login_server}"
-            echo "environment_id=${env_id}"
-            echo "previous_image=${previous_image}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Render UI manifest
+      - name: Resolve release run
+        id: release-run
         env:
-          UI_IMAGE: ${{ steps.inputs.outputs.image_digest }}
-          API_UPSTREAM: ${{ steps.inputs.outputs.api_upstream }}
-          ACR_LOGIN_SERVER: ${{ steps.azure.outputs.acr_login_server }}
-          ACR_PULL_IDENTITY_RESOURCE_ID: ${{ steps.azure.outputs.identity_id }}
-          CONTAINER_APPS_ENVIRONMENT_ID: ${{ steps.azure.outputs.environment_id }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            run_id="${{ github.event.workflow_run.id }}"
+          else
+            gh api \
+              --method GET \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?branch=main&per_page=20" > workflow-runs.json
+            run_id="$(python - <<'PY'
+            import json
+            from pathlib import Path
+
+            runs = json.loads(Path("workflow-runs.json").read_text(encoding="utf-8"))["workflow_runs"]
+            for run in runs:
+                if run.get("head_branch") == "main" and run.get("conclusion") == "success":
+                    print(run["id"])
+                    break
+            else:
+                raise SystemExit("No successful UI Release run on main was found.")
+            PY
+            )"
+          fi
+          echo "release_run_id=${run_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api \
+            --method GET \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${{ steps.release-run.outputs.release_run_id }}/artifacts" > artifacts.json
+          artifact_id="$(python - <<'PY'
+          import json
+          from pathlib import Path
+
+          artifacts = json.loads(Path("artifacts.json").read_text(encoding="utf-8"))["artifacts"]
+          for artifact in artifacts:
+              if artifact.get("name") == "ui-release" and not artifact.get("expired"):
+                  print(artifact["id"])
+                  break
+          else:
+              raise SystemExit("Artifact 'ui-release' was not found on the selected UI Release run.")
+          PY
+          )"
+          gh api \
+            --method GET \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > ui-release.zip
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          artifact_dir = Path("release-artifact")
+          artifact_dir.mkdir(exist_ok=True)
+          with ZipFile("ui-release.zip") as archive:
+              archive.extractall(artifact_dir)
+          manifest_path = artifact_dir / "release-manifest.json"
+          if not manifest_path.exists():
+              raise SystemExit("Artifact 'ui-release' did not contain release-manifest.json.")
+          PY
+
+      - name: Resolve image digest
+        id: manifest
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          from pathlib import Path
+          import json
           import os
+          from pathlib import Path
 
-          template = Path("deploy/app_ui.yaml").read_text(encoding="utf-8")
-          for key, value in os.environ.items():
-              template = template.replace("${" + key + "}", value)
-          Path("rendered-app_ui.yaml").write_text(template, encoding="utf-8")
+          manifest = json.loads(Path("release-artifact/release-manifest.json").read_text(encoding="utf-8"))
+          image_digest = manifest.get("image_digest")
+          if not image_digest:
+              raise SystemExit("release-manifest.json is missing image_digest.")
+          if manifest.get("artifact_kind") != "container-image":
+              raise SystemExit("release-manifest.json did not describe a container-image artifact.")
+          if manifest.get("repo") != os.environ["GITHUB_REPOSITORY"]:
+              raise SystemExit("release-manifest.json repo did not match the current repository.")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"image_digest={image_digest}\n")
           PY
 
-      - name: Apply UI manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          if az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" > /dev/null 2>&1; then
-            az containerapp update --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --yaml rendered-app_ui.yaml
-          else
-            az containerapp create --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --yaml rendered-app_ui.yaml
-          fi
-
-      - name: Verify deployed UI endpoints
-        id: verify
-        shell: bash
-        run: |
-          set -euo pipefail
-          fqdn="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.configuration.ingress.fqdn' -o tsv)"
-          actual_image="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.template.containers[0].image' -o tsv)"
-          test "${actual_image}" = "${{ steps.inputs.outputs.image_digest }}"
-          curl --fail --retry 12 --retry-delay 10 --retry-connrefused "https://${fqdn}/" > /dev/null
-          curl --fail --retry 12 --retry-delay 10 --retry-connrefused "https://${fqdn}/config.js" > /dev/null
-          echo "fqdn=${fqdn}" >> "$GITHUB_OUTPUT"
-
-      - name: Write deployment summary
-        shell: bash
-        run: |
-          {
-            echo "## UI deploy"
-            echo ""
-            echo "- Target app: \`${UI_APP_NAME}\`"
-            echo "- Image: \`${{ steps.inputs.outputs.image_digest }}\`"
-            echo "- API upstream: \`${{ steps.inputs.outputs.api_upstream }}\`"
-            echo "- Contracts version: \`${{ steps.inputs.outputs.contracts_version || 'not provided' }}\`"
-            echo "- FQDN: https://${{ steps.verify.outputs.fqdn }}"
-            echo "- Previous image: \`${{ steps.azure.outputs.previous_image || 'none' }}\`"
-            echo "- Rollback: rerun this workflow with the previous image digest"
-          } >> "${GITHUB_STEP_SUMMARY}"
+  deploy-prod:
+    name: deploy-prod
+    needs: resolve-release
+    uses: ./.github/workflows/deploy-ui-runtime.yml
+    with:
+      image_digest: ${{ needs.resolve-release.outputs.image_digest }}
+    secrets: inherit

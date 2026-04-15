@@ -28,7 +28,7 @@ This document is the living architecture contract for `asset-allocation-ui`. It 
 | Control-plane `/config.js` | Runtime UI config injection before React boot. | Confirmed | `index.html`, `src/config.ts`, `nginx.conf`, `DEPLOYMENT_SETUP.md` |
 | Control-plane `/api/*` | Primary API surface for data, system health, runtime config, strategies, universes, rankings, purge, and explorer flows. | Confirmed | `src/services/apiService.ts`, `src/services/DataService.ts`, `src/services/strategyApi.ts`, `src/services/universeApi.ts`, `src/services/rankingApi.ts`, `src/services/backtestApi.ts` |
 | Realtime ticketing and websocket updates | Authenticated ticket fetch plus websocket subscriptions used for cache invalidation and log/event streaming. | Confirmed | `src/hooks/useRealtime.ts`, `src/services/realtimeBus.ts`, `nginx.conf` |
-| Azure and OIDC deployment inputs | Drive standalone Container App deployment, NPM registry access, and browser auth behavior. | Confirmed | `docs/ops/env-contract.md`, `docs/ops/env-contract.csv`, `DEPLOYMENT_SETUP.md`, `.github/workflows/deploy-prod.yml` |
+| Azure and OIDC deployment vars and secrets | Drive standalone Container App deployment, NPM registry access, and browser auth behavior. | Confirmed | `docs/ops/env-contract.md`, `docs/ops/env-contract.csv`, `DEPLOYMENT_SETUP.md`, `.github/workflows/deploy-prod.yml`, `.github/workflows/deploy-ui-runtime.yml` |
 
 ### Internal Ownership
 
@@ -62,7 +62,7 @@ This document is the living architecture contract for `asset-allocation-ui`. It 
 10. Confirmed: `src/hooks/useRealtime.ts` fetches a realtime ticket over HTTP, opens a websocket connection, manages topic subscriptions, reconnects on failure, invalidates relevant query keys, and emits browser events for console log streaming. Evidence: `src/hooks/useRealtime.ts`, `src/services/realtimeBus.ts`, `src/hooks/useRealtime.test.tsx`.
 11. Confirmed: `nginx.conf` serves the built SPA and proxies `/config.js`, `/healthz`, `/readyz`, `/api/*`, and websocket traffic to `API_UPSTREAM` to preserve a single browser origin. Evidence: `nginx.conf`, `DEPLOYMENT_SETUP.md`.
 12. Confirmed: `Dockerfile` builds the static bundle with a secret-mounted npmrc, then packages the result into an Nginx image. Evidence: `Dockerfile`, `.github/workflows/release.yml`.
-13. Confirmed: `deploy/app_ui.yaml` and `.github/workflows/deploy-prod.yml` define a standalone Azure Container App deployment with ingress, probes, `API_UPSTREAM`, and digest-based rollout/rollback flow. Evidence: `deploy/app_ui.yaml`, `.github/workflows/deploy-prod.yml`, `DEPLOYMENT_SETUP.md`.
+13. Confirmed: `deploy/app_ui.yaml`, `.github/workflows/deploy-ui-runtime.yml`, `.github/workflows/deploy-prod.yml`, and `.github/workflows/rollback-prod.yml` define a standalone Azure Container App deployment with ingress, probes, repo-var-driven `API_UPSTREAM`, release artifact handoff, and digest-based rollback flow. Evidence: `deploy/app_ui.yaml`, `.github/workflows/deploy-ui-runtime.yml`, `.github/workflows/deploy-prod.yml`, `.github/workflows/rollback-prod.yml`, `DEPLOYMENT_SETUP.md`.
 14. Inferred: The backend remains the authoritative source of truth; client persistence exists only for UX acceleration and session continuity. Evidence: `src/stores/useUIStore.ts`, `src/contexts/AuthContext.tsx`, `src/hooks/useSystemStatusView.ts`.
 
 ## Feature Surface
@@ -108,17 +108,19 @@ This document is the living architecture contract for `asset-allocation-ui`. It 
 | --- | --- | --- | --- |
 | `ci.yml` | Required validation path for PRs and `main`; runs actionlint, Python contract tests, focused TS tests, and build. | Confirmed | `.github/workflows/ci.yml`, `README.md` |
 | `security.yml` | Dependency audit path for the UI repo, including scheduled weekly scans. | Confirmed | `.github/workflows/security.yml`, `README.md` |
-| `release.yml` | Builds and pushes the UI image and writes `release-manifest.json`. | Confirmed | `.github/workflows/release.yml`, `README.md` |
-| `deploy-prod.yml` | Sole production deployment path for the standalone `asset-allocation-ui` Container App; verifies `/` and `/config.js` after rollout. | Confirmed | `.github/workflows/deploy-prod.yml`, `README.md`, `DEPLOYMENT_SETUP.md` |
+| `release.yml` | Builds and pushes the UI image and writes `release-manifest.json`, which becomes the deploy handoff artifact. | Confirmed | `.github/workflows/release.yml`, `README.md` |
+| `deploy-prod.yml` | Release-driven production deploy entry point; auto-deploys successful `UI Release` runs on `main` and manually redeploys the latest successful main release. | Confirmed | `.github/workflows/deploy-prod.yml`, `README.md`, `DEPLOYMENT_SETUP.md` |
+| `rollback-prod.yml` | Manual production rollback entry point for deploying a specific prior UI image digest. | Confirmed | `.github/workflows/rollback-prod.yml`, `README.md`, `DEPLOYMENT_SETUP.md` |
+| `deploy-ui-runtime.yml` | Reusable deploy implementation that applies the UI manifest and verifies `/` plus `/config.js` after rollout. | Confirmed | `.github/workflows/deploy-ui-runtime.yml`, `DEPLOYMENT_SETUP.md` |
 | `contracts-compat.yml` | Explicit exception path for validating the UI against a candidate or freshly released contracts ref. | Confirmed | `.github/workflows/contracts-compat.yml`, `README.md`, `tests/test_multirepo_dependency_contract.py` |
 
 ### Runtime and Deploy Contract
 
 - Confirmed: The UI deploys as a standalone Azure Container App with ingress, probes, and a single UI container serving Nginx. Evidence: `deploy/app_ui.yaml`, `DEPLOYMENT_SETUP.md`.
-- Confirmed: `API_UPSTREAM` is a first-class deployment contract used for proxied `/config.js`, `/healthz`, `/readyz`, and `/api/*` traffic. Evidence: `nginx.conf`, `.github/workflows/deploy-prod.yml`, `docs/ops/env-contract.md`, `DEPLOYMENT_SETUP.md`.
+- Confirmed: `API_UPSTREAM` is a first-class deployment contract used for proxied `/config.js`, `/healthz`, `/readyz`, and `/api/*` traffic, and the prod workflows read it only from repo vars. Evidence: `nginx.conf`, `.github/workflows/deploy-prod.yml`, `.github/workflows/deploy-ui-runtime.yml`, `.github/workflows/rollback-prod.yml`, `docs/ops/env-contract.md`, `DEPLOYMENT_SETUP.md`.
 - Confirmed: `NPMRC` is a first-class build and CI contract because the UI consumes the published contracts package from the registry. Evidence: `README.md`, `.github/workflows/ci.yml`, `.github/workflows/security.yml`, `.github/workflows/release.yml`, `docs/ops/env-contract.md`.
 - Confirmed: Shared Azure bootstrap stays in the sibling `asset-allocation-control-plane` repo, not here. Evidence: `DEPLOYMENT_SETUP.md`, `docs/ops/env-contract.md`, `tests/test_env_contract.py`.
-- Confirmed: Rollback is digest-based for the UI image, with `API_UPSTREAM` fallback available when the issue is upstream control-plane behavior instead of the UI image itself. Evidence: `DEPLOYMENT_SETUP.md`, `.github/workflows/deploy-prod.yml`.
+- Confirmed: Rollout is release-driven from `release-manifest.json`, and rollback is digest-based through a dedicated manual workflow while `API_UPSTREAM` remains repo-var driven for upstream recovery scenarios. Evidence: `DEPLOYMENT_SETUP.md`, `.github/workflows/release.yml`, `.github/workflows/deploy-prod.yml`, `.github/workflows/deploy-ui-runtime.yml`, `.github/workflows/rollback-prod.yml`.
 - Unverified: Full Azure subscription correctness and cross-repo provisioning state are outside the evidence boundary of this repo. Evidence: `DEPLOYMENT_SETUP.md`, `docs/ops/env-contract.md`.
 
 ## Evidence Map
@@ -127,12 +129,12 @@ This document is the living architecture contract for `asset-allocation-ui`. It 
 | --- | --- | --- | --- |
 | The repo ships a standalone operator UI, not a co-hosted backend. | `README.md`, `DEPLOYMENT_SETUP.md`, `deploy/app_ui.yaml` | Confirmed | `ci.yml` build path, `deploy-prod.yml` |
 | Normal installs and releases consume a published contracts package rather than a sibling checkout. | `package.json`, `pnpm-lock.yaml`, `Dockerfile`, `.github/workflows/ci.yml`, `.github/workflows/release.yml` | Confirmed | `tests/test_multirepo_dependency_contract.py` |
-| Runtime config is injected by `/config.js` before the React bundle starts. | `index.html`, `src/config.ts`, `nginx.conf` | Confirmed | `deploy-prod.yml` verifies `/config.js` |
+| Runtime config is injected by `/config.js` before the React bundle starts. | `index.html`, `src/config.ts`, `nginx.conf` | Confirmed | `deploy-ui-runtime.yml` verifies `/config.js` |
 | Auth/session and bearer token injection are centralized. | `src/contexts/AuthContext.tsx`, `src/services/authTransport.ts`, `src/app/components/auth/OidcAccessGate.tsx` | Confirmed | `src/contexts/__tests__/AuthContext.test.tsx`, `src/app/__tests__/App.auth.test.tsx` |
 | Shared HTTP transport owns warm-up, retry, request IDs, and typed errors. | `src/services/apiService.ts` | Confirmed | `src/services/__tests__/apiService.test.ts` |
 | React Query is the canonical server-state/cache layer. | `src/providers/QueryProvider.tsx`, `src/hooks/useDataQueries.ts`, `src/hooks/useSystemStatusView.ts` | Confirmed | `ci.yml` TS and Vitest path |
 | Realtime is used for invalidation and log/event streaming. | `src/hooks/useRealtime.ts`, `src/services/realtimeBus.ts` | Confirmed | `src/hooks/useRealtime.test.tsx` |
-| Nginx preserves a single-origin browser experience by proxying config, health, API, and websocket traffic. | `nginx.conf`, `DEPLOYMENT_SETUP.md` | Confirmed | `deploy-prod.yml` |
+| Nginx preserves a single-origin browser experience by proxying config, health, API, and websocket traffic. | `nginx.conf`, `DEPLOYMENT_SETUP.md` | Confirmed | `deploy-ui-runtime.yml` |
 | Shared Azure provisioning lives outside this repo. | `DEPLOYMENT_SETUP.md`, `docs/ops/env-contract.md` | Confirmed | `tests/test_env_contract.py` |
 | The route surface is feature-oriented even though transitional legacy page modules remain. | `src/app/routes.tsx`, `src/features/*`, `src/app/components/pages/*.tsx` | Inferred | `ci.yml` build path |
 
