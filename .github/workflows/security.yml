@@ -17,6 +17,9 @@ concurrency:
   group: ui-security-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  OSV_SCANNER_VERSION: v2.3.5
+
 jobs:
   dependency-audit:
     name: dependency-audit
@@ -27,36 +30,83 @@ jobs:
         with:
           path: asset-allocation-ui
 
-      - name: Write required npmrc
-        id: npmrc
-        env:
-          NPMRC_CONTENT: ${{ secrets.NPMRC }}
+      - name: Install OSV-Scanner
         shell: bash
         run: |
           set -euo pipefail
-          : "${NPMRC_CONTENT:?Set repository secret NPMRC to a complete .npmrc file with read access to @asset-allocation/contracts.}"
-          path="${RUNNER_TEMP}/ui.npmrc"
-          printf '%s' "${NPMRC_CONTENT}" > "${path}"
-          echo "path=${path}" >> "$GITHUB_OUTPUT"
+          mkdir -p "${RUNNER_TEMP}/osv-scanner"
+          cd "${RUNNER_TEMP}/osv-scanner"
+          curl -fsSLo osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          curl -fsSLo osv-scanner_SHA256SUMS "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_SHA256SUMS"
+          grep 'osv-scanner_linux_amd64$' osv-scanner_SHA256SUMS | sha256sum -c -
+          chmod +x osv-scanner
 
-      - name: Audit UI dependencies
+      - name: Audit UI lockfile for high-severity vulnerabilities
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace" \
-            -v "${{ github.workspace }}/artifacts:/artifacts" \
-            -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
-            -w /workspace/asset-allocation-ui \
-            node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
-            bash -lc 'set -euo pipefail; corepack enable; pnpm install --frozen-lockfile; pnpm audit --json > /artifacts/pnpm-audit.json || true; pnpm audit --audit-level=high'
+          artifact_path="${GITHUB_WORKSPACE}/artifacts/osv-scan.json"
+          cd asset-allocation-ui
+
+          scan_exit=0
+          "${RUNNER_TEMP}/osv-scanner/osv-scanner" scan -L pnpm-lock.yaml --format json > "${artifact_path}" || scan_exit=$?
+
+          python3 - "${scan_exit}" "${artifact_path}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          scan_exit = int(sys.argv[1])
+          artifact_path = Path(sys.argv[2])
+
+          if scan_exit not in (0, 1):
+            raise SystemExit(scan_exit)
+
+          data = json.loads(artifact_path.read_text())
+          high_or_critical = []
+
+          for result in data.get("results", []):
+            source = result.get("source", {}).get("path", "<unknown>")
+            for package in result.get("packages", []):
+              package_info = package.get("package", {})
+              package_name = package_info.get("name", "<unknown>")
+              package_version = package_info.get("version", "<unknown>")
+
+              for group in package.get("groups", []):
+                try:
+                  score = float(group.get("max_severity") or 0)
+                except (TypeError, ValueError):
+                  score = 0.0
+
+                if score >= 7.0:
+                  high_or_critical.append(
+                    {
+                      "source": source,
+                      "package": f"{package_name}@{package_version}",
+                      "score": score,
+                      "ids": group.get("ids", []),
+                    }
+                  )
+
+          if high_or_critical:
+            print("High-severity dependency vulnerabilities detected:")
+            for finding in high_or_critical:
+              advisory_ids = ", ".join(finding["ids"]) or "unknown"
+              print(
+                f"- {finding['package']} in {finding['source']} "
+                f"(max severity {finding['score']:.1f}; ids: {advisory_ids})"
+              )
+            raise SystemExit(1)
+
+          print("No high-severity dependency vulnerabilities detected by OSV-Scanner.")
+          PY
 
       - name: Upload UI audit artifacts
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: ui-pnpm-audit
-          path: artifacts/pnpm-audit.json
+          name: ui-osv-scan
+          path: artifacts/osv-scan.json
           if-no-files-found: error
           retention-days: 14
