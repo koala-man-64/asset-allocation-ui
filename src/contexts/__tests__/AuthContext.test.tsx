@@ -39,14 +39,19 @@ function Harness() {
   return (
     <div>
       <div data-testid="ready">{String(auth.ready)}</div>
+      <div data-testid="phase">{auth.phase}</div>
+      <div data-testid="busy">{String(auth.busy)}</div>
+      <div data-testid="authenticated">{String(auth.authenticated)}</div>
       <div data-testid="error">{auth.error ?? ''}</div>
       <button onClick={() => auth.signIn('/system-status')}>Sign in</button>
+      <button onClick={() => auth.signOut()}>Sign out</button>
     </div>
   );
 }
 
 describe('AuthProvider', () => {
   beforeEach(() => {
+    window.history.pushState({}, 'Home', '/');
     window.sessionStorage.clear();
     mockMsal.initialize.mockReset();
     mockMsal.handleRedirectPromise.mockReset();
@@ -72,11 +77,18 @@ describe('AuthProvider', () => {
       </AuthProvider>
     );
 
+    expect(screen.getByTestId('phase')).toHaveTextContent('initializing');
+    expect(screen.getByTestId('busy')).toHaveTextContent('true');
+
     await waitFor(() => {
       expect(screen.getByTestId('ready')).toHaveTextContent('true');
     });
+    expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
+    expect(screen.getByTestId('busy')).toHaveTextContent('false');
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(screen.getByTestId('phase')).toHaveTextContent('redirecting');
+    expect(screen.getByTestId('busy')).toHaveTextContent('true');
 
     await waitFor(() => {
       expect(mockMsal.initialize).toHaveBeenCalled();
@@ -101,11 +113,54 @@ describe('AuthProvider', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(screen.getByTestId('phase')).toHaveTextContent('redirecting');
+    expect(screen.getByTestId('busy')).toHaveTextContent('true');
 
     await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
+      expect(screen.getByTestId('busy')).toHaveTextContent('false');
       expect(screen.getByTestId('error')).toHaveTextContent(
         'OIDC sign-in could not be started. popup blocked'
       );
+    });
+  });
+
+  it('marks the callback bootstrap as redirecting before redirect handling resolves', () => {
+    window.history.pushState({}, 'Callback', '/auth/callback');
+    mockMsal.handleRedirectPromise.mockImplementation(() => new Promise(() => {}));
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    expect(screen.getByTestId('ready')).toHaveTextContent('false');
+    expect(screen.getByTestId('phase')).toHaveTextContent('redirecting');
+    expect(screen.getByTestId('busy')).toHaveTextContent('true');
+  });
+
+  it('marks sign-out as busy as soon as the redirect starts', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockMsal.getAllAccounts.mockReturnValue([account]);
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(screen.getByTestId('phase')).toHaveTextContent('signing-out');
+    expect(screen.getByTestId('busy')).toHaveTextContent('true');
+
+    await waitFor(() => {
+      expect(mockMsal.logoutRedirect).toHaveBeenCalledWith({ account });
     });
   });
 });

@@ -8,6 +8,13 @@ import { setAccessTokenProvider } from '@/services/authTransport';
 const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
 const DEFAULT_POST_LOGIN_PATH = '/system-status';
 
+export type AuthPhase =
+  | 'initializing'
+  | 'signed-out'
+  | 'redirecting'
+  | 'authenticated'
+  | 'signing-out';
+
 function describeAuthError(prefix: string, err: unknown): string {
   const detail = err instanceof Error ? err.message.trim() : String(err ?? '').trim();
   return detail ? `${prefix} ${detail}` : prefix;
@@ -17,6 +24,8 @@ export interface AuthContextType {
   enabled: boolean;
   ready: boolean;
   authenticated: boolean;
+  phase: AuthPhase;
+  busy: boolean;
   userLabel: string | null;
   error: string | null;
   signIn: (returnPath?: string) => void;
@@ -104,12 +113,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [ready, setReady] = useState(false);
+  const [phase, setPhase] = useState<AuthPhase>(
+    enabled && typeof window !== 'undefined' && isCallbackPath(window.location.pathname)
+      ? 'redirecting'
+      : enabled
+        ? 'initializing'
+        : 'signed-out'
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ensureMsalInitialized) {
       setAccount(null);
       setError(null);
+      setPhase('signed-out');
       setReady(true);
       return;
     }
@@ -117,6 +134,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     setReady(false);
     setError(null);
+    setPhase(
+      typeof window !== 'undefined' && isCallbackPath(window.location.pathname)
+        ? 'redirecting'
+        : 'initializing'
+    );
 
     ensureMsalInitialized()
       .then((instance) =>
@@ -132,6 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (!cancelled) {
           setAccount(chosen);
+          setPhase(chosen ? 'authenticated' : 'signed-out');
           setReady(true);
         }
       })
@@ -140,6 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!cancelled) {
           setAccount(null);
           setError(describeAuthError('OIDC redirect handling failed.', err));
+          setPhase('signed-out');
           setReady(true);
         }
       });
@@ -179,8 +203,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [account, ensureMsalInitialized, oidcScopes]);
 
   const signIn = (returnPath?: string) => {
-    if (!ensureMsalInitialized) return;
+    if (!ensureMsalInitialized || phase === 'redirecting' || phase === 'signing-out') return;
     setError(null);
+    setPhase('redirecting');
     storePostLoginRedirectPath(resolveReturnPath(returnPath));
     void ensureMsalInitialized()
       .then((instance) =>
@@ -190,22 +215,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       )
       .catch((err) => {
         console.error('OIDC sign-in failed', err);
+        setPhase('signed-out');
         setError(describeAuthError('OIDC sign-in could not be started.', err));
       });
   };
 
   const signOut = () => {
-    if (!ensureMsalInitialized) return;
+    if (!ensureMsalInitialized || phase === 'redirecting' || phase === 'signing-out') return;
     setError(null);
+    setPhase('signing-out');
     void ensureMsalInitialized()
       .then((instance) => instance.logoutRedirect({ account: account ?? undefined }))
       .catch((err) => {
         console.error('OIDC sign-out failed', err);
+        setPhase(account ? 'authenticated' : 'signed-out');
         setError(describeAuthError('OIDC sign-out could not be completed.', err));
       });
   };
 
   const userLabel = account?.name || account?.username || null;
+  const busy = phase === 'initializing' || phase === 'redirecting' || phase === 'signing-out';
 
   return (
     <AuthContext.Provider
@@ -213,6 +242,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         enabled,
         ready,
         authenticated: Boolean(account),
+        phase,
+        busy,
         userLabel,
         error,
         signIn,
