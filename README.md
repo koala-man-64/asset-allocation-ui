@@ -12,6 +12,8 @@ It consumes shared TypeScript contracts from the published `@asset-allocation/co
 always-auth=true
 ```
 
+`security.yml` does not install dependencies. It scans the committed `pnpm-lock.yaml` directly with OSV-Scanner and does not require `NPMRC`.
+
 Local verification:
 
 ```powershell
@@ -35,7 +37,7 @@ If `pnpm` returns `404` for `@asset-allocation/contracts`, treat that as missing
 Canonical workflows live under `.github/workflows/`.
 
 - `ci.yml` is the required validation path for PRs and `main`.
-- `security.yml` runs dependency audits.
+- `security.yml` runs lockfile-based dependency audits with OSV-Scanner.
 - `release.yml` builds the UI image, writes `release-manifest.json`, and is the release artifact producer for prod deploys.
 - `deploy-prod.yml` auto-deploys successful `UI Release` runs on `main` and can manually redeploy the latest successful main release.
 - `rollback-prod.yml` deploys a specific prior UI image digest to prod.

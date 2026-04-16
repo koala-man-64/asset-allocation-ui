@@ -36,9 +36,10 @@ jobs:
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/osv-scanner"
           cd "${RUNNER_TEMP}/osv-scanner"
-          curl -fsSLo osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          curl -fsSLo osv-scanner_linux_amd64 "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
           curl -fsSLo osv-scanner_SHA256SUMS "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_SHA256SUMS"
           grep 'osv-scanner_linux_amd64$' osv-scanner_SHA256SUMS | sha256sum -c -
+          mv osv-scanner_linux_amd64 osv-scanner
           chmod +x osv-scanner
 
       - name: Audit UI lockfile for high-severity vulnerabilities
@@ -47,10 +48,14 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           artifact_path="${GITHUB_WORKSPACE}/artifacts/osv-scan.json"
+          temp_artifact_path="${artifact_path}.tmp"
           cd asset-allocation-ui
 
           scan_exit=0
-          "${RUNNER_TEMP}/osv-scanner/osv-scanner" scan -L pnpm-lock.yaml --format json > "${artifact_path}" || scan_exit=$?
+          "${RUNNER_TEMP}/osv-scanner/osv-scanner" scan -L pnpm-lock.yaml --format json > "${temp_artifact_path}" || scan_exit=$?
+          if [ -s "${temp_artifact_path}" ]; then
+            mv "${temp_artifact_path}" "${artifact_path}"
+          fi
 
           python3 - "${scan_exit}" "${artifact_path}" <<'PY'
           import json
@@ -62,6 +67,9 @@ jobs:
 
           if scan_exit not in (0, 1):
             raise SystemExit(scan_exit)
+
+          if not artifact_path.exists():
+            raise SystemExit("OSV scanner did not produce a JSON report.")
 
           data = json.loads(artifact_path.read_text())
           high_or_critical = []
@@ -103,10 +111,10 @@ jobs:
           PY
 
       - name: Upload UI audit artifacts
-        if: always()
+        if: ${{ always() && hashFiles('artifacts/osv-scan.json') != '' }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ui-osv-scan
           path: artifacts/osv-scan.json
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 14

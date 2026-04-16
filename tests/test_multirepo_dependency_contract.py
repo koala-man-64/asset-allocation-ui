@@ -16,6 +16,10 @@ def contracts_version() -> str:
     return package_json["dependencies"]["@asset-allocation/contracts"]
 
 
+def workflow_text(name: str) -> str:
+    return (repo_root() / ".github" / "workflows" / name).read_text(encoding="utf-8")
+
+
 def test_package_json_uses_versioned_contracts_dependency() -> None:
     text = (repo_root() / "package.json").read_text(encoding="utf-8")
     assert f'"@asset-allocation/contracts": "{contracts_version()}"' in text
@@ -39,21 +43,33 @@ def test_ui_dockerfile_does_not_copy_contracts_repo() -> None:
     assert "pnpm install --frozen-lockfile" in text
 
 
-def test_normal_workflows_do_not_checkout_contracts_repo() -> None:
-    for name in ("ci.yml", "security.yml"):
-        text = (repo_root() / ".github" / "workflows" / name).read_text(encoding="utf-8")
-        assert "Checkout contracts repository" not in text
-        assert "pnpm install --frozen-lockfile" in text
-        assert "secrets.NPMRC" in text
+def test_ci_workflow_uses_registry_auth_without_contracts_checkout() -> None:
+    text = workflow_text("ci.yml")
+    assert "Checkout contracts repository" not in text
+    assert "pnpm install --frozen-lockfile" in text
+    assert "secrets.NPMRC" in text
 
-    release_text = (repo_root() / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+def test_security_workflow_scans_lockfile_without_registry_auth() -> None:
+    text = workflow_text("security.yml")
+    assert "Checkout contracts repository" not in text
+    assert "file:/workspace/asset-allocation-contracts/ts" not in text
+    assert "file:../asset-allocation-contracts/ts" not in text
+    assert "pnpm-lock.yaml" in text
+    assert "OSV_SCANNER_VERSION" in text
+    assert "secrets.NPMRC" not in text
+    assert "pnpm install --frozen-lockfile" not in text
+
+
+def test_release_workflow_uses_registry_auth_without_contracts_checkout() -> None:
+    release_text = workflow_text("release.yml")
     assert "Checkout contracts repository" not in release_text
     assert '--secret "id=npmrc,src=${{ steps.npmrc.outputs.path }}"' in release_text
     assert "secrets.NPMRC" in release_text
 
 
 def test_contracts_compat_workflow_is_the_only_checkout_exception() -> None:
-    text = (repo_root() / ".github" / "workflows" / "contracts-compat.yml").read_text(encoding="utf-8")
+    text = workflow_text("contracts-compat.yml")
     assert "Checkout contracts repository" in text
     assert "pnpm install --frozen-lockfile" in text
     assert "file:/workspace/asset-allocation-contracts/ts" in text

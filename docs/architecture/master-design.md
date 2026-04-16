@@ -107,7 +107,7 @@ This document is the living architecture contract for `asset-allocation-ui`. It 
 | Workflow | Operational Role | Confidence | Evidence |
 | --- | --- | --- | --- |
 | `ci.yml` | Required validation path for PRs and `main`; runs actionlint, Python contract tests, focused TS tests, and build. | Confirmed | `.github/workflows/ci.yml`, `README.md` |
-| `security.yml` | Dependency audit path for the UI repo, including scheduled weekly scans. | Confirmed | `.github/workflows/security.yml`, `README.md` |
+| `security.yml` | Dependency audit path for the UI repo, including scheduled weekly OSV lockfile scans. | Confirmed | `.github/workflows/security.yml`, `README.md` |
 | `release.yml` | Builds and pushes the UI image and writes `release-manifest.json`, which becomes the deploy handoff artifact. | Confirmed | `.github/workflows/release.yml`, `README.md` |
 | `deploy-prod.yml` | Release-driven production deploy entry point; auto-deploys successful `UI Release` runs on `main` and manually redeploys the latest successful main release. | Confirmed | `.github/workflows/deploy-prod.yml`, `README.md`, `DEPLOYMENT_SETUP.md` |
 | `rollback-prod.yml` | Manual production rollback entry point for deploying a specific prior UI image digest. | Confirmed | `.github/workflows/rollback-prod.yml`, `README.md`, `DEPLOYMENT_SETUP.md` |
@@ -118,7 +118,7 @@ This document is the living architecture contract for `asset-allocation-ui`. It 
 
 - Confirmed: The UI deploys as a standalone Azure Container App with ingress, probes, and a single UI container serving Nginx. Evidence: `deploy/app_ui.yaml`, `DEPLOYMENT_SETUP.md`.
 - Confirmed: `API_UPSTREAM` is a first-class deployment contract used for proxied `/config.js`, `/healthz`, `/readyz`, and `/api/*` traffic, and the prod workflows read it only from repo vars. Evidence: `nginx.conf`, `.github/workflows/deploy-prod.yml`, `.github/workflows/deploy-ui-runtime.yml`, `.github/workflows/rollback-prod.yml`, `docs/ops/env-contract.md`, `DEPLOYMENT_SETUP.md`.
-- Confirmed: `NPMRC` is a first-class build and CI contract because the UI consumes the published contracts package from the registry. Evidence: `README.md`, `.github/workflows/ci.yml`, `.github/workflows/security.yml`, `.github/workflows/release.yml`, `docs/ops/env-contract.md`.
+- Confirmed: `NPMRC` is a first-class install, build, CI, and release contract because the UI consumes the published contracts package from the registry, while `security.yml` scans the committed lockfile directly without registry auth. Evidence: `README.md`, `Dockerfile`, `.github/workflows/ci.yml`, `.github/workflows/security.yml`, `.github/workflows/release.yml`, `docs/ops/env-contract.md`.
 - Confirmed: Shared Azure bootstrap stays in the sibling `asset-allocation-control-plane` repo, not here. Evidence: `DEPLOYMENT_SETUP.md`, `docs/ops/env-contract.md`, `tests/test_env_contract.py`.
 - Confirmed: Rollout is release-driven from `release-manifest.json`, and rollback is digest-based through a dedicated manual workflow while `API_UPSTREAM` remains repo-var driven for upstream recovery scenarios. Evidence: `DEPLOYMENT_SETUP.md`, `.github/workflows/release.yml`, `.github/workflows/deploy-prod.yml`, `.github/workflows/deploy-ui-runtime.yml`, `.github/workflows/rollback-prod.yml`.
 - Unverified: Full Azure subscription correctness and cross-repo provisioning state are outside the evidence boundary of this repo. Evidence: `DEPLOYMENT_SETUP.md`, `docs/ops/env-contract.md`.
@@ -196,6 +196,7 @@ corepack pnpm build
 
 | Date | Change | Why | Evidence Refreshed |
 | --- | --- | --- | --- |
+| 2026-04-15 | Updated the workflow contract for lockfile-only OSV security scans. | Align the architecture contract with the `security.yml` migration away from `pnpm audit` and registry-auth-dependent installs. | `README.md`, `docs/ops/env-contract.md`, `.github/workflows/security.yml`, `tests/test_multirepo_dependency_contract.py` |
 | 2026-04-06 | Initial creation of the master design document. | Establish a living architecture contract for future agents and maintainers. | `README.md`, `DEPLOYMENT_SETUP.md`, `docs/architecture/original-monolith-and-five-repo-map.md`, `docs/ops/env-contract.md`, `src/main.tsx`, `src/app/App.tsx`, `src/app/routes.tsx`, `src/config.ts`, `src/contexts/AuthContext.tsx`, `src/services/authTransport.ts`, `src/services/apiService.ts`, `src/hooks/useRealtime.ts`, `nginx.conf`, `deploy/app_ui.yaml`, `.github/workflows/ci.yml`, `.github/workflows/deploy-prod.yml` |
 
 ## Review Provenance

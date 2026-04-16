@@ -14,6 +14,6 @@ Rules:
 - `scripts/setup-env.ps1` only walks keys documented in `env-contract.csv`.
 - Azure-backed identifiers are auto-discovered when `az` is installed and logged in.
 - `API_UPSTREAM` is a first-class repo variable and falls back to the control-plane Container App FQDN when it can be discovered. Store the host only, without `https://`, because the UI nginx config prefixes the scheme itself. `deploy-prod.yml`, `rollback-prod.yml`, and `deploy-ui-runtime.yml` read it from repo vars only; there is no workflow input override.
-- `NPMRC` is a required GitHub secret for CI, release, security, Docker builds, and lockfile refreshes because `@asset-allocation/contracts` is installed from the published registry package.
+- `NPMRC` is a required GitHub secret for CI build/test, release, Docker builds, and lockfile refreshes because `@asset-allocation/contracts` is installed from the published registry package. `security.yml` scans `pnpm-lock.yaml` directly with OSV-Scanner and does not require registry auth.
 - `.env.web` is line-based, so multiline secret values such as `NPMRC` are stored with escaped `\n` and converted back to real newlines when `scripts/sync-all-to-github.ps1` publishes the secret.
 - Shared Azure provisioning lives in the sibling `asset-allocation-control-plane` repo, not here.
