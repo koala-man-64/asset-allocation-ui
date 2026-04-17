@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { StrategyDetail } from '@/types/strategy';
 
 vi.mock('@/services/authTransport', () => ({
   appendAuthHeaders: vi.fn(async (headersInput?: HeadersInit) => new Headers(headersInput))
@@ -71,7 +72,7 @@ describe('strategyApi', () => {
   });
 
   it('posts the exact strategy payload when saving', async () => {
-    const payload = {
+    const payload: StrategyDetail = {
       name: 'quality-trend',
       type: 'configured',
       description: 'desk note',

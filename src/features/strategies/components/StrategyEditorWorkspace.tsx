@@ -28,7 +28,13 @@ import { Textarea } from '@/app/components/ui/textarea';
 import { rankingApi } from '@/services/rankingApi';
 import { strategyApi } from '@/services/strategyApi';
 import { universeApi } from '@/services/universeApi';
-import type { StrategyDetail } from '@/types/strategy';
+import type {
+  ExitRulePriceField,
+  ExitRuleType,
+  IntrabarConflictPolicy,
+  RegimeBlockedAction,
+  StrategyDetail
+} from '@/types/strategy';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import {
   buildDefaultRegimePolicy,
@@ -100,7 +106,7 @@ export function StrategyEditorWorkspace({
   onSaved
 }: StrategyEditorWorkspaceProps) {
   const queryClient = useQueryClient();
-  const [newRuleType, setNewRuleType] = useState<'stop_loss_fixed' | 'take_profit_fixed' | 'trailing_stop_pct' | 'trailing_stop_atr' | 'time_stop'>('stop_loss_fixed');
+  const [newRuleType, setNewRuleType] = useState<ExitRuleType>('stop_loss_fixed');
   const [isDiscardDialogOpen, setIsDiscardDialogOpen] = useState(false);
   const baselineRef = useRef<StrategyDetail>(buildEmptyStrategy());
 
@@ -497,7 +503,7 @@ export function StrategyEditorWorkspace({
                   <Select
                     value={watchedPolicy}
                     onValueChange={(value) =>
-                      setValue('config.intrabarConflictPolicy', value, {
+                      setValue('config.intrabarConflictPolicy', value as IntrabarConflictPolicy, {
                         shouldDirty: true,
                         shouldTouch: true
                       })
@@ -620,7 +626,7 @@ export function StrategyEditorWorkspace({
                       <Select
                         value={effectiveRegimePolicy.onBlocked}
                         onValueChange={(value) =>
-                          setValue('config.regimePolicy.onBlocked', value, {
+                          setValue('config.regimePolicy.onBlocked', value as RegimeBlockedAction, {
                             shouldDirty: true,
                             shouldTouch: true
                           })
@@ -888,7 +894,7 @@ export function StrategyEditorWorkspace({
                                     : 'low')
                               }
                               onValueChange={(value) =>
-                                setValue(`config.exits.${index}.priceField` as const, value, {
+                                setValue(`config.exits.${index}.priceField` as const, value as ExitRulePriceField, {
                                   shouldDirty: true,
                                   shouldTouch: true
                                 })

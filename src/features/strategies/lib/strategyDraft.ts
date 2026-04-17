@@ -12,6 +12,14 @@ import type {
 
 export type StrategyEditorMode = 'create' | 'edit' | 'duplicate';
 
+type StrategyDetailDraftInput = Omit<StrategyDetail, 'config'> & {
+  config: Omit<StrategyDetail['config'], 'regimePolicy'> & {
+    regimePolicy?: Omit<NonNullable<StrategyDetail['config']['regimePolicy']>, 'targetGrossExposureByRegime'> & {
+      targetGrossExposureByRegime?: Partial<TargetGrossExposureByRegime>;
+    };
+  };
+};
+
 export const EXIT_RULE_OPTIONS: Array<{ value: ExitRuleType; label: string }> = [
   { value: 'stop_loss_fixed', label: 'Fixed Stop Loss' },
   { value: 'take_profit_fixed', label: 'Fixed Take Profit' },
@@ -90,7 +98,7 @@ export function buildEmptyStrategy(): StrategyDetail {
   };
 }
 
-export function normalizeStrategyDetail(strategy: StrategyDetail): StrategyDetail {
+export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): StrategyDetail {
   const base = buildEmptyStrategy();
   const incomingPolicy = strategy.config.regimePolicy;
 
