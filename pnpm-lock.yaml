@@ -313,6 +313,8 @@ packages:
 
   '@asset-allocation/contracts@1.1.0':
     resolution: {integrity: sha512-kgl499AZwHJ56UXLAayVuSbl3Cdcv9sBZLpE/mQtrepTVnV8VFO8Ib+sZIdpVBUrdUgc00FWl/bZcitDQUXAqQ==}
+  '@asset-allocation/contracts@1.1.0':
+    resolution: {integrity: sha512-LAPTfx+X1pUFvfplDaTnjz7GnOfRi1VYpwtO8Ie8c+rEDpOA+be4zslMl+3Eh1Cpa78JqEZLMGJTQJhQSwMMJQ==}
 
   '@azure/msal-browser@5.3.0':
     resolution: {integrity: sha512-WqIN2GJe6H8OfmEiXjf8y+N0LedO6lkE3JeLZqEVurvoHoHltpl3gMyfKPycAfOgNMMmlukB6XUhbXDRRSdhEQ==}
@@ -3795,6 +3797,7 @@ snapshots:
 
   '@asamuzakjp/nwsapi@2.3.9': {}
 
+  '@asset-allocation/contracts@1.1.0': {}
   '@asset-allocation/contracts@1.1.0': {}
 
   '@azure/msal-browser@5.3.0':
