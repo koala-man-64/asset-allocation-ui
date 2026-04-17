@@ -5,6 +5,7 @@ import { normalizeApiBaseUrl } from '@/utils/apiBaseUrl';
 type RuntimeUiConfigSource = Partial<UiRuntimeConfig> & {
   oidcScopes?: string[] | string;
   oidcAudience?: string[] | string;
+  uiAuthEnabled?: boolean | string;
 };
 
 declare global {
@@ -74,11 +75,16 @@ const oidcClientId = resolveString(runtimeConfig.oidcClientId, import.meta.env.V
 const oidcRedirectUri = resolveString(runtimeConfig.oidcRedirectUri);
 const oidcScopes = resolveScopes(runtimeConfig.oidcScopes ?? import.meta.env.VITE_OIDC_SCOPES);
 const oidcAudience = resolveScopes(runtimeConfig.oidcAudience);
-const oidcEnabled = resolveBoolean(
+const uiAuthEnabled = resolveBoolean(
+  runtimeConfig.uiAuthEnabled,
+  import.meta.env.VITE_UI_AUTH_ENABLED,
+  true
+);
+const oidcEnabled = uiAuthEnabled && resolveBoolean(
   runtimeConfig.oidcEnabled,
   Boolean(oidcAuthority && oidcClientId && oidcRedirectUri)
 );
-const authRequired = resolveBoolean(runtimeConfig.authRequired);
+const authRequired = uiAuthEnabled && resolveBoolean(runtimeConfig.authRequired);
 
 if (typeof window !== 'undefined') {
   const nextRuntimeConfig: RuntimeUiConfigSource = {
@@ -86,6 +92,7 @@ if (typeof window !== 'undefined') {
     apiBaseUrl,
     oidcScopes,
     oidcAudience,
+    uiAuthEnabled,
     oidcEnabled,
     authRequired
   };
@@ -103,6 +110,7 @@ if (typeof window !== 'undefined') {
 
 export const config = {
   apiBaseUrl,
+  uiAuthEnabled,
   oidcEnabled,
   authRequired,
   oidcAuthority,

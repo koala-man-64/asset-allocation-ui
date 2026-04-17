@@ -22,6 +22,8 @@ RUN rm -rf ./*
 
 COPY --from=builder /workspace/asset-allocation-ui/dist .
 COPY asset-allocation-ui/nginx.conf /etc/nginx/templates/default.conf.template
+COPY asset-allocation-ui/docker/write-ui-runtime-config.sh /docker-entrypoint.d/30-write-ui-runtime-config.sh
+RUN chmod +x /docker-entrypoint.d/30-write-ui-runtime-config.sh
 
 EXPOSE 80
 

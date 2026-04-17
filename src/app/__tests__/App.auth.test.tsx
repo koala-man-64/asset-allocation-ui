@@ -150,6 +150,19 @@ describe('App OIDC access flow', () => {
     expect(mockUseRealtime).not.toHaveBeenCalled();
   });
 
+  it('bypasses the auth gate entirely when browser auth is disabled', async () => {
+    mockConfig.oidcEnabled = false;
+    mockConfig.authRequired = false;
+    mockAuth.enabled = false;
+    window.history.pushState({}, 'System Status', '/system-status');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
+    expect(DataService.getSystemHealthWithMeta).not.toHaveBeenCalled();
+    expect(mockUseRealtime).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the API access step while the protected access probe is running', async () => {
     mockAuth.authenticated = true;
     mockAuth.phase = 'authenticated';

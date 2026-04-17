@@ -20,6 +20,7 @@ jobs:
       name: prod
     env:
       API_UPSTREAM: ${{ vars.API_UPSTREAM }}
+      UI_AUTH_ENABLED: ${{ vars.UI_AUTH_ENABLED || 'false' }}
       RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
       ACR_NAME: ${{ vars.ACR_NAME }}
       ACR_PULL_IDENTITY_NAME: ${{ vars.ACR_PULL_IDENTITY_NAME || 'asset-allocation-acr-pull-mi' }}
@@ -72,6 +73,7 @@ jobs:
         env:
           UI_IMAGE: ${{ steps.rollout.outputs.image_digest }}
           API_UPSTREAM: ${{ steps.rollout.outputs.api_upstream }}
+          UI_AUTH_ENABLED: ${{ env.UI_AUTH_ENABLED }}
           ACR_LOGIN_SERVER: ${{ steps.azure.outputs.acr_login_server }}
           ACR_PULL_IDENTITY_RESOURCE_ID: ${{ steps.azure.outputs.identity_id }}
           CONTAINER_APPS_ENVIRONMENT_ID: ${{ steps.azure.outputs.environment_id }}
@@ -108,6 +110,7 @@ jobs:
           test "${actual_image}" = "${{ steps.rollout.outputs.image_digest }}"
           curl --fail --retry 12 --retry-delay 10 --retry-connrefused "https://${fqdn}/" > /dev/null
           curl --fail --retry 12 --retry-delay 10 --retry-connrefused "https://${fqdn}/config.js" > /dev/null
+          curl --fail --retry 12 --retry-delay 10 --retry-connrefused "https://${fqdn}/ui-config.js" > /dev/null
           echo "fqdn=${fqdn}" >> "$GITHUB_OUTPUT"
 
       - name: Write deployment summary
@@ -119,6 +122,7 @@ jobs:
             echo "- Target app: \`${UI_APP_NAME}\`"
             echo "- Image: \`${{ steps.rollout.outputs.image_digest }}\`"
             echo "- API upstream: \`${{ steps.rollout.outputs.api_upstream }}\`"
+            echo "- UI auth enabled: \`${UI_AUTH_ENABLED}\`"
             echo "- FQDN: https://${{ steps.verify.outputs.fqdn }}"
             echo "- Previous image: \`${{ steps.azure.outputs.previous_image || 'none' }}\`"
             echo "- Rollback: run \`rollback-prod.yml\` with the previous image digest"

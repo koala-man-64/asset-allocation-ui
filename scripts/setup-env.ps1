@@ -2,7 +2,8 @@ param(
     [string]$EnvFilePath = "",
     [switch]$DryRun,
     [string[]]$Set = @(),
-    [string]$NpmrcPath = ""
+    [string]$NpmrcPath = "",
+    [string]$GitHubEnvironment = "prod"
 )
 
 $ErrorActionPreference = "Stop"
@@ -67,6 +68,21 @@ function Get-RepoSlug {
     }
     return ""
 }
+function Get-CurrentRepoSlug {
+    $remote = Invoke-TextCommand -FilePath "git" -ArgumentList @("-C", $repoRoot, "config", "--get", "remote.origin.url")
+    if ($remote -match "github\.com[:/](?<owner>[^/]+)/(?<repo>[^/.]+)(?:\.git)?$") {
+        return "$($matches['owner'])/$($matches['repo'])"
+    }
+    $slug = Invoke-TextCommand -FilePath "gh" -ArgumentList @("repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
+    return $slug.Trim()
+}
+function Get-RepoOwnerFromSlug {
+    param([string]$RepoSlug)
+    if ($RepoSlug -match "^(?<owner>[^/]+)/(?<repo>[^/]+)$") {
+        return $matches['owner']
+    }
+    return ""
+}
 function Select-PreferredName {
     param($Items, [string]$Preferred, [string[]]$Contains = @())
     $list = @($Items)
@@ -82,6 +98,45 @@ function Select-PreferredName {
 function New-Resolution {
     param([string]$Value = "", [string]$Source = "default", [bool]$PromptRequired = $false)
     return @{ Value = (Normalize-EnvValue -Value $Value); Source = $Source; PromptRequired = $PromptRequired }
+}
+function Load-GitHubVariableMap {
+    param(
+        [string]$RepoSlug = "",
+        [string]$EnvironmentName = ""
+    )
+    $map = @{}
+    if ([string]::IsNullOrWhiteSpace($RepoSlug) -or -not (Test-CommandAvailable -Name "gh")) {
+        return $map
+    }
+    $args = @("variable", "list", "--repo", $RepoSlug, "--json", "name,value")
+    if (-not [string]::IsNullOrWhiteSpace($EnvironmentName)) {
+        $args += @("--env", $EnvironmentName)
+    }
+    $items = Invoke-JsonCommand -FilePath "gh" -ArgumentList $args
+    foreach ($item in @($items)) {
+        if ($null -eq $item) { continue }
+        if (-not ($item.PSObject.Properties.Name -contains "name")) { continue }
+        $name = (($item.name | Out-String).Trim())
+        if ([string]::IsNullOrWhiteSpace($name)) { continue }
+        $map[$name] = Normalize-EnvValue -Value (($item.value | Out-String).Trim())
+    }
+    return $map
+}
+function Load-GitHubOrganizationVariableMap {
+    param([string]$Organization = "")
+    $map = @{}
+    if ([string]::IsNullOrWhiteSpace($Organization) -or -not (Test-CommandAvailable -Name "gh")) {
+        return $map
+    }
+    $items = Invoke-JsonCommand -FilePath "gh" -ArgumentList @("variable", "list", "--org", $Organization, "--json", "name,value")
+    foreach ($item in @($items)) {
+        if ($null -eq $item) { continue }
+        if (-not ($item.PSObject.Properties.Name -contains "name")) { continue }
+        $name = (($item.name | Out-String).Trim())
+        if ([string]::IsNullOrWhiteSpace($name)) { continue }
+        $map[$name] = Normalize-EnvValue -Value (($item.value | Out-String).Trim())
+    }
+    return $map
 }
 function Resolve-ReadableFilePath {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -111,13 +166,36 @@ foreach ($entry in $Set) {
 $existingMap = Parse-EnvFile -Path $EnvFilePath
 $templateMap = Parse-EnvFile -Path $templatePath
 $contractRows = Load-ContractRows -Path $contractPath
+$currentRepoSlug = Get-CurrentRepoSlug
+$currentRepoOwner = Get-RepoOwnerFromSlug -RepoSlug $currentRepoSlug
+$githubRepoVarMap = Load-GitHubVariableMap -RepoSlug $currentRepoSlug
+$githubEnvironmentVarMap = Load-GitHubVariableMap -RepoSlug $currentRepoSlug -EnvironmentName $GitHubEnvironment
+$githubOrganizationVarMap = Load-GitHubOrganizationVariableMap -Organization $currentRepoOwner
 $npmrcResolution = $null
 if (-not [string]::IsNullOrWhiteSpace($NpmrcPath)) {
     $npmrcResolution = New-Resolution -Value (Read-SecretFileValue -Path $NpmrcPath) -Source "file"
 }
 
+function Resolve-GitHubVariableValue {
+    param([string]$Key)
+    if ($githubEnvironmentVarMap.ContainsKey($Key)) {
+        $environmentSource = if ([string]::IsNullOrWhiteSpace($GitHubEnvironment)) { "github-env" } else { "github-env:$GitHubEnvironment" }
+        return (New-Resolution -Value $githubEnvironmentVarMap[$Key] -Source $environmentSource)
+    }
+    if ($githubRepoVarMap.ContainsKey($Key)) {
+        return (New-Resolution -Value $githubRepoVarMap[$Key] -Source "github")
+    }
+    if ($githubOrganizationVarMap.ContainsKey($Key)) {
+        return (New-Resolution -Value $githubOrganizationVarMap[$Key] -Source "github-org")
+    }
+    return (New-Resolution)
+}
 function Resolve-DiscoveredValue {
     param([string]$Key)
+    $githubResolution = Resolve-GitHubVariableValue -Key $Key
+    if (-not [string]::IsNullOrWhiteSpace($githubResolution.Value)) {
+        return $githubResolution
+    }
     switch ($Key) {
         "AZURE_TENANT_ID" {
             $account = Invoke-JsonCommand -FilePath "az" -ArgumentList @("account", "show", "-o", "json")
@@ -158,6 +236,7 @@ function Resolve-DiscoveredValue {
                 return (New-Resolution -Value $app.properties.configuration.ingress.fqdn -Source "azure")
             }
         }
+        "UI_AUTH_ENABLED" { return (New-Resolution -Value "false" -Source "default") }
         "AZURE_CLIENT_ID" {
             $items = Invoke-JsonCommand -FilePath "az" -ArgumentList @("identity", "list", "--resource-group", "AssetAllocationRG", "-o", "json")
             if ($items) {
