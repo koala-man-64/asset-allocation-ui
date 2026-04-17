@@ -26,6 +26,8 @@ properties:
       env:
       - name: API_UPSTREAM
         value: "${API_UPSTREAM}"
+      - name: API_UPSTREAM_SCHEME
+        value: "${API_UPSTREAM_SCHEME}"
       - name: UI_AUTH_ENABLED
         value: "${UI_AUTH_ENABLED}"
       resources:

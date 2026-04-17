@@ -10,6 +10,7 @@ SERVICE_ACCOUNT_NAME,deploy_var,var,deploy_config,true,Shared workload identity 
 UI_APP_NAME,deploy_var,var,deploy_config,true,Standalone UI Container App name.
 CONTRACTS_REPOSITORY,deploy_var,var,deploy_config,true,Sibling contracts repo slug used by workflows.
 CONTRACTS_REF,deploy_var,var,deploy_config,true,Contracts ref to validate against by default.
-API_UPSTREAM,deploy_var,var,deploy_config,true,Reachable control-plane host used by the UI proxy for /config.js and /api.
-UI_AUTH_ENABLED,deploy_var,var,deploy_config,true,Boolean runtime toggle for browser authentication and login in the UI container. Defaults to false and can be set true to re-enable the OIDC gate.
+API_UPSTREAM,deploy_var,var,deploy_config,true,Reachable control-plane host used by the UI proxy for /config.js and /api. Store host or host:port only.
+API_UPSTREAM_SCHEME,deploy_var,var,deploy_config,true,Scheme used by the UI proxy when connecting to API_UPSTREAM. Use https for the public ACA FQDN and http only for trusted internal upstreams.
+UI_AUTH_ENABLED,deploy_var,var,deploy_config,true,Boolean runtime toggle for browser authentication and login in the UI container. Production must be true whenever the proxied control-plane config reports authRequired=true.
 NPMRC,deploy_secret,secret,deploy_config,true,Complete .npmrc content with read access to @asset-allocation/contracts. Store multiline content in .env.web as escaped \n and sync it as the GitHub secret NPMRC.

@@ -20,6 +20,7 @@ jobs:
       name: prod
     env:
       API_UPSTREAM: ${{ vars.API_UPSTREAM }}
+      API_UPSTREAM_SCHEME: ${{ vars.API_UPSTREAM_SCHEME || 'https' }}
       UI_AUTH_ENABLED: ${{ vars.UI_AUTH_ENABLED || 'false' }}
       RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
       ACR_NAME: ${{ vars.ACR_NAME }}
@@ -38,12 +39,51 @@ jobs:
           set -euo pipefail
           image_digest="${{ inputs.image_digest }}"
           api_upstream="${API_UPSTREAM}"
+          api_upstream_scheme="$(printf '%s' "${API_UPSTREAM_SCHEME}" | tr '[:upper:]' '[:lower:]')"
           : "${image_digest:?image_digest is required}"
           : "${api_upstream:?vars.API_UPSTREAM is required}"
+          case "${api_upstream_scheme}" in
+            http|https) ;;
+            *)
+              echo "vars.API_UPSTREAM_SCHEME must resolve to http or https (received: ${api_upstream_scheme})." >&2
+              exit 1
+              ;;
+          esac
           {
             echo "image_digest=${image_digest}"
             echo "api_upstream=${api_upstream}"
+            echo "api_upstream_scheme=${api_upstream_scheme}"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Validate upstream auth contract
+        env:
+          API_UPSTREAM: ${{ steps.rollout.outputs.api_upstream }}
+          API_UPSTREAM_SCHEME: ${{ steps.rollout.outputs.api_upstream_scheme }}
+          UI_AUTH_ENABLED: ${{ env.UI_AUTH_ENABLED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          config_url="${API_UPSTREAM_SCHEME}://${API_UPSTREAM}/config.js"
+          config_js="$(curl --silent --show-error --retry 12 --retry-delay 10 --retry-connrefused "${config_url}")"
+          CONFIG_JS="${config_js}" python - "${UI_AUTH_ENABLED}" <<'PY'
+          import json
+          import os
+          import re
+          import sys
+
+          text = os.environ["CONFIG_JS"]
+          match = re.search(r"window\.__API_UI_CONFIG__\s*=\s*(\{.*\})\s*;", text, re.S)
+          if not match:
+              raise SystemExit("Could not parse upstream /config.js payload.")
+
+          cfg = json.loads(match.group(1))
+          ui_auth_enabled = sys.argv[1].strip().lower() in {"1", "true", "yes", "y", "on"}
+          if cfg.get("authRequired") and not ui_auth_enabled:
+              raise SystemExit(
+                  "UI_AUTH_ENABLED=false is invalid because the proxied control-plane config reports authRequired=true."
+              )
+          print(f"upstream_auth_required={cfg.get('authRequired')}")
+          PY
 
       - name: Azure login
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
@@ -73,6 +113,7 @@ jobs:
         env:
           UI_IMAGE: ${{ steps.rollout.outputs.image_digest }}
           API_UPSTREAM: ${{ steps.rollout.outputs.api_upstream }}
+          API_UPSTREAM_SCHEME: ${{ steps.rollout.outputs.api_upstream_scheme }}
           UI_AUTH_ENABLED: ${{ env.UI_AUTH_ENABLED }}
           ACR_LOGIN_SERVER: ${{ steps.azure.outputs.acr_login_server }}
           ACR_PULL_IDENTITY_RESOURCE_ID: ${{ steps.azure.outputs.identity_id }}
@@ -105,12 +146,53 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          expect_one_of() {
+            local method="$1"
+            local url="$2"
+            shift 2
+            local status
+            local body_file
+            body_file="$(mktemp)"
+            status="$(curl --silent --show-error --retry 12 --retry-delay 10 --retry-connrefused --output "${body_file}" --write-out '%{http_code}' --request "${method}" "${url}")"
+            for allowed in "$@"; do
+              if [ "${status}" = "${allowed}" ]; then
+                rm -f "${body_file}"
+                return 0
+              fi
+            done
+            echo "Unexpected HTTP status ${status} for ${method} ${url}. Allowed: $*" >&2
+            cat "${body_file}" >&2 || true
+            rm -f "${body_file}"
+            exit 1
+          }
+
           fqdn="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.configuration.ingress.fqdn' -o tsv)"
           actual_image="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.template.containers[0].image' -o tsv)"
           test "${actual_image}" = "${{ steps.rollout.outputs.image_digest }}"
-          curl --fail --retry 12 --retry-delay 10 --retry-connrefused "https://${fqdn}/" > /dev/null
-          curl --fail --retry 12 --retry-delay 10 --retry-connrefused "https://${fqdn}/config.js" > /dev/null
-          curl --fail --retry 12 --retry-delay 10 --retry-connrefused "https://${fqdn}/ui-config.js" > /dev/null
+          expect_one_of GET "https://${fqdn}/" 200
+          config_js="$(curl --silent --show-error --retry 12 --retry-delay 10 --retry-connrefused "https://${fqdn}/config.js")"
+          CONFIG_JS="${config_js}" python - "${UI_AUTH_ENABLED}" <<'PY'
+          import json
+          import os
+          import re
+          import sys
+
+          text = os.environ["CONFIG_JS"]
+          match = re.search(r"window\.__API_UI_CONFIG__\s*=\s*(\{.*\})\s*;", text, re.S)
+          if not match:
+              raise SystemExit("Could not parse proxied /config.js payload.")
+
+          cfg = json.loads(match.group(1))
+          ui_auth_enabled = sys.argv[1].strip().lower() in {"1", "true", "yes", "y", "on"}
+          if cfg.get("authRequired") and not ui_auth_enabled:
+              raise SystemExit(
+                  "UI_AUTH_ENABLED=false is invalid because the proxied /config.js reports authRequired=true."
+              )
+          print(f"proxied_auth_required={cfg.get('authRequired')}")
+          PY
+          expect_one_of GET "https://${fqdn}/ui-config.js" 200
+          expect_one_of GET "https://${fqdn}/api/system/status-view" 200 401 403 405
+          expect_one_of POST "https://${fqdn}/api/realtime/ticket" 200 401 403 405
           echo "fqdn=${fqdn}" >> "$GITHUB_OUTPUT"
 
       - name: Write deployment summary
@@ -121,6 +203,7 @@ jobs:
             echo ""
             echo "- Target app: \`${UI_APP_NAME}\`"
             echo "- Image: \`${{ steps.rollout.outputs.image_digest }}\`"
+            echo "- API upstream scheme: \`${{ steps.rollout.outputs.api_upstream_scheme }}\`"
             echo "- API upstream: \`${{ steps.rollout.outputs.api_upstream }}\`"
             echo "- UI auth enabled: \`${UI_AUTH_ENABLED}\`"
             echo "- FQDN: https://${{ steps.verify.outputs.fqdn }}"

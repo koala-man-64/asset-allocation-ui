@@ -43,7 +43,7 @@ Use only these workflow entry points:
 - Use manual `deploy-prod.yml` runs from `main` only to redeploy the latest successful main release artifact.
 - Use `rollback-prod.yml` from `main` only when you need to deploy a specific prior digest.
 - Run `contracts-compat.yml` when `contracts_released` is dispatched or when validating a candidate contracts ref manually.
-- Treat `API_UPSTREAM` as the source of truth for proxied `/config.js` and `/api/*` traffic.
+- Treat `API_UPSTREAM` plus `API_UPSTREAM_SCHEME` as the source of truth for proxied `/config.js` and `/api/*` traffic.
 
 ## Shared Azure Foundation
 
@@ -79,8 +79,12 @@ GitHub variables:
 - `CONTAINER_APPS_ENVIRONMENT_NAME`
 - `UI_APP_NAME`
 - `API_UPSTREAM`
+- `API_UPSTREAM_SCHEME`
+- `UI_AUTH_ENABLED`
 
-`API_UPSTREAM` must point to the control-plane host that serves `/config.js`, `/healthz`, `/readyz`, and `/api/*`. Store the host or host:port only, without `https://`.
+`API_UPSTREAM` must point to the control-plane host that serves `/config.js`, `/healthz`, `/readyz`, and `/api/*`. Store the host or host:port only.
+`API_UPSTREAM_SCHEME` controls how the UI proxy reaches that host. Use `https` for the public control-plane ACA FQDN and `http` only for trusted internal upstreams that do not redirect.
+`UI_AUTH_ENABLED` must be `true` in production whenever the proxied control-plane `/config.js` reports `authRequired=true`.
 
 GitHub secrets:
 
@@ -105,33 +109,35 @@ GitHub secrets:
 8. Verify:
    - `/`
    - `/config.js`
+   - `/system-status` loads without `System Link Failure`
+   - DevTools show same-origin `/api/...` requests without `301` redirects or CORS/preflight failures
    - browser sign-in flow against the Entra UI app registration
 
 ## Rollback
 
 - Capture the previous `asset-allocation-ui` image digest before every deployment.
 - Roll back by running `.github/workflows/rollback-prod.yml` from `main` with that previous digest.
-- If the issue is upstream API behavior rather than the UI image, update the repo variable `API_UPSTREAM` to the last known-good control-plane host and rerun `.github/workflows/deploy-prod.yml`.
+- If the issue is upstream API behavior rather than the UI image, update `API_UPSTREAM` and, when needed, `API_UPSTREAM_SCHEME` to the last known-good control-plane route and rerun `.github/workflows/deploy-prod.yml`.
 
 ## Troubleshoot
 
 - If `ci.yml`, `security.yml`, or `release.yml` fails with `404` for `@asset-allocation/contracts`, the `NPMRC` secret is missing, malformed, or does not have package read access.
 - If local lockfile refresh fails with `404` for `@asset-allocation/contracts`, set `NPM_CONFIG_USERCONFIG` to a valid `.npmrc` file and rerun `corepack pnpm install --lockfile-only --no-frozen-lockfile`.
 - If Docker build fails before install, verify the build was invoked with `--secret id=npmrc,src=<path-to-npmrc>`.
-- If `deploy-prod.yml` fails before apply, verify the selected release uploaded the `ui-release` artifact, then verify `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APPS_ENVIRONMENT_NAME`, and `API_UPSTREAM`.
-- If `deploy-prod.yml` fails verification, inspect the public FQDN, `/`, and `/config.js`, then confirm the proxied control-plane host is reachable.
+- If `deploy-prod.yml` fails before apply, verify the selected release uploaded the `ui-release` artifact, then verify `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APPS_ENVIRONMENT_NAME`, `API_UPSTREAM`, `API_UPSTREAM_SCHEME`, and `UI_AUTH_ENABLED`.
+- If `deploy-prod.yml` fails verification, inspect the public FQDN, `/`, `/config.js`, `/api/system/status-view`, and `/api/realtime/ticket`, then confirm the proxied control-plane host is reachable without redirecting the browser cross-origin.
 
 ## Dependencies
 
 - Published `@asset-allocation/contracts` package plus registry read credentials in `NPMRC`
-- Control-plane host exposed via `API_UPSTREAM`
+- Control-plane host and transport exposed via `API_UPSTREAM` and `API_UPSTREAM_SCHEME`
 - Azure OIDC credentials in GitHub variables
 - `prod` GitHub environment for deploy workflow
 - Standalone `asset-allocation-ui` Container App in `AssetAllocationRG`
 
 ## Notes
 
-- `API_UPSTREAM` is a repo-synced GitHub variable consumed directly by the prod deploy and rollback workflows; there is no workflow input override.
+- `API_UPSTREAM`, `API_UPSTREAM_SCHEME`, and `UI_AUTH_ENABLED` are repo-synced GitHub variables consumed directly by the prod deploy and rollback workflows; there is no workflow input override.
 - Manual `deploy-prod.yml` and `rollback-prod.yml` runs must be started from `main`.
 - `NPMRC` is now a repo-synced GitHub secret and normal install paths use `--frozen-lockfile`.
 - This repo does not own shared Azure provisioning scripts.

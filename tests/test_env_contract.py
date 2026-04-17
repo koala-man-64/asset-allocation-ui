@@ -98,6 +98,8 @@ def test_ui_runtime_deploy_workflow_uses_repo_var_only() -> None:
     assert "workflow_call:" in text
     assert "image_digest:" in text
     assert "vars.API_UPSTREAM" in text
+    assert "vars.API_UPSTREAM_SCHEME" in text
+    assert "vars.UI_AUTH_ENABLED" in text
     assert "contracts_version" not in text
 
 
@@ -110,10 +112,29 @@ def test_ui_rollback_workflow_requires_only_image_digest() -> None:
     assert "uses: ./.github/workflows/deploy-ui-runtime.yml" in text
 
 
-def test_setup_env_discovers_api_upstream_as_host_only() -> None:
+def test_setup_env_discovers_api_upstream_host_and_scheme() -> None:
     text = (repo_root() / "scripts" / "setup-env.ps1").read_text(encoding="utf-8")
     assert '$app.properties.configuration.ingress.fqdn' in text
     assert '"https://$($app.properties.configuration.ingress.fqdn)"' not in text
+    assert '"API_UPSTREAM_SCHEME"' in text
+    assert 'return (New-Resolution -Value "https" -Source "azure")' in text
+
+
+def test_ui_manifest_carries_upstream_host_and_scheme() -> None:
+    text = (repo_root() / "deploy" / "app_ui.yaml").read_text(encoding="utf-8")
+    assert '- name: API_UPSTREAM' in text
+    assert 'value: "${API_UPSTREAM}"' in text
+    assert '- name: API_UPSTREAM_SCHEME' in text
+    assert 'value: "${API_UPSTREAM_SCHEME}"' in text
+
+
+def test_ui_runtime_deploy_workflow_verifies_proxied_api_contract() -> None:
+    text = workflow_text("deploy-ui-runtime.yml")
+    assert 'UI_AUTH_ENABLED=false is invalid because the proxied /config.js reports authRequired=true.' in text
+    assert 'vars.API_UPSTREAM_SCHEME || \'https\'' in text
+    assert 'https://${fqdn}/api/system/status-view' in text
+    assert 'https://${fqdn}/api/realtime/ticket' in text
+    assert 'Allowed: $*' in text
 
 
 def test_ui_release_workflow_fails_fast_when_azure_repo_vars_are_missing() -> None:
@@ -140,5 +161,14 @@ def test_setup_env_dry_run_reports_sources_without_prompting() -> None:
         text=True,
     )
     stdout = completed.stdout
-    assert "source=azure" in stdout or "source=default" in stdout or "source=git" in stdout
+    assert any(
+        marker in stdout
+        for marker in (
+            "source=existing",
+            "source=azure",
+            "source=default",
+            "source=git",
+            "source=github",
+        )
+    )
     assert "prompt_required=" in stdout

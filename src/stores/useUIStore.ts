@@ -1,5 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import {
+  createDefaultNavOrderBySection,
+  hasKnownNavPath,
+  moveItem,
+  moveNavItemWithinSectionOrder,
+  normalizeNavOrderBySection,
+  normalizePinnedNavPaths,
+  type NavOrderBySection,
+  type NavSectionKey
+} from '@/app/navigationModel';
+
+export const UI_STORAGE_KEY = 'ui-storage';
 
 interface UIState {
   // Appearance
@@ -29,6 +41,14 @@ interface UIState {
   addToCart: (runId: string) => void;
   removeFromCart: (runId: string) => void;
   clearCart: () => void;
+
+  // Sidebar personalization
+  pinnedNavPaths: string[];
+  navOrderBySection: NavOrderBySection;
+  togglePinnedNavItem: (path: string) => void;
+  moveNavItemWithinSection: (sectionKey: NavSectionKey, fromIndex: number, toIndex: number) => void;
+  movePinnedNavItem: (fromIndex: number, toIndex: number) => void;
+  resetNavCustomization: () => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -43,6 +63,8 @@ export const useUIStore = create<UIState>()(
       costModel: 'Passive bps',
       environment: 'DEV',
       selectedRuns: [],
+      pinnedNavPaths: [],
+      navOrderBySection: createDefaultNavOrderBySection(),
 
       // Actions
       toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
@@ -62,16 +84,89 @@ export const useUIStore = create<UIState>()(
         set((state) => ({
           selectedRuns: state.selectedRuns.filter((id) => id !== runId)
         })),
-      clearCart: () => set({ selectedRuns: [] })
+      clearCart: () => set({ selectedRuns: [] }),
+
+      togglePinnedNavItem: (path) =>
+        set((state) => {
+          if (!hasKnownNavPath(path)) {
+            return {};
+          }
+
+          const pinnedNavPaths = normalizePinnedNavPaths(state.pinnedNavPaths);
+          const isPinned = pinnedNavPaths.includes(path);
+
+          return {
+            pinnedNavPaths: isPinned
+              ? pinnedNavPaths.filter((currentPath) => currentPath !== path)
+              : [...pinnedNavPaths, path]
+          };
+        }),
+
+      moveNavItemWithinSection: (sectionKey, fromIndex, toIndex) =>
+        set((state) => {
+          const navOrderBySection = normalizeNavOrderBySection(state.navOrderBySection);
+          const currentSectionOrder = navOrderBySection[sectionKey];
+          const nextSectionOrder = moveNavItemWithinSectionOrder(
+            currentSectionOrder,
+            state.pinnedNavPaths,
+            fromIndex,
+            toIndex
+          );
+
+          if (nextSectionOrder.every((path, index) => path === currentSectionOrder[index])) {
+            return {};
+          }
+
+          return {
+            navOrderBySection: {
+              ...navOrderBySection,
+              [sectionKey]: nextSectionOrder
+            }
+          };
+        }),
+
+      movePinnedNavItem: (fromIndex, toIndex) =>
+        set((state) => {
+          const pinnedNavPaths = normalizePinnedNavPaths(state.pinnedNavPaths);
+          const nextPinnedNavPaths = moveItem(pinnedNavPaths, fromIndex, toIndex);
+
+          if (nextPinnedNavPaths.every((path, index) => path === pinnedNavPaths[index])) {
+            return {};
+          }
+
+          return {
+            pinnedNavPaths: nextPinnedNavPaths
+          };
+        }),
+
+      resetNavCustomization: () =>
+        set({
+          pinnedNavPaths: [],
+          navOrderBySection: createDefaultNavOrderBySection()
+        })
     }),
     {
-      name: 'ui-storage',
+      name: UI_STORAGE_KEY,
+      merge: (persistedState, currentState) => {
+        const mergedState = {
+          ...currentState,
+          ...(persistedState as Partial<UIState>)
+        };
+
+        return {
+          ...mergedState,
+          pinnedNavPaths: normalizePinnedNavPaths(mergedState.pinnedNavPaths),
+          navOrderBySection: normalizeNavOrderBySection(mergedState.navOrderBySection)
+        };
+      },
       partialize: (state) => ({
         // Only persist settings the user would expect to stick
         isDarkMode: state.isDarkMode,
         benchmark: state.benchmark,
         costModel: state.costModel,
-        dateRange: state.dateRange
+        dateRange: state.dateRange,
+        pinnedNavPaths: state.pinnedNavPaths,
+        navOrderBySection: state.navOrderBySection
       })
     }
   )

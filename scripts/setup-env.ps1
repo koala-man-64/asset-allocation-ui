@@ -236,7 +236,14 @@ function Resolve-DiscoveredValue {
                 return (New-Resolution -Value $app.properties.configuration.ingress.fqdn -Source "azure")
             }
         }
-        "UI_AUTH_ENABLED" { return (New-Resolution -Value "false" -Source "default") }
+        "API_UPSTREAM_SCHEME" {
+            $app = Invoke-JsonCommand -FilePath "az" -ArgumentList @("containerapp", "show", "--name", "asset-allocation-api", "--resource-group", "AssetAllocationRG", "-o", "json")
+            if ($app -and $app.properties.configuration.ingress.fqdn) {
+                return (New-Resolution -Value "https" -Source "azure")
+            }
+            return (New-Resolution -Value "https" -Source "default")
+        }
+        "UI_AUTH_ENABLED" { return (New-Resolution -Value "true" -Source "default") }
         "AZURE_CLIENT_ID" {
             $items = Invoke-JsonCommand -FilePath "az" -ArgumentList @("identity", "list", "--resource-group", "AssetAllocationRG", "-o", "json")
             if ($items) {
