@@ -94,6 +94,7 @@ describe('RunCart', () => {
 
     expect(screen.getByText('Strategy A')).toBeDefined();
     expect(screen.getByText('Strategy B')).toBeDefined();
+    expect(mockedUseRunSummaries).toHaveBeenCalledWith(selectedRuns);
 
     const compareButton = screen.getByText(/Compare 2 Runs/i);
     expect(compareButton).not.toHaveProperty('disabled', true);

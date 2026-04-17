@@ -13,6 +13,7 @@ describe('config auth overrides', () => {
       oidcAuthority: 'https://login.microsoftonline.com/example',
       oidcClientId: 'spa-client-id',
       oidcRedirectUri: 'https://asset-allocation.example.com/auth/callback',
+      oidcPostLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete',
       oidcScopes: ['api://asset-allocation-api/user_impersonation'],
       oidcEnabled: true,
       authRequired: true,
@@ -24,6 +25,9 @@ describe('config auth overrides', () => {
     expect(config.uiAuthEnabled).toBe(false);
     expect(config.oidcEnabled).toBe(false);
     expect(config.authRequired).toBe(false);
+    expect(config.oidcPostLogoutRedirectUri).toBe(
+      'https://asset-allocation.example.com/auth/logout-complete'
+    );
   });
 
   it('allows Vite env to disable browser auth before runtime config is provided', async () => {
@@ -39,5 +43,20 @@ describe('config auth overrides', () => {
     expect(config.uiAuthEnabled).toBe(false);
     expect(config.oidcEnabled).toBe(false);
     expect(config.authRequired).toBe(false);
+  });
+
+  it('derives the logout-complete URI when runtime config only provides the callback URI', async () => {
+    window.__API_UI_CONFIG__ = {
+      apiBaseUrl: '/api',
+      oidcEnabled: true,
+      authRequired: true,
+      oidcRedirectUri: 'https://asset-allocation.example.com/auth/callback'
+    };
+
+    const { config } = await import('./config');
+
+    expect(config.oidcPostLogoutRedirectUri).toBe(
+      'https://asset-allocation.example.com/auth/logout-complete'
+    );
   });
 });

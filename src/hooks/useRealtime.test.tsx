@@ -14,7 +14,7 @@ vi.mock('sonner', () => ({
 }));
 
 import { useRealtime } from './useRealtime';
-import { setAccessTokenProvider } from '@/services/authTransport';
+import { setAccessTokenProvider, setInteractiveAuthHandler } from '@/services/authTransport';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { REALTIME_SUBSCRIBE_EVENT, addConsoleLogStreamListener } from '@/services/realtimeBus';
 
@@ -86,6 +86,7 @@ describe('useRealtime', () => {
       }) as unknown as typeof fetch
     );
     setAccessTokenProvider(null);
+    setInteractiveAuthHandler(null);
     (window as Window & { __API_UI_CONFIG__?: Record<string, unknown> }).__API_UI_CONFIG__ = {
       apiBaseUrl: '/api'
     };
@@ -96,6 +97,7 @@ describe('useRealtime', () => {
     vi.useRealTimers();
     mockToastError.mockReset();
     setAccessTokenProvider(null);
+    setInteractiveAuthHandler(null);
     delete (window as Window & { __API_UI_CONFIG__?: Record<string, unknown> }).__API_UI_CONFIG__;
   });
 
@@ -347,6 +349,29 @@ describe('useRealtime', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(mockToastError).toHaveBeenCalledWith('Realtime updates unavailable: Unauthorized');
     });
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it('suppresses unauthorized toasts when a 401 ticket failure starts reauth', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => 'Unauthorized'
+    });
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    setInteractiveAuthHandler(async () => undefined);
+
+    const queryClient = createQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(mockToastError).not.toHaveBeenCalled();
     expect(MockWebSocket.instances).toHaveLength(0);
   });
 });

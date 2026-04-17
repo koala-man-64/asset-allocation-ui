@@ -5,12 +5,14 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import App from '../App';
 import { renderWithProviders } from '@/test/utils';
 import { DataService } from '@/services/DataService';
+import { ApiError } from '@/services/apiService';
 
 const mockUseRealtime = vi.hoisted(() => vi.fn());
 const mockConfig = vi.hoisted(() => ({
   apiBaseUrl: '/api',
   oidcEnabled: true,
-  authRequired: true
+  authRequired: true,
+  oidcPostLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
 }));
 
 const mockAuth = vi.hoisted(() => ({
@@ -26,6 +28,7 @@ const mockAuth = vi.hoisted(() => ({
 }));
 
 const consumePostLoginRedirectPath = vi.hoisted(() => vi.fn(() => '/system-status'));
+const peekPostLoginRedirectPath = vi.hoisted(() => vi.fn(() => '/postgres-explorer?foo=1'));
 
 vi.mock('@/hooks/useRealtime', () => ({
   useRealtime: mockUseRealtime
@@ -34,7 +37,8 @@ vi.mock('@/hooks/useRealtime', () => ({
 vi.mock('@/contexts/AuthContext', () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
   useAuth: () => mockAuth,
-  consumePostLoginRedirectPath
+  consumePostLoginRedirectPath,
+  peekPostLoginRedirectPath
 }));
 
 vi.mock('@/config', () => ({
@@ -43,6 +47,7 @@ vi.mock('@/config', () => ({
 
 vi.mock('@/services/DataService', () => ({
   DataService: {
+    getAuthSessionStatusWithMeta: vi.fn(),
     getSystemHealthWithMeta: vi.fn()
   }
 }));
@@ -68,6 +73,9 @@ describe('App OIDC access flow', () => {
     mockAuth.signOut.mockReset();
     consumePostLoginRedirectPath.mockReset();
     consumePostLoginRedirectPath.mockReturnValue('/system-status');
+    peekPostLoginRedirectPath.mockReset();
+    peekPostLoginRedirectPath.mockReturnValue('/postgres-explorer?foo=1');
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockReset();
     vi.mocked(DataService.getSystemHealthWithMeta).mockReset();
   });
 
@@ -80,11 +88,11 @@ describe('App OIDC access flow', () => {
 
     renderWithProviders(<App />);
 
-    expect(await screen.findByText('Sign in required')).toBeInTheDocument();
+    expect(await screen.findByText('Sign-in required')).toBeInTheDocument();
     expect(screen.getByTestId('auth-step-sign-in')).toHaveAttribute('data-state', 'active');
-    expect(DataService.getSystemHealthWithMeta).not.toHaveBeenCalled();
+    expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue sign-in' }));
     expect(mockAuth.signIn).toHaveBeenCalledWith('/system-status');
   });
 
@@ -92,7 +100,7 @@ describe('App OIDC access flow', () => {
     window.history.pushState({}, 'System Status', '/system-status');
 
     const view = renderWithProviders(<App />);
-    expect(await screen.findByText('Sign in required')).toBeInTheDocument();
+    expect(await screen.findByText('Sign-in required')).toBeInTheDocument();
 
     mockAuth.signIn.mockImplementation(() => {
       mockAuth.phase = 'redirecting';
@@ -100,7 +108,7 @@ describe('App OIDC access flow', () => {
       view.rerender(<App />);
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue sign-in' }));
 
     expect(mockAuth.signIn).toHaveBeenCalledWith('/system-status');
     expect(screen.getByRole('button', { name: 'Redirecting...' })).toBeDisabled();
@@ -113,7 +121,7 @@ describe('App OIDC access flow', () => {
 
     renderWithProviders(<App />);
 
-    expect(await screen.findByText('Sign in required')).toBeInTheDocument();
+    expect(await screen.findByText('Sign-in required')).toBeInTheDocument();
     expect(screen.getByText(/popup blocked/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(screen.getByTestId('auth-step-redirect')).toHaveAttribute('data-state', 'error');
@@ -127,14 +135,14 @@ describe('App OIDC access flow', () => {
 
     renderWithProviders(<App />);
 
-    expect(screen.getByText('Redirecting to sign in')).toBeInTheDocument();
-    expect(screen.queryByText(/The browser is still working\./i)).not.toBeInTheDocument();
+    expect(screen.getByText('Continuing sign-in')).toBeInTheDocument();
+    expect(screen.queryByText(/The redirect is taking longer/i)).not.toBeInTheDocument();
 
     await act(async () => {
       vi.advanceTimersByTime(4000);
     });
 
-    expect(screen.getByText(/The browser is still working\./i)).toBeInTheDocument();
+    expect(screen.getByText(/The redirect is taking longer/i)).toBeInTheDocument();
   });
 
   it('shows a deployment misconfiguration screen when auth is required but browser OIDC is unavailable', async () => {
@@ -146,7 +154,7 @@ describe('App OIDC access flow', () => {
 
     expect(await screen.findByText('Deployment auth misconfigured')).toBeInTheDocument();
     expect(screen.getByText(/UI_OIDC_CLIENT_ID/i)).toBeInTheDocument();
-    expect(DataService.getSystemHealthWithMeta).not.toHaveBeenCalled();
+    expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
     expect(mockUseRealtime).not.toHaveBeenCalled();
   });
 
@@ -159,14 +167,14 @@ describe('App OIDC access flow', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
-    expect(DataService.getSystemHealthWithMeta).not.toHaveBeenCalled();
-    expect(mockUseRealtime).toHaveBeenCalledTimes(1);
+    expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
+    expect(mockUseRealtime).toHaveBeenCalled();
   });
 
   it('shows the API access step while the protected access probe is running', async () => {
     mockAuth.authenticated = true;
     mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getSystemHealthWithMeta).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockImplementation(() => new Promise(() => {}));
     window.history.pushState({}, 'System Status', '/system-status');
 
     renderWithProviders(<App />);
@@ -178,23 +186,30 @@ describe('App OIDC access flow', () => {
   it('renders the protected route after the access probe succeeds', async () => {
     mockAuth.authenticated = true;
     mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getSystemHealthWithMeta).mockResolvedValue({
-      data: {} as never,
-      meta: { requestId: 'req-1', status: 200, durationMs: 10, url: '/api/system/health' }
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue({
+      data: {
+        authMode: 'oidc',
+        subject: 'user-123',
+        displayName: 'Ada Lovelace',
+        username: 'ada@example.com',
+        requiredRoles: ['AssetAllocation.Access'],
+        grantedRoles: ['AssetAllocation.Access']
+      },
+      meta: { requestId: 'req-1', status: 200, durationMs: 10, url: '/api/auth/session' }
     });
     window.history.pushState({}, 'System Status', '/system-status');
 
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
-    expect(DataService.getSystemHealthWithMeta).toHaveBeenCalledTimes(1);
+    expect(DataService.getAuthSessionStatusWithMeta).toHaveBeenCalledTimes(1);
   });
 
   it('shows an access denied screen when the API returns 403', async () => {
     mockAuth.authenticated = true;
     mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getSystemHealthWithMeta).mockRejectedValue(
-      new Error('API Error: 403 Forbidden [requestId=req-1] - {"detail":"Missing required roles."}')
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockRejectedValue(
+      new ApiError(403, 'API Error: 403 Forbidden [requestId=req-1] - {"detail":"Missing required roles."}')
     );
     window.history.pushState({}, 'System Status', '/system-status');
 
@@ -209,7 +224,7 @@ describe('App OIDC access flow', () => {
   it('keeps retry and sign-out actions when the access probe fails generically', async () => {
     mockAuth.authenticated = true;
     mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getSystemHealthWithMeta).mockRejectedValue(new Error('Gateway timeout'));
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockRejectedValue(new Error('Gateway timeout'));
     window.history.pushState({}, 'System Status', '/system-status');
 
     renderWithProviders(<App />);
@@ -236,9 +251,14 @@ describe('App OIDC access flow', () => {
   it('completes the callback route and returns to the saved location', async () => {
     mockAuth.authenticated = true;
     mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getSystemHealthWithMeta).mockResolvedValue({
-      data: {} as never,
-      meta: { requestId: 'req-2', status: 200, durationMs: 10, url: '/api/system/health' }
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue({
+      data: {
+        authMode: 'oidc',
+        subject: 'user-123',
+        requiredRoles: [],
+        grantedRoles: []
+      },
+      meta: { requestId: 'req-2', status: 200, durationMs: 10, url: '/api/auth/session' }
     });
     window.history.pushState({}, 'Callback', '/auth/callback');
 
@@ -248,5 +268,46 @@ describe('App OIDC access flow', () => {
       expect(consumePostLoginRedirectPath).toHaveBeenCalledTimes(1);
       expect(screen.getByTestId('mock-system-status')).toBeInTheDocument();
     });
+  });
+
+  it('falls back to the legacy system-health probe while /api/auth/session is unavailable', async () => {
+    mockAuth.authenticated = true;
+    mockAuth.phase = 'authenticated';
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockRejectedValue(
+      new ApiError(404, 'API Error: 404 Not Found [requestId=req-3] - {"detail":"Not Found"}')
+    );
+    vi.mocked(DataService.getSystemHealthWithMeta).mockResolvedValue({
+      data: {} as never,
+      meta: { requestId: 'req-4', status: 200, durationMs: 10, url: '/api/system/health' }
+    });
+    window.history.pushState({}, 'System Status', '/system-status');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
+    expect(DataService.getAuthSessionStatusWithMeta).toHaveBeenCalledTimes(1);
+    expect(DataService.getSystemHealthWithMeta).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a neutral signed-out screen on the logout-complete route', async () => {
+    window.history.pushState({}, 'Logout Complete', '/auth/logout-complete');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByText('Signed out')).toBeInTheDocument();
+    expect(screen.getByText(/Signed out successfully/i)).toBeInTheDocument();
+  });
+
+  it('retries callback sign-in with the preserved deep link', async () => {
+    mockAuth.ready = true;
+    mockAuth.phase = 'signed-out';
+    mockAuth.error = 'OIDC sign-in could not be completed. correlation-id=123';
+    window.history.pushState({}, 'Callback', '/auth/callback');
+
+    renderWithProviders(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(peekPostLoginRedirectPath).toHaveBeenCalledTimes(1);
+    expect(mockAuth.signIn).toHaveBeenCalledWith('/postgres-explorer?foo=1');
   });
 });

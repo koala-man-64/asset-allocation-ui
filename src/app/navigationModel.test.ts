@@ -52,7 +52,7 @@ describe('navigationModel', () => {
 
     expect(pinnedItems.map((item) => item.label)).toEqual([
       'Ranking Configurations',
-      'Run Configurations'
+      'Strategies'
     ]);
 
     const liveOperationsSection = visibleSections.find(

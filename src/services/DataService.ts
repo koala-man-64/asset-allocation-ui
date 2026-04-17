@@ -3,6 +3,7 @@ import type { DomainMetadata, SystemHealth } from '@/types/strategy';
 import type {
   AdlsFilePreviewResponse,
   AdlsTreeResponse,
+  AuthSessionStatus,
   ContainerAppLogsResponse,
   ContainerAppControlResponse,
   ContainerAppsStatusResponse,
@@ -71,6 +72,16 @@ export const DataService = {
       return response;
     } catch (error) {
       console.error('[DataService] getSystemHealthWithMeta error', error);
+      throw error;
+    }
+  },
+
+  async getAuthSessionStatusWithMeta(): Promise<ResponseWithMeta<AuthSessionStatus>> {
+    try {
+      const response = await apiService.getAuthSessionStatusWithMeta();
+      return response;
+    } catch (error) {
+      console.error('[DataService] getAuthSessionStatusWithMeta error', error);
       throw error;
     }
   },

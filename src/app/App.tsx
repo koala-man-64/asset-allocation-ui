@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Route, Routes, useLocation } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { QueryProvider } from '@/providers/QueryProvider';
-import { useRealtime } from '@/hooks/useRealtime';
 
 import { useUIStore } from '@/stores/useUIStore';
 
 import { LeftNavigation } from '@/app/components/layout/LeftNavigation';
-import { OidcAccessGate, OidcCallbackPage } from '@/app/components/auth/OidcAccessGate';
+import {
+  OidcAccessGate,
+  OidcCallbackPage,
+  OidcLogoutCompletePage
+} from '@/app/components/auth/OidcAccessGate';
 import { AppRoutes } from '@/app/routes';
 import { Toaster } from '@/app/components/ui/sonner';
 
@@ -56,10 +60,7 @@ function RouteTransitionIndicator() {
   );
 }
 
-function AppShell() {
-  // Keep query caches fresh from backend push events (Azure/prod-safe alternative to dev HMR).
-  useRealtime();
-
+function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="h-screen flex flex-col bg-background">
       <RouteTransitionIndicator />
@@ -67,9 +68,7 @@ function AppShell() {
         <LeftNavigation />
 
         <main className="flex-1 overflow-y-auto">
-          <div className="container mx-auto p-8 max-w-[1800px]">
-            <AppRoutes />
-          </div>
+          <div className="container mx-auto p-8 max-w-[1800px]">{children}</div>
         </main>
       </div>
 
@@ -94,12 +93,15 @@ export default function App() {
       <QueryProvider>
         <Routes>
           <Route path="/auth/callback" element={<OidcCallbackPage />} />
+          <Route path="/auth/logout-complete" element={<OidcLogoutCompletePage />} />
           <Route
             path="*"
             element={
-              <OidcAccessGate>
-                <AppShell />
-              </OidcAccessGate>
+              <AppShell>
+                <OidcAccessGate>
+                  <AppRoutes />
+                </OidcAccessGate>
+              </AppShell>
             }
           />
         </Routes>

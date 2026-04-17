@@ -111,7 +111,7 @@ export const NAV_SECTIONS: NavSection[] = [
       },
       {
         path: '/strategies',
-        label: 'Run Configurations',
+        label: 'Strategies',
         icon: Target,
         sectionKey: 'live-operations'
       },

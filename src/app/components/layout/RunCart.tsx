@@ -25,7 +25,7 @@ export function RunCart({ onCompare, onPortfolioBuilder }: RunCartProps) {
   const selectedRunIds = useMemo(() => selectedRuns, [selectedRuns]);
   const { runs } = useRunList({ limit: 200, offset: 0 });
   const runsById = useMemo(() => new Map(runs.map((r) => [r.run_id, r])), [runs]);
-  const { summaries } = useRunSummaries(selectedRunIds, { source: 'auto' });
+  const { summaries } = useRunSummaries(selectedRunIds);
 
   const getColorForIndex = (index: number): string => {
     const colors = [

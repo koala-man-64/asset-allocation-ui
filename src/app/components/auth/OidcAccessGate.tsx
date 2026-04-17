@@ -3,44 +3,51 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/app/components/ui/button';
-import { Progress } from '@/app/components/ui/progress';
 import { cn } from '@/app/components/ui/utils';
 import { config } from '@/config';
-import { consumePostLoginRedirectPath, useAuth } from '@/contexts/AuthContext';
+import {
+  consumePostLoginRedirectPath,
+  peekPostLoginRedirectPath,
+  useAuth
+} from '@/contexts/AuthContext';
+import { useRealtime } from '@/hooks/useRealtime';
+import { ApiError } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
+import { isAuthRedirectStartedError } from '@/services/authTransport';
 
 type AccessState = 'idle' | 'checking' | 'allowed' | 'forbidden' | 'error';
 type AuthStepId = 'sign-in' | 'redirect' | 'access';
 type StepTone = 'pending' | 'active' | 'complete' | 'error';
+type AuthScreenLayout = 'fullscreen' | 'inline';
 
 const DEPLOYMENT_AUTH_MISCONFIGURED_BODY =
   'This deployment requires browser OIDC before the UI can call protected API routes. Set UI_OIDC_CLIENT_ID, UI_OIDC_AUTHORITY, UI_OIDC_SCOPES, and UI_OIDC_REDIRECT_URI. The deployed UI only supports OIDC.';
 const AUTH_STEPS: Array<{ id: AuthStepId; label: string; description: string }> = [
   {
     id: 'sign-in',
-    label: 'Sign in',
-    description: 'Start a browser-backed Microsoft Entra session for this deployment.'
+    label: 'Restore session',
+    description: 'Recover an existing Microsoft Entra session silently before interrupting the user.'
   },
   {
     id: 'redirect',
-    label: 'Microsoft redirect',
-    description: 'Hand off to Microsoft Entra and return with a verified browser session.'
+    label: 'Interactive sign-in',
+    description: 'Redirect only when Microsoft Entra requires browser interaction.'
   },
   {
     id: 'access',
     label: 'API access',
-    description: 'Confirm the protected API accepts the authenticated session and role assignment.'
+    description: 'Confirm the authenticated session is allowed to call the protected control plane.'
   }
 ];
 const STEP_PROGRESS: Record<AuthStepId, number> = {
-  'sign-in': 18,
-  redirect: 54,
-  access: 88
+  'sign-in': 24,
+  redirect: 58,
+  access: 92
 };
 const SLOW_REDIRECT_HELPER =
-  'The browser is still working. If nothing changes, check redirect or popup blocking and try again.';
+  'The redirect is taking longer than expected. If this browser blocks sign-in, retry the flow.';
 const SLOW_ACCESS_HELPER =
-  'The browser is still working. If nothing changes, try again and confirm the sign-in redirect was not blocked earlier.';
+  'The session is authenticated, but the control plane is still validating access. Retry if this does not clear.';
 
 function useDelayedHelper(enabled: boolean, delayMs = 4000) {
   const [visible, setVisible] = useState(false);
@@ -91,19 +98,6 @@ function resolveProgressValue(
   return lastCompleted ? STEP_PROGRESS[lastCompleted] : 0;
 }
 
-function resolveRailLabel(activeStep?: AuthStepId, errorStep?: AuthStepId, busy = false) {
-  if (errorStep) {
-    return 'Needs attention';
-  }
-  if (busy) {
-    return 'In progress';
-  }
-  if (activeStep) {
-    return activeStep === 'sign-in' ? 'Ready to continue' : 'Session in motion';
-  }
-  return 'Unavailable';
-}
-
 function resolveStatusAccent(errorStep?: AuthStepId, busy = false) {
   if (errorStep) {
     return 'bg-destructive';
@@ -125,7 +119,8 @@ function AuthStatusScreen({
   actionDisabled = false,
   secondaryActionLabel,
   onSecondaryAction,
-  secondaryActionDisabled = false
+  secondaryActionDisabled = false,
+  layout = 'inline'
 }: {
   title: string;
   body: string;
@@ -141,25 +136,52 @@ function AuthStatusScreen({
   secondaryActionLabel?: string;
   onSecondaryAction?: () => void;
   secondaryActionDisabled?: boolean;
+  layout?: AuthScreenLayout;
 }) {
   const progressValue = resolveProgressValue(activeStep, completedSteps, errorStep);
-  const railLabel = resolveRailLabel(activeStep, errorStep, busy);
   const accentClass = resolveStatusAccent(errorStep, busy);
 
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-6 py-12">
+    <div
+      className={cn(
+        'w-full',
+        layout === 'fullscreen'
+          ? 'flex min-h-[calc(100vh-8rem)] items-center justify-center px-6 py-12'
+          : 'py-6'
+      )}
+    >
       <section
-        className="w-full max-w-5xl rounded-[2rem] border border-border/70 bg-card/95 shadow-[0_24px_80px_-48px_rgba(119,63,26,0.7)] backdrop-blur"
+        className={cn(
+          'w-full overflow-hidden rounded-[2rem] border border-border/70 bg-card/95 shadow-[0_24px_80px_-48px_rgba(119,63,26,0.7)] backdrop-blur',
+          layout === 'fullscreen' ? 'max-w-5xl' : 'mx-auto max-w-4xl'
+        )}
         data-testid="auth-status-screen"
       >
-        <div className="grid gap-8 p-6 md:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)] md:p-8">
-          <div className="space-y-6">
+        <div className="h-1.5 bg-mcm-walnut/10">
+          <div
+            className={cn(
+              'h-full transition-[width] duration-300 ease-out',
+              errorStep ? 'bg-destructive' : busy ? 'bg-mcm-teal' : 'bg-mcm-mustard'
+            )}
+            style={{ width: `${progressValue}%` }}
+          />
+        </div>
+
+        <div
+          className={cn(
+            'grid gap-6 p-6 md:p-8',
+            layout === 'fullscreen'
+              ? 'md:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]'
+              : 'lg:grid-cols-[minmax(0,1.15fr)_minmax(240px,0.85fr)]'
+          )}
+        >
+          <div className="space-y-5">
             <div className="space-y-3">
               <p className="text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
-                Asset Allocation
+                Secure Access
               </p>
               <div className="max-w-2xl">
-                <h2 className="font-display text-[clamp(2rem,4vw,3.3rem)] leading-[0.95] text-foreground">
+                <h2 className="font-display text-[clamp(1.8rem,3.4vw,3rem)] leading-[0.95] text-foreground">
                   {title}
                 </h2>
                 <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground sm:text-[0.95rem]">
@@ -218,9 +240,11 @@ function AuthStatusScreen({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                  Auth flow
+                  Auth rail
                 </p>
-                <p className="mt-2 text-sm font-semibold text-foreground">{railLabel}</p>
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  {errorStep ? 'Needs attention' : busy ? 'In progress' : 'Standing by'}
+                </p>
               </div>
               <span
                 className={cn(
@@ -235,8 +259,6 @@ function AuthStatusScreen({
                 {Math.round(progressValue)}%
               </span>
             </div>
-
-            <Progress className="mt-4 h-1.5 bg-mcm-walnut/10" value={progressValue} />
 
             <ol className="mt-5 space-y-3">
               {AUTH_STEPS.map((step) => {
@@ -304,6 +326,18 @@ function AuthStatusScreen({
   );
 }
 
+function RealtimeEnabledContent({ children }: { children: ReactNode }) {
+  useRealtime();
+  return <>{children}</>;
+}
+
+function formatAccessError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error ?? 'Unknown error');
+}
+
 export function OidcCallbackPage() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -331,6 +365,7 @@ export function OidcCallbackPage() {
         busy
         completedSteps={['sign-in']}
         helperMessage={showSlowHelper ? SLOW_REDIRECT_HELPER : undefined}
+        layout="fullscreen"
         statusLabel="Waiting for Microsoft Entra to return control to the application."
         title="Signing you in"
       />
@@ -343,6 +378,7 @@ export function OidcCallbackPage() {
         body="Your session is ready. Sending you back into the application now."
         busy
         completedSteps={['sign-in']}
+        layout="fullscreen"
         statusLabel="Authentication is complete. Redirecting back to your original page."
         title="Redirecting"
       />
@@ -355,9 +391,53 @@ export function OidcCallbackPage() {
       body={auth.error || 'Authentication did not complete successfully. Start the sign-in flow again.'}
       completedSteps={[]}
       errorStep="redirect"
-      onAction={() => auth.signIn('/system-status')}
+      layout="fullscreen"
+      onAction={() => auth.signIn(peekPostLoginRedirectPath())}
       statusLabel="The Microsoft Entra redirect did not finish successfully."
       title="Sign-in could not be completed"
+    />
+  );
+}
+
+export function OidcLogoutCompletePage() {
+  const auth = useAuth();
+  const navigate = useNavigate();
+
+  if (!config.oidcEnabled) {
+    navigate('/', { replace: true });
+    return null;
+  }
+
+  if (!auth.ready || auth.phase === 'signing-out') {
+    return (
+      <AuthStatusScreen
+        activeStep="redirect"
+        body="Closing the protected browser session and clearing the sign-in state."
+        busy
+        completedSteps={['sign-in']}
+        layout="fullscreen"
+        statusLabel="Finishing sign-out."
+        title="Signing you out"
+      />
+    );
+  }
+
+  return (
+    <AuthStatusScreen
+      actionLabel={config.authRequired ? 'Sign in again' : 'Return to app'}
+      activeStep="sign-in"
+      body="The browser session has been signed out cleanly. You can start a new sign-in when you need protected access again."
+      completedSteps={[]}
+      layout="fullscreen"
+      onAction={() => {
+        if (config.authRequired) {
+          auth.signIn();
+          return;
+        }
+        navigate('/', { replace: true });
+      }}
+      statusLabel="Signed out successfully."
+      title="Signed out"
     />
   );
 }
@@ -396,25 +476,57 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
-    setAccessState('checking');
-    setErrorMessage('');
 
-    void DataService.getSystemHealthWithMeta()
-      .then(() => {
+    const handleAccessError = (error: unknown) => {
+      if (cancelled) {
+        return;
+      }
+      if (isAuthRedirectStartedError(error)) {
+        setAccessState('idle');
+        return;
+      }
+      if (error instanceof ApiError && error.status === 403) {
+        setAccessState('forbidden');
+        return;
+      }
+      if (error instanceof ApiError && error.status === 401) {
+        setAccessState('idle');
+        return;
+      }
+      setAccessState('error');
+      setErrorMessage(formatAccessError(error));
+    };
+
+    const verifyAccess = async () => {
+      setAccessState('checking');
+      setErrorMessage('');
+
+      try {
+        await DataService.getAuthSessionStatusWithMeta();
         if (!cancelled) {
           setAccessState('allowed');
         }
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : String(error ?? 'Unknown error');
-        if (/API Error:\s*403\b/.test(message)) {
-          setAccessState('forbidden');
-          return;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          console.info(
+            '[Auth] /api/auth/session is unavailable on this control-plane build. Falling back to /api/system/health.'
+          );
+          try {
+            await DataService.getSystemHealthWithMeta();
+            if (!cancelled) {
+              setAccessState('allowed');
+            }
+            return;
+          } catch (fallbackError) {
+            handleAccessError(fallbackError);
+            return;
+          }
         }
-        setAccessState('error');
-        setErrorMessage(message);
-      });
+        handleAccessError(error);
+      }
+    };
+
+    void verifyAccess();
 
     return () => {
       cancelled = true;
@@ -425,6 +537,7 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
     return (
       <AuthStatusScreen
         body={DEPLOYMENT_AUTH_MISCONFIGURED_BODY}
+        layout="inline"
         statusLabel="The browser OIDC configuration is incomplete for this deployment."
         title="Deployment auth misconfigured"
       />
@@ -432,16 +545,17 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
   }
 
   if (!config.oidcEnabled || !config.authRequired) {
-    return <>{children}</>;
+    return <RealtimeEnabledContent>{children}</RealtimeEnabledContent>;
   }
 
   if (!auth.ready || auth.phase === 'initializing') {
     return (
       <AuthStatusScreen
         activeStep="sign-in"
-        body="Loading the Microsoft Entra session before protected application data is requested."
+        body="Restoring the Microsoft Entra browser session before protected application data is requested."
         busy
-        statusLabel="Preparing the browser session and checking for an existing sign-in."
+        layout="inline"
+        statusLabel="Checking for an existing authenticated browser session."
         title="Preparing secure access"
       />
     );
@@ -453,13 +567,14 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
         actionDisabled
         actionLabel="Redirecting..."
         activeStep="redirect"
-        body="Handing off to Microsoft Entra so the browser can complete the protected sign-in flow."
+        body="Microsoft Entra requires browser interaction. Redirecting now so the protected session can be completed."
         busy
         completedSteps={['sign-in']}
         helperMessage={showRedirectHelper ? SLOW_REDIRECT_HELPER : undefined}
+        layout="inline"
         onAction={() => auth.signIn(`${location.pathname}${location.search}${location.hash}`)}
-        statusLabel="Redirecting the browser to Microsoft Entra now."
-        title="Redirecting to sign in"
+        statusLabel="Redirecting the browser to Microsoft Entra."
+        title="Continuing sign-in"
       />
     );
   }
@@ -471,7 +586,8 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
         body="Ending the Microsoft Entra session and clearing protected application access."
         busy
         completedSteps={['sign-in']}
-        statusLabel="Signing out and redirecting away from the protected session."
+        layout="inline"
+        statusLabel="Signing out."
         title="Signing you out"
       />
     );
@@ -480,7 +596,7 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
   if (!auth.authenticated) {
     return (
       <AuthStatusScreen
-        actionLabel={auth.error ? 'Try again' : 'Sign in'}
+        actionLabel={auth.error ? 'Try again' : 'Continue sign-in'}
         activeStep="sign-in"
         body={
           auth.error ||
@@ -488,13 +604,14 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
         }
         completedSteps={[]}
         errorStep={auth.error ? 'redirect' : undefined}
+        layout="inline"
         onAction={() => auth.signIn(`${location.pathname}${location.search}${location.hash}`)}
         statusLabel={
           auth.error
             ? 'Microsoft Entra did not start the redirect flow successfully.'
-            : 'Waiting for you to start the protected sign-in flow.'
+            : 'Waiting to start protected sign-in.'
         }
-        title="Sign in required"
+        title="Sign-in required"
       />
     );
   }
@@ -503,11 +620,12 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
     return (
       <AuthStatusScreen
         activeStep="access"
-        body="Your session is valid. Verifying that your Microsoft Entra assignment is allowed to use the API."
+        body="Your session is authenticated. Verifying that the control plane accepts this browser session and role assignment."
         busy
         completedSteps={['sign-in', 'redirect']}
         helperMessage={showAccessHelper ? SLOW_ACCESS_HELPER : undefined}
-        statusLabel="Checking protected API access for the authenticated session."
+        layout="inline"
+        statusLabel="Checking control-plane access."
         title="Checking access"
       />
     );
@@ -521,8 +639,9 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
         body="You signed in successfully, but your Microsoft Entra account is not assigned the required application role for this API. Ask an administrator to grant the AssetAllocation.Access role."
         completedSteps={['sign-in', 'redirect']}
         errorStep="access"
+        layout="inline"
         onAction={auth.signOut}
-        statusLabel="Authentication completed, but the API rejected the current role assignment."
+        statusLabel="Authentication completed, but the control plane rejected the current role assignment."
         title="Access denied"
       />
     );
@@ -535,21 +654,22 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
         activeStep="access"
         body={
           errorMessage ||
-          'The application could not verify your access against the API. Retry the check or sign out.'
+          'The application could not verify your access against the control plane. Retry the check or sign out.'
         }
         completedSteps={['sign-in', 'redirect']}
         errorStep="access"
+        layout="inline"
         onAction={() => {
           setAccessState('idle');
           setRetryNonce((value) => value + 1);
         }}
         onSecondaryAction={auth.signOut}
         secondaryActionLabel="Sign out"
-        statusLabel="The protected API access check failed before the application could load."
+        statusLabel="The control-plane access check failed before protected data could load."
         title="Access check failed"
       />
     );
   }
 
-  return <>{children}</>;
+  return <RealtimeEnabledContent>{children}</RealtimeEnabledContent>;
 }

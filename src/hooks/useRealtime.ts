@@ -4,7 +4,12 @@ import { toast } from 'sonner';
 
 import { config } from '@/config';
 import { queryKeys } from '@/hooks/useDataQueries';
-import { appendAuthHeaders } from '@/services/authTransport';
+import {
+  appendAuthHeaders,
+  hasInteractiveAuthHandler,
+  isAuthRedirectStartedError,
+  requestInteractiveReauth
+} from '@/services/authTransport';
 import { backtestKeys } from '@/services/backtestHooks';
 import {
   CONSOLE_LOG_STREAM_EVENT_TYPE,
@@ -48,7 +53,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object';
 }
 
-export function useRealtime() {
+export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
   const wsRef = useRef<WebSocket | null>(null);
   const keepAliveRef = useRef<number | null>(null);
@@ -58,6 +63,10 @@ export function useRealtime() {
   const realtimeUnavailableRef = useRef(false);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     const httpBase = config.apiBaseUrl.replace(/\/+$/, '');
     const wsPath = `${httpBase}/ws/updates`;
     const wsUrl = new URL(wsPath, window.location.origin);
@@ -150,6 +159,9 @@ export function useRealtime() {
       });
 
       if (!response.ok) {
+        if (response.status === 401 && hasInteractiveAuthHandler()) {
+          await requestInteractiveReauth({ reason: 'Realtime ticket request returned 401.' });
+        }
         const message = await response.text();
         throw new Error(message || `Realtime ticket request failed (${response.status})`);
       }
@@ -217,10 +229,19 @@ export function useRealtime() {
           }
           wsRef.current = null;
 
-          if (event.code === 4401) {
-            markRealtimeUnavailable(
-              'Realtime updates unavailable: websocket authentication was rejected.'
-            );
+          if (event.code === 4401 && hasInteractiveAuthHandler()) {
+            void requestInteractiveReauth({
+              reason: 'Realtime websocket authentication was rejected.'
+            }).catch((error) => {
+              if (isAuthRedirectStartedError(error)) {
+                return;
+              }
+              markRealtimeUnavailable(
+                'Realtime updates unavailable: websocket authentication was rejected.'
+              );
+              scheduleReconnect();
+            });
+            return;
           }
 
           scheduleReconnect();
@@ -233,6 +254,9 @@ export function useRealtime() {
       } catch (err) {
         connectInFlightRef.current = false;
         wsRef.current = null;
+        if (isAuthRedirectStartedError(err)) {
+          return;
+        }
         console.error('[Realtime] Ticket request failed:', err);
         const message = err instanceof Error ? err.message : 'Realtime authentication failed.';
         markRealtimeUnavailable(`Realtime updates unavailable: ${message}`);
@@ -364,5 +388,5 @@ export function useRealtime() {
         wsRef.current = null;
       }
     };
-  }, [queryClient]);
+  }, [enabled, queryClient]);
 }

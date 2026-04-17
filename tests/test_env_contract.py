@@ -132,6 +132,7 @@ def test_ui_runtime_deploy_workflow_verifies_proxied_api_contract() -> None:
     text = workflow_text("deploy-ui-runtime.yml")
     assert 'UI_AUTH_ENABLED=false is invalid because the proxied /config.js reports authRequired=true.' in text
     assert 'vars.API_UPSTREAM_SCHEME || \'https\'' in text
+    assert 'vars.UI_AUTH_ENABLED || \'true\'' in text
     assert 'https://${fqdn}/api/system/status-view' in text
     assert 'https://${fqdn}/api/realtime/ticket' in text
     assert 'Allowed: $*' in text

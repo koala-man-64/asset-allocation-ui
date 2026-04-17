@@ -1,12 +1,18 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { AccountInfo, AuthenticationResult } from '@azure/msal-browser';
 import { InteractionRequiredAuthError, PublicClientApplication } from '@azure/msal-browser';
 
 import { config } from '@/config';
-import { setAccessTokenProvider } from '@/services/authTransport';
+import {
+  createInteractionRequiredError,
+  setAccessTokenProvider,
+  setInteractiveAuthHandler
+} from '@/services/authTransport';
 
 const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
 const DEFAULT_POST_LOGIN_PATH = '/system-status';
+const CALLBACK_PATH = '/auth/callback';
+const LOGOUT_COMPLETE_PATH = '/auth/logout-complete';
 
 export type AuthPhase =
   | 'initializing'
@@ -33,7 +39,18 @@ export interface AuthContextType {
 }
 
 function isCallbackPath(pathname: string): boolean {
-  return pathname === '/auth/callback';
+  return pathname === CALLBACK_PATH;
+}
+
+function isLogoutCompletePath(pathname: string): boolean {
+  return pathname === LOGOUT_COMPLETE_PATH;
+}
+
+function getCurrentPath(): string {
+  if (typeof window === 'undefined') {
+    return DEFAULT_POST_LOGIN_PATH;
+  }
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
 
 function resolveReturnPath(fallback?: string): string {
@@ -44,8 +61,12 @@ function resolveReturnPath(fallback?: string): string {
   if (typeof window === 'undefined') {
     return DEFAULT_POST_LOGIN_PATH;
   }
-  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  if (!currentPath || isCallbackPath(window.location.pathname)) {
+  const currentPath = getCurrentPath();
+  if (
+    !currentPath ||
+    isCallbackPath(window.location.pathname) ||
+    isLogoutCompletePath(window.location.pathname)
+  ) {
     return DEFAULT_POST_LOGIN_PATH;
   }
   return currentPath;
@@ -60,16 +81,49 @@ function storePostLoginRedirectPath(path: string): void {
   }
 }
 
-export function consumePostLoginRedirectPath(): string {
+function clearPostLoginRedirectPath(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(POST_LOGIN_PATH_STORAGE_KEY);
+  } catch {
+    // Ignore sessionStorage failures; they do not block sign-out.
+  }
+}
+
+export function peekPostLoginRedirectPath(): string {
   if (typeof window === 'undefined') {
     return DEFAULT_POST_LOGIN_PATH;
   }
   try {
     const stored = String(window.sessionStorage.getItem(POST_LOGIN_PATH_STORAGE_KEY) ?? '').trim();
-    window.sessionStorage.removeItem(POST_LOGIN_PATH_STORAGE_KEY);
     return stored || DEFAULT_POST_LOGIN_PATH;
   } catch {
     return DEFAULT_POST_LOGIN_PATH;
+  }
+}
+
+export function consumePostLoginRedirectPath(): string {
+  const stored = peekPostLoginRedirectPath();
+  clearPostLoginRedirectPath();
+  return stored;
+}
+
+function resolvePostLogoutRedirectUri(
+  explicitPostLogoutRedirectUri: string,
+  redirectUri: string
+): string {
+  const explicit = String(explicitPostLogoutRedirectUri ?? '').trim();
+  if (explicit) {
+    return explicit;
+  }
+  const redirect = String(redirectUri ?? '').trim();
+  if (!redirect) {
+    return '';
+  }
+  try {
+    return new URL(LOGOUT_COMPLETE_PATH, redirect).toString();
+  } catch {
+    return '';
   }
 }
 
@@ -80,6 +134,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const oidcAuthority = config.oidcAuthority;
   const oidcScopes = config.oidcScopes;
   const oidcRedirectUri = config.oidcRedirectUri;
+  const oidcPostLogoutRedirectUri = resolvePostLogoutRedirectUri(
+    config.oidcPostLogoutRedirectUri,
+    oidcRedirectUri
+  );
 
   const enabled =
     config.oidcEnabled &&
@@ -92,13 +150,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clientId: oidcClientId,
         authority: oidcAuthority,
         redirectUri: oidcRedirectUri,
-        postLogoutRedirectUri: oidcRedirectUri
+        postLogoutRedirectUri: oidcPostLogoutRedirectUri || oidcRedirectUri
       },
       cache: {
         cacheLocation: 'sessionStorage'
       }
     });
-  }, [enabled, oidcAuthority, oidcClientId, oidcRedirectUri]);
+  }, [
+    enabled,
+    oidcAuthority,
+    oidcClientId,
+    oidcPostLogoutRedirectUri,
+    oidcRedirectUri
+  ]);
 
   const ensureMsalInitialized = useMemo(() => {
     if (!msal) return null;
@@ -116,11 +180,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<AuthPhase>(
     enabled && typeof window !== 'undefined' && isCallbackPath(window.location.pathname)
       ? 'redirecting'
-      : enabled
+      : enabled && config.authRequired
         ? 'initializing'
         : 'signed-out'
   );
   const [error, setError] = useState<string | null>(null);
+  const redirectInFlightRef = useRef(false);
+
+  const beginLoginRedirect = useMemo(() => {
+    if (!ensureMsalInitialized) {
+      return null;
+    }
+
+    return async (returnPath?: string) => {
+      if (redirectInFlightRef.current) {
+        return;
+      }
+
+      redirectInFlightRef.current = true;
+      setError(null);
+      setPhase('redirecting');
+      setReady(true);
+      storePostLoginRedirectPath(resolveReturnPath(returnPath));
+
+      try {
+        const instance = await ensureMsalInitialized();
+        await instance.loginRedirect({
+          scopes: oidcScopes
+        });
+      } catch (err) {
+        redirectInFlightRef.current = false;
+        console.error('OIDC sign-in failed', err);
+        setPhase('signed-out');
+        setError(describeAuthError('OIDC sign-in could not be started.', err));
+        throw err;
+      }
+    };
+  }, [ensureMsalInitialized, oidcScopes]);
 
   useEffect(() => {
     if (!ensureMsalInitialized) {
@@ -132,46 +228,86 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     let cancelled = false;
+    const pathname = typeof window === 'undefined' ? '' : window.location.pathname;
+    const onCallbackPath = isCallbackPath(pathname);
+    const onLogoutCompletePath = isLogoutCompletePath(pathname);
+    const shouldAttemptSilentSignIn = config.authRequired && !onCallbackPath && !onLogoutCompletePath;
+
     setReady(false);
     setError(null);
-    setPhase(
-      typeof window !== 'undefined' && isCallbackPath(window.location.pathname)
-        ? 'redirecting'
-        : 'initializing'
-    );
+    setPhase(onCallbackPath ? 'redirecting' : shouldAttemptSilentSignIn ? 'initializing' : 'signed-out');
 
-    ensureMsalInitialized()
-      .then((instance) =>
-        instance
-          .handleRedirectPromise()
-          .then((result: AuthenticationResult | null) => ({ instance, result }))
-      )
-      .then(({ instance, result }) => {
-        const chosen =
-          result?.account ?? instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? null;
-        if (chosen) {
-          instance.setActiveAccount(chosen);
-        }
+    const bootstrap = async () => {
+      const instance = await ensureMsalInitialized();
+      const redirectResult: AuthenticationResult | null = await instance.handleRedirectPromise();
+      let chosenAccount =
+        redirectResult?.account ?? instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? null;
+
+      if (chosenAccount) {
+        instance.setActiveAccount(chosenAccount);
         if (!cancelled) {
-          setAccount(chosen);
-          setPhase(chosen ? 'authenticated' : 'signed-out');
+          redirectInFlightRef.current = false;
+          setAccount(chosenAccount);
+          setPhase('authenticated');
           setReady(true);
         }
-      })
-      .catch((err) => {
-        console.error('OIDC redirect handling failed', err);
+        return;
+      }
+
+      if (!shouldAttemptSilentSignIn) {
         if (!cancelled) {
+          redirectInFlightRef.current = false;
           setAccount(null);
-          setError(describeAuthError('OIDC redirect handling failed.', err));
           setPhase('signed-out');
           setReady(true);
         }
-      });
+        return;
+      }
+
+      try {
+        const silentResult = await instance.ssoSilent({
+          scopes: oidcScopes
+        });
+        chosenAccount =
+          silentResult.account ?? instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? null;
+        if (chosenAccount) {
+          instance.setActiveAccount(chosenAccount);
+        }
+        if (!cancelled) {
+          redirectInFlightRef.current = false;
+          setAccount(chosenAccount);
+          setPhase(chosenAccount ? 'authenticated' : 'signed-out');
+          setReady(true);
+        }
+      } catch (err) {
+        if (err instanceof InteractionRequiredAuthError) {
+          if (!cancelled) {
+            setAccount(null);
+          }
+          if (!cancelled && beginLoginRedirect) {
+            await beginLoginRedirect(getCurrentPath());
+          }
+          return;
+        }
+        throw err;
+      }
+    };
+
+    bootstrap().catch((err) => {
+      redirectInFlightRef.current = false;
+      console.error('OIDC bootstrap failed', err);
+      if (!cancelled) {
+        setAccount(null);
+        setError(describeAuthError('OIDC sign-in could not be completed.', err));
+        setPhase('signed-out');
+        setReady(true);
+      }
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [ensureMsalInitialized]);
+  }, [beginLoginRedirect, ensureMsalInitialized, oidcScopes]);
 
   useEffect(() => {
     if (!ensureMsalInitialized) {
@@ -190,7 +326,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return result.accessToken || null;
       } catch (err) {
         if (err instanceof InteractionRequiredAuthError) {
-          return null;
+          throw createInteractionRequiredError('OIDC session refresh requires sign-in.');
         }
         console.warn('Failed to acquire access token', err);
         return null;
@@ -202,30 +338,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [account, ensureMsalInitialized, oidcScopes]);
 
+  useEffect(() => {
+    if (!enabled || !config.authRequired || !beginLoginRedirect) {
+      setInteractiveAuthHandler(null);
+      return;
+    }
+
+    setInteractiveAuthHandler(async ({ returnPath } = {}) => {
+      if (typeof window !== 'undefined' && isLogoutCompletePath(window.location.pathname)) {
+        throw new Error('Interactive sign-in is disabled on the logout-complete route.');
+      }
+      await beginLoginRedirect(returnPath);
+    });
+
+    return () => {
+      setInteractiveAuthHandler(null);
+    };
+  }, [beginLoginRedirect, enabled]);
+
   const signIn = (returnPath?: string) => {
-    if (!ensureMsalInitialized || phase === 'redirecting' || phase === 'signing-out') return;
-    setError(null);
-    setPhase('redirecting');
-    storePostLoginRedirectPath(resolveReturnPath(returnPath));
-    void ensureMsalInitialized()
-      .then((instance) =>
-        instance.loginRedirect({
-          scopes: oidcScopes
-        })
-      )
-      .catch((err) => {
-        console.error('OIDC sign-in failed', err);
-        setPhase('signed-out');
-        setError(describeAuthError('OIDC sign-in could not be started.', err));
-      });
+    if (!beginLoginRedirect) {
+      return;
+    }
+    void beginLoginRedirect(returnPath).catch(() => undefined);
   };
 
   const signOut = () => {
     if (!ensureMsalInitialized || phase === 'redirecting' || phase === 'signing-out') return;
+
+    redirectInFlightRef.current = false;
+    clearPostLoginRedirectPath();
     setError(null);
     setPhase('signing-out');
+
     void ensureMsalInitialized()
-      .then((instance) => instance.logoutRedirect({ account: account ?? undefined }))
+      .then((instance) =>
+        instance.logoutRedirect({
+          account: account ?? undefined,
+          postLogoutRedirectUri: oidcPostLogoutRedirectUri || undefined
+        })
+      )
       .catch((err) => {
         console.error('OIDC sign-out failed', err);
         setPhase(account ? 'authenticated' : 'signed-out');

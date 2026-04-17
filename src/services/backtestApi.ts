@@ -2,7 +2,6 @@ export { ApiError } from '@/services/apiService';
 import { request as apiRequest } from '@/services/apiService';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed';
-export type DataSource = 'auto' | 'local' | 'adls';
 export type DataDomain = 'market' | 'earnings' | 'price-target';
 
 export interface RunRecordResponse {
@@ -14,9 +13,6 @@ export interface RunRecordResponse {
   run_name?: string | null;
   start_date?: string | null;
   end_date?: string | null;
-  output_dir?: string | null;
-  adls_container?: string | null;
-  adls_prefix?: string | null;
   error?: string | null;
 }
 
@@ -198,18 +194,15 @@ export interface SubmitBacktestPayload {
 }
 
 export interface GetTimeseriesParams {
-  source?: DataSource;
   maxPoints?: number;
 }
 
 export interface GetRollingParams {
-  source?: DataSource;
   windowDays?: number;
   maxPoints?: number;
 }
 
 export interface GetTradesParams {
-  source?: DataSource;
   limit?: number;
   offset?: number;
 }
@@ -240,11 +233,10 @@ export const backtestApi = {
 
   async getSummary(
     runId: string,
-    params: { source?: DataSource } = {},
+    _params: Record<string, never> = {},
     signal?: AbortSignal
   ): Promise<BacktestSummary> {
     return apiRequest<BacktestSummary>(`/backtests/${encodeURIComponent(runId)}/summary`, {
-      params: { source: params.source ?? 'auto' },
       signal
     });
   },
@@ -258,7 +250,6 @@ export const backtestApi = {
       `/backtests/${encodeURIComponent(runId)}/metrics/timeseries`,
       {
         params: {
-          source: params.source ?? 'auto',
           max_points: params.maxPoints ?? 5000
         },
         signal
@@ -275,7 +266,6 @@ export const backtestApi = {
       `/backtests/${encodeURIComponent(runId)}/metrics/rolling`,
       {
         params: {
-          source: params.source ?? 'auto',
           window_days: params.windowDays ?? 63,
           max_points: params.maxPoints ?? 5000
         },
@@ -291,7 +281,6 @@ export const backtestApi = {
   ): Promise<TradeListResponse> {
     return apiRequest<TradeListResponse>(`/backtests/${encodeURIComponent(runId)}/trades`, {
       params: {
-        source: params.source ?? 'auto',
         limit: params.limit ?? 2000,
         offset: params.offset ?? 0
       },

@@ -21,7 +21,7 @@ jobs:
     env:
       API_UPSTREAM: ${{ vars.API_UPSTREAM }}
       API_UPSTREAM_SCHEME: ${{ vars.API_UPSTREAM_SCHEME || 'https' }}
-      UI_AUTH_ENABLED: ${{ vars.UI_AUTH_ENABLED || 'false' }}
+      UI_AUTH_ENABLED: ${{ vars.UI_AUTH_ENABLED || 'true' }}
       RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
       ACR_NAME: ${{ vars.ACR_NAME }}
       ACR_PULL_IDENTITY_NAME: ${{ vars.ACR_PULL_IDENTITY_NAME || 'asset-allocation-acr-pull-mi' }}

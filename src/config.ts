@@ -5,6 +5,7 @@ import { normalizeApiBaseUrl } from '@/utils/apiBaseUrl';
 type RuntimeUiConfigSource = Partial<UiRuntimeConfig> & {
   oidcScopes?: string[] | string;
   oidcAudience?: string[] | string;
+  oidcPostLogoutRedirectUri?: string;
   uiAuthEnabled?: boolean | string;
 };
 
@@ -61,6 +62,24 @@ function resolveScopes(raw: unknown): string[] {
   return normalized ? normalized.split(/\s+/).filter(Boolean) : [];
 }
 
+function derivePostLogoutRedirectUri(
+  explicitPostLogoutRedirectUri: unknown,
+  redirectUri: string
+): string {
+  const explicit = resolveString(explicitPostLogoutRedirectUri);
+  if (explicit) {
+    return explicit;
+  }
+  if (!redirectUri) {
+    return '';
+  }
+  try {
+    return new URL('/auth/logout-complete', redirectUri).toString();
+  } catch {
+    return '';
+  }
+}
+
 const runtimeConfig = typeof window === 'undefined' ? {} : window.__API_UI_CONFIG__ || {};
 
 const apiBaseUrl = normalizeApiBaseUrl(
@@ -73,6 +92,10 @@ const oidcAuthority = resolveString(
 );
 const oidcClientId = resolveString(runtimeConfig.oidcClientId, import.meta.env.VITE_OIDC_CLIENT_ID);
 const oidcRedirectUri = resolveString(runtimeConfig.oidcRedirectUri);
+const oidcPostLogoutRedirectUri = derivePostLogoutRedirectUri(
+  runtimeConfig.oidcPostLogoutRedirectUri,
+  oidcRedirectUri
+);
 const oidcScopes = resolveScopes(runtimeConfig.oidcScopes ?? import.meta.env.VITE_OIDC_SCOPES);
 const oidcAudience = resolveScopes(runtimeConfig.oidcAudience);
 const uiAuthEnabled = resolveBoolean(
@@ -105,6 +128,9 @@ if (typeof window !== 'undefined') {
   if (oidcRedirectUri) {
     nextRuntimeConfig.oidcRedirectUri = oidcRedirectUri;
   }
+  if (oidcPostLogoutRedirectUri) {
+    nextRuntimeConfig.oidcPostLogoutRedirectUri = oidcPostLogoutRedirectUri;
+  }
   window.__API_UI_CONFIG__ = nextRuntimeConfig;
 }
 
@@ -117,5 +143,6 @@ export const config = {
   oidcClientId,
   oidcScopes,
   oidcRedirectUri,
+  oidcPostLogoutRedirectUri,
   oidcAudience
 };

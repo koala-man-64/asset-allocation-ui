@@ -141,4 +141,55 @@ describe('backtestApi', () => {
       expect(options.method).toBe('POST');
     });
   });
+
+  describe('backtest result endpoints', () => {
+    it('fetches summary without a source query parameter', async () => {
+      await invokeWithWarmup(
+        jsonResponse({ run_id: 'run-1', sharpe_ratio: 1.2 }),
+        (api) => api.getSummary('run-1')
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      expect(url.pathname).toBe('/api/backtests/run-1/summary');
+      expect(url.searchParams.get('source')).toBeNull();
+    });
+
+    it('fetches timeseries without a source query parameter', async () => {
+      await invokeWithWarmup(
+        jsonResponse({ points: [], total_points: 0, truncated: false }),
+        (api) => api.getTimeseries('run-1', { maxPoints: 250 })
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      expect(url.pathname).toBe('/api/backtests/run-1/metrics/timeseries');
+      expect(url.searchParams.get('max_points')).toBe('250');
+      expect(url.searchParams.get('source')).toBeNull();
+    });
+
+    it('fetches rolling metrics without a source query parameter', async () => {
+      await invokeWithWarmup(
+        jsonResponse({ points: [], total_points: 0, truncated: false }),
+        (api) => api.getRolling('run-1', { windowDays: 126, maxPoints: 500 })
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      expect(url.pathname).toBe('/api/backtests/run-1/metrics/rolling');
+      expect(url.searchParams.get('window_days')).toBe('126');
+      expect(url.searchParams.get('max_points')).toBe('500');
+      expect(url.searchParams.get('source')).toBeNull();
+    });
+
+    it('fetches trades without a source query parameter', async () => {
+      await invokeWithWarmup(
+        jsonResponse({ trades: [], total: 0, limit: 100, offset: 50 }),
+        (api) => api.getTrades('run-1', { limit: 100, offset: 50 })
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      expect(url.pathname).toBe('/api/backtests/run-1/trades');
+      expect(url.searchParams.get('limit')).toBe('100');
+      expect(url.searchParams.get('offset')).toBe('50');
+      expect(url.searchParams.get('source')).toBeNull();
+    });
+  });
 });

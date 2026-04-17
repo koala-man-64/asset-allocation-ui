@@ -1,5 +1,5 @@
 import { useQuery, useQueries, keepPreviousData } from '@tanstack/react-query';
-import { BacktestSummary, DataSource, ListRunsParams, backtestApi } from '@/services/backtestApi';
+import { BacktestSummary, ListRunsParams, backtestApi } from '@/services/backtestApi';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 // Key Factory for consistent query keys
@@ -8,14 +8,13 @@ export const backtestKeys = {
   runs: () => [...backtestKeys.all, 'runs'] as const,
   runList: (params: ListRunsParams) => [...backtestKeys.runs(), params] as const,
   run: (runId: string) => [...backtestKeys.runs(), runId] as const,
-  summary: (runId: string, source: DataSource) =>
-    [...backtestKeys.run(runId), 'summary', source] as const,
-  timeseries: (runId: string, source: DataSource, maxPoints: number) =>
-    [...backtestKeys.run(runId), 'timeseries', source, maxPoints] as const,
-  rolling: (runId: string, source: DataSource, windowDays: number, maxPoints: number) =>
-    [...backtestKeys.run(runId), 'rolling', source, windowDays, maxPoints] as const,
-  trades: (runId: string, source: DataSource, limit: number, offset: number) =>
-    [...backtestKeys.run(runId), 'trades', source, limit, offset] as const
+  summary: (runId: string) => [...backtestKeys.run(runId), 'summary'] as const,
+  timeseries: (runId: string, maxPoints: number) =>
+    [...backtestKeys.run(runId), 'timeseries', maxPoints] as const,
+  rolling: (runId: string, windowDays: number, maxPoints: number) =>
+    [...backtestKeys.run(runId), 'rolling', windowDays, maxPoints] as const,
+  trades: (runId: string, limit: number, offset: number) =>
+    [...backtestKeys.run(runId), 'trades', limit, offset] as const
 };
 
 function isNotFoundError(error: unknown): boolean {
@@ -43,14 +42,13 @@ export function useRunList(params: ListRunsParams = {}, opts: { enabled?: boolea
 
 export function useRunSummary(
   runId: string | undefined,
-  opts: { enabled?: boolean; source?: DataSource } = {}
+  opts: { enabled?: boolean } = {}
 ) {
-  const source = opts.source ?? 'auto';
   const enabled = (opts.enabled ?? true) && !!runId;
 
   const { data, error, isLoading } = useQuery({
-    queryKey: backtestKeys.summary(runId!, source),
-    queryFn: ({ signal }) => backtestApi.getSummary(runId!, { source }, signal),
+    queryKey: backtestKeys.summary(runId!),
+    queryFn: ({ signal }) => backtestApi.getSummary(runId!, {}, signal),
     enabled,
     retry: (failureCount, error: unknown) => {
       // Don't retry 404s
@@ -68,9 +66,8 @@ export function useRunSummary(
 
 export function useRunSummaries(
   runIds: string[],
-  opts: { enabled?: boolean; source?: DataSource; limit?: number } = {}
+  opts: { enabled?: boolean; limit?: number } = {}
 ) {
-  const source = opts.source ?? 'auto';
   const limit = opts.limit;
 
   // Normalize and limit IDs
@@ -80,9 +77,9 @@ export function useRunSummaries(
 
   const results = useQueries({
     queries: targetIds.map((runId) => ({
-      queryKey: backtestKeys.summary(runId, source),
+      queryKey: backtestKeys.summary(runId),
       queryFn: ({ signal }: { signal: AbortSignal }) =>
-        backtestApi.getSummary(runId, { source }, signal),
+        backtestApi.getSummary(runId, {}, signal),
       enabled,
       retry: (failureCount: number, error: unknown) => {
         if (isNotFoundError(error)) return false;
@@ -107,18 +104,17 @@ export function useRunSummaries(
 
 export function useTimeseriesMulti(
   runIds: string[],
-  opts: { enabled?: boolean; source?: DataSource; maxPoints?: number } = {}
+  opts: { enabled?: boolean; maxPoints?: number } = {}
 ) {
-  const source = opts.source ?? 'auto';
   const maxPoints = opts.maxPoints ?? 5000;
   const uniqueIds = Array.from(new Set(runIds.filter(Boolean)));
   const enabled = (opts.enabled ?? true) && uniqueIds.length > 0;
 
   const results = useQueries({
     queries: uniqueIds.map((runId) => ({
-      queryKey: backtestKeys.timeseries(runId, source, maxPoints),
+      queryKey: backtestKeys.timeseries(runId, maxPoints),
       queryFn: ({ signal }: { signal: AbortSignal }) =>
-        backtestApi.getTimeseries(runId, { source, maxPoints }, signal),
+        backtestApi.getTimeseries(runId, { maxPoints }, signal),
       enabled,
       retry: (failureCount: number, error: unknown) => {
         if (isNotFoundError(error)) return false;
@@ -144,18 +140,17 @@ export function useTimeseriesMulti(
 export function useRollingMulti(
   runIds: string[],
   windowDays: number,
-  opts: { enabled?: boolean; source?: DataSource; maxPoints?: number } = {}
+  opts: { enabled?: boolean; maxPoints?: number } = {}
 ) {
-  const source = opts.source ?? 'auto';
   const maxPoints = opts.maxPoints ?? 5000;
   const uniqueIds = Array.from(new Set(runIds.filter(Boolean)));
   const enabled = (opts.enabled ?? true) && uniqueIds.length > 0;
 
   const results = useQueries({
     queries: uniqueIds.map((runId) => ({
-      queryKey: backtestKeys.rolling(runId, source, windowDays, maxPoints),
+      queryKey: backtestKeys.rolling(runId, windowDays, maxPoints),
       queryFn: ({ signal }: { signal: AbortSignal }) =>
-        backtestApi.getRolling(runId, { source, windowDays, maxPoints }, signal),
+        backtestApi.getRolling(runId, { windowDays, maxPoints }, signal),
       enabled,
       retry: (failureCount: number, error: unknown) => {
         if (isNotFoundError(error)) return false;
@@ -180,16 +175,15 @@ export function useRollingMulti(
 
 export function useTrades(
   runId: string | undefined,
-  opts: { enabled?: boolean; source?: DataSource; limit?: number; offset?: number } = {}
+  opts: { enabled?: boolean; limit?: number; offset?: number } = {}
 ) {
-  const source = opts.source ?? 'auto';
   const limit = opts.limit ?? 2000;
   const offset = opts.offset ?? 0;
   const enabled = (opts.enabled ?? true) && !!runId;
 
   const { data, error, isLoading } = useQuery({
-    queryKey: backtestKeys.trades(runId!, source, limit, offset),
-    queryFn: ({ signal }) => backtestApi.getTrades(runId!, { source, limit, offset }, signal),
+    queryKey: backtestKeys.trades(runId!, limit, offset),
+    queryFn: ({ signal }) => backtestApi.getTrades(runId!, { limit, offset }, signal),
     enabled
   });
 

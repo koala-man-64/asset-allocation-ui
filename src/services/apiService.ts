@@ -3,7 +3,12 @@
 import { FinanceData, MarketData } from '@/types/data';
 import { DomainMetadata, SystemHealth } from '@/types/strategy';
 import { config as uiConfig } from '@/config';
-import { appendAuthHeaders } from '@/services/authTransport';
+import {
+  appendAuthHeaders,
+  hasInteractiveAuthHandler,
+  isAuthRedirectStartedError,
+  requestInteractiveReauth
+} from '@/services/authTransport';
 
 const API_WARMUP_PATH = '/healthz';
 const API_COLD_START_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -220,6 +225,15 @@ export interface ResponseWithMeta<T> {
   meta: RequestMeta;
 }
 
+export interface AuthSessionStatus {
+  authMode: string;
+  subject: string;
+  displayName?: string | null;
+  username?: string | null;
+  requiredRoles: string[];
+  grantedRoles: string[];
+}
+
 function createRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -302,6 +316,15 @@ async function performRequest<T>(
 
   if (!response.ok) {
     const errorBody = await response.text();
+    if (response.status === 401 && hasInteractiveAuthHandler()) {
+      try {
+        await requestInteractiveReauth({ reason: `API ${endpoint} returned 401.` });
+      } catch (error) {
+        if (isAuthRedirectStartedError(error)) {
+          throw error;
+        }
+      }
+    }
     throw new ApiError(
       response.status,
       `API Error: ${response.status} ${response.statusText} [requestId=${requestId}] - ${errorBody}`
@@ -837,6 +860,10 @@ export const apiService = {
     params: { refresh?: boolean } = {}
   ): Promise<ResponseWithMeta<SystemHealth>> {
     return requestWithMeta<SystemHealth>('/system/health', { params });
+  },
+
+  getAuthSessionStatusWithMeta(): Promise<ResponseWithMeta<AuthSessionStatus>> {
+    return requestWithMeta<AuthSessionStatus>('/auth/session');
   },
 
   getDomainMetadata(

@@ -8,6 +8,7 @@ const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
 const mockMsal = vi.hoisted(() => ({
   initialize: vi.fn(),
   handleRedirectPromise: vi.fn(),
+  ssoSilent: vi.fn(),
   getActiveAccount: vi.fn(),
   getAllAccounts: vi.fn(),
   setActiveAccount: vi.fn(),
@@ -16,14 +17,18 @@ const mockMsal = vi.hoisted(() => ({
   logoutRedirect: vi.fn()
 }));
 
+const mockConfig = vi.hoisted(() => ({
+  oidcEnabled: true,
+  authRequired: false,
+  oidcClientId: 'spa-client-id',
+  oidcAuthority: 'https://login.microsoftonline.com/tenant-id',
+  oidcScopes: ['api://asset-allocation-api/user_impersonation'],
+  oidcRedirectUri: 'https://asset-allocation.example.com/auth/callback',
+  oidcPostLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
+}));
+
 vi.mock('@/config', () => ({
-  config: {
-    oidcEnabled: true,
-    oidcClientId: 'spa-client-id',
-    oidcAuthority: 'https://login.microsoftonline.com/tenant-id',
-    oidcScopes: ['api://asset-allocation-api/user_impersonation'],
-    oidcRedirectUri: 'https://asset-allocation.example.com/auth/callback'
-  }
+  config: mockConfig
 }));
 
 vi.mock('@azure/msal-browser', () => ({
@@ -53,8 +58,17 @@ describe('AuthProvider', () => {
   beforeEach(() => {
     window.history.pushState({}, 'Home', '/');
     window.sessionStorage.clear();
+    mockConfig.oidcEnabled = true;
+    mockConfig.authRequired = false;
+    mockConfig.oidcClientId = 'spa-client-id';
+    mockConfig.oidcAuthority = 'https://login.microsoftonline.com/tenant-id';
+    mockConfig.oidcScopes = ['api://asset-allocation-api/user_impersonation'];
+    mockConfig.oidcRedirectUri = 'https://asset-allocation.example.com/auth/callback';
+    mockConfig.oidcPostLogoutRedirectUri =
+      'https://asset-allocation.example.com/auth/logout-complete';
     mockMsal.initialize.mockReset();
     mockMsal.handleRedirectPromise.mockReset();
+    mockMsal.ssoSilent.mockReset();
     mockMsal.getActiveAccount.mockReset();
     mockMsal.getAllAccounts.mockReset();
     mockMsal.setActiveAccount.mockReset();
@@ -64,6 +78,7 @@ describe('AuthProvider', () => {
 
     mockMsal.initialize.mockResolvedValue(undefined);
     mockMsal.handleRedirectPromise.mockResolvedValue(null);
+    mockMsal.ssoSilent.mockResolvedValue({ account: null });
     mockMsal.getActiveAccount.mockReturnValue(null);
     mockMsal.getAllAccounts.mockReturnValue([]);
     mockMsal.loginRedirect.mockResolvedValue(undefined);
@@ -77,8 +92,8 @@ describe('AuthProvider', () => {
       </AuthProvider>
     );
 
-    expect(screen.getByTestId('phase')).toHaveTextContent('initializing');
-    expect(screen.getByTestId('busy')).toHaveTextContent('true');
+    expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
+    expect(screen.getByTestId('busy')).toHaveTextContent('false');
 
     await waitFor(() => {
       expect(screen.getByTestId('ready')).toHaveTextContent('true');
@@ -160,7 +175,55 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('busy')).toHaveTextContent('true');
 
     await waitFor(() => {
-      expect(mockMsal.logoutRedirect).toHaveBeenCalledWith({ account });
+      expect(mockMsal.logoutRedirect).toHaveBeenCalledWith({
+        account,
+        postLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
+      });
+    });
+  });
+
+  it('redirects automatically after a silent SSO interaction-required response', async () => {
+    const { InteractionRequiredAuthError } = await import('@azure/msal-browser');
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'System Status', '/system-status');
+    mockMsal.ssoSilent.mockRejectedValueOnce(new InteractionRequiredAuthError('interaction required'));
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
+        scopes: ['api://asset-allocation-api/user_impersonation']
+      });
+      expect(mockMsal.loginRedirect).toHaveBeenCalledWith({
+        scopes: ['api://asset-allocation-api/user_impersonation']
+      });
+      expect(screen.getByTestId('phase')).toHaveTextContent('redirecting');
+    });
+  });
+
+  it('restores the session silently when ssoSilent returns an account', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'System Status', '/system-status');
+    mockMsal.ssoSilent.mockResolvedValueOnce({ account });
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
+        scopes: ['api://asset-allocation-api/user_impersonation']
+      });
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+      expect(mockMsal.loginRedirect).not.toHaveBeenCalled();
     });
   });
 });

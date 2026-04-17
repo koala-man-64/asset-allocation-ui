@@ -6,6 +6,7 @@ interface Window {
   __API_UI_CONFIG__?: Partial<UiRuntimeConfig> & {
     oidcScopes?: string[] | string;
     oidcAudience?: string[] | string;
+    oidcPostLogoutRedirectUri?: string;
     uiAuthEnabled?: boolean | string;
   };
 }
