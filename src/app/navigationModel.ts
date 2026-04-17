@@ -271,7 +271,13 @@ export function resolveVisibleNavSections(
     items: normalizedNavOrder[section.key]
       .filter((path) => !pinnedSet.has(path))
       .map((path) => findNavItem(path))
-      .filter((item): item is NavItem => Boolean(item) && item.sectionKey === section.key)
+      .filter((item): item is NavItem => {
+        if (!item) {
+          return false;
+        }
+
+        return item.sectionKey === section.key;
+      })
   })).filter((section) => section.items.length > 0);
 
   return { pinnedItems, visibleSections };
