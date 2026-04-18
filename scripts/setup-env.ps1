@@ -1,5 +1,6 @@
 param(
     [string]$EnvFilePath = "",
+    [string]$LocalEnvFilePath = "",
     [switch]$DryRun,
     [string[]]$Set = @(),
     [string]$NpmrcPath = "",
@@ -12,6 +13,9 @@ Set-StrictMode -Version Latest
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
     $EnvFilePath = Join-Path $repoRoot ".env.web"
+}
+if ([string]::IsNullOrWhiteSpace($LocalEnvFilePath)) {
+    $LocalEnvFilePath = Join-Path $repoRoot ".env.local"
 }
 
 $contractPath = Join-Path $repoRoot "docs\ops\env-contract.csv"
@@ -157,6 +161,52 @@ function Read-SecretFileValue {
     $resolvedPath = Resolve-ReadableFilePath -Path $Path
     $content = Get-Content -LiteralPath $resolvedPath -Raw
     return (Trim-TrailingLineBreaks -Value $content)
+}
+function Get-ResolvedResultValue {
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IEnumerable]$Results,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [string]$Fallback = ""
+    )
+    foreach ($result in @($Results)) {
+        if ($null -eq $result) { continue }
+        if ($result.Name -eq $Name) {
+            return (Normalize-EnvValue -Value (($result.Value | Out-String).Trim()))
+        }
+    }
+    return (Normalize-EnvValue -Value $Fallback)
+}
+function Join-UpstreamUrl {
+    param([string]$UpstreamHost, [string]$UpstreamScheme)
+    $normalizedHost = ([string]$UpstreamHost).Trim().TrimEnd("/")
+    if ([string]::IsNullOrWhiteSpace($normalizedHost)) { return "" }
+    if ($normalizedHost -match '^[a-z][a-z0-9+\.-]*://') {
+        return $normalizedHost
+    }
+    $normalizedScheme = ([string]$UpstreamScheme).Trim().TrimEnd(":").ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($normalizedScheme)) {
+        $normalizedScheme = "http"
+    }
+    return "${normalizedScheme}://$normalizedHost"
+}
+function Build-LocalEnvResults {
+    param([Parameter(Mandatory = $true)][System.Collections.IEnumerable]$ResolvedResults)
+    $apiBaseUrl = "/api"
+    $apiUpstream = Get-ResolvedResultValue -Results $ResolvedResults -Name "API_UPSTREAM"
+    $apiUpstreamScheme = Get-ResolvedResultValue -Results $ResolvedResults -Name "API_UPSTREAM_SCHEME" -Fallback "https"
+    $uiAuthEnabled = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_AUTH_ENABLED" -Fallback "true"
+    $proxyTarget = Join-UpstreamUrl -UpstreamHost $apiUpstream -UpstreamScheme $apiUpstreamScheme
+    if ([string]::IsNullOrWhiteSpace($proxyTarget)) {
+        $proxyTarget = "http://127.0.0.1:9000"
+    }
+    $proxyConfigJs = if ([string]::IsNullOrWhiteSpace($apiUpstream)) { "false" } else { "true" }
+
+    return @(
+        [pscustomobject]@{ Name = "VITE_API_BASE_URL"; Value = $apiBaseUrl; Source = "derived"; IsSecret = $false; PromptRequired = $false },
+        [pscustomobject]@{ Name = "VITE_API_PROXY_TARGET"; Value = $proxyTarget; Source = "derived"; IsSecret = $false; PromptRequired = $false },
+        [pscustomobject]@{ Name = "VITE_PROXY_CONFIG_JS"; Value = $proxyConfigJs; Source = "derived"; IsSecret = $false; PromptRequired = $false },
+        [pscustomobject]@{ Name = "VITE_UI_AUTH_ENABLED"; Value = $uiAuthEnabled; Source = "derived"; IsSecret = $false; PromptRequired = $false }
+    )
 }
 
 $overrideMap = @{}
@@ -334,10 +384,16 @@ foreach ($row in $contractRows) {
 }
 
 $lines = foreach ($result in $results) { "{0}={1}" -f $result.Name, $result.Value }
+$localEnvResults = Build-LocalEnvResults -ResolvedResults $results
+$localEnvLines = foreach ($result in $localEnvResults) { "{0}={1}" -f $result.Name, $result.Value }
 Write-Host "Target env file: $EnvFilePath" -ForegroundColor Cyan
 foreach ($result in $results) {
     $displayValue = if ($result.IsSecret -and -not [string]::IsNullOrWhiteSpace($result.Value)) { "<redacted>" } else { $result.Value }
     Write-Host ("{0}={1} [source={2}; prompt_required={3}]" -f $result.Name, $displayValue, $result.Source, $result.PromptRequired.ToString().ToLowerInvariant())
+}
+Write-Host "Target local env file: $LocalEnvFilePath" -ForegroundColor Cyan
+foreach ($result in $localEnvResults) {
+    Write-Host ("{0}={1} [source={2}; prompt_required={3}]" -f $result.Name, $result.Value, $result.Source, $result.PromptRequired.ToString().ToLowerInvariant())
 }
 if ($DryRun) {
     Write-Host ""
@@ -346,7 +402,14 @@ if ($DryRun) {
         $displayValue = if ($result.IsSecret -and -not [string]::IsNullOrWhiteSpace($result.Value)) { "<redacted>" } else { $result.Value }
         Write-Host ("{0}={1}" -f $result.Name, $displayValue)
     }
+    Write-Host ""
+    Write-Host "# Preview (.env.local)" -ForegroundColor Cyan
+    foreach ($result in $localEnvResults) {
+        Write-Host ("{0}={1}" -f $result.Name, $result.Value)
+    }
     return
 }
 Set-Content -Path $EnvFilePath -Value $lines -Encoding utf8
 Write-Host "Wrote $EnvFilePath" -ForegroundColor Green
+Set-Content -Path $LocalEnvFilePath -Value $localEnvLines -Encoding utf8
+Write-Host "Wrote $LocalEnvFilePath" -ForegroundColor Green

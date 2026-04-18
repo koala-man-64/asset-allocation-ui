@@ -43,6 +43,6 @@ Canonical workflows live under `.github/workflows/`.
 - `rollback-prod.yml` deploys a specific prior UI image digest to prod.
 - `deploy-ui-runtime.yml` is the reusable prod apply-and-verify workflow used by deploy and rollback entry points.
 - `contracts-compat.yml` validates the UI against a candidate or released contracts ref.
-- `scripts/setup-env.ps1` builds repo-local `.env.web` using Azure and git discovery where possible, and can ingest `NPMRC` from a file path.
+- `scripts/setup-env.ps1` builds repo-local `.env.web` and `.env.local` using Azure and git discovery where possible, and can ingest `NPMRC` from a file path.
 - `scripts/sync-all-to-github.ps1` syncs the `.env.web` surface into repo vars and secrets.
 - `DEPLOYMENT_SETUP.md` is the canonical deploy, operate, and rollback runbook.

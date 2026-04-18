@@ -180,3 +180,37 @@ def test_setup_env_dry_run_reports_sources_without_prompting() -> None:
         )
     )
     assert "prompt_required=" in stdout
+    assert "# Preview (.env.local)" in stdout
+    assert "VITE_API_PROXY_TARGET=" in stdout
+    assert "VITE_PROXY_CONFIG_JS=" in stdout
+
+
+def test_setup_env_writes_local_vite_env_file(tmp_path: Path) -> None:
+    root = repo_root()
+    script = root / "scripts" / "setup-env.ps1"
+    env_file = tmp_path / ".env.web"
+    local_env_file = tmp_path / ".env.local"
+    env_file.write_text((root / ".env.web").read_text(encoding="utf-8"), encoding="utf-8")
+
+    subprocess.run(
+        [
+            powershell_exe(),
+            "-NoProfile",
+            "-File",
+            str(script),
+            "-EnvFilePath",
+            str(env_file),
+            "-LocalEnvFilePath",
+            str(local_env_file),
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    local_env_text = local_env_file.read_text(encoding="utf-8")
+    assert "VITE_API_BASE_URL=/api" in local_env_text
+    assert "VITE_API_PROXY_TARGET=https://asset-allocation-api.bluesea-887e7a19.eastus.azurecontainerapps.io" in local_env_text
+    assert "VITE_PROXY_CONFIG_JS=true" in local_env_text
+    assert "VITE_UI_AUTH_ENABLED=true" in local_env_text
