@@ -178,6 +178,22 @@ def test_ui_runtime_deploy_workflow_verifies_proxied_api_contract() -> None:
     assert 'fetch_200_body "https://${fqdn}/config.js"' in text
 
 
+def test_ui_runtime_config_sources_publish_same_origin_oidc_overrides() -> None:
+    required_fragments = [
+        "window.location.origin",
+        "oidcRedirectUri",
+        "/auth/callback",
+        "oidcPostLogoutRedirectUri",
+        "/auth/logout-complete",
+    ]
+    for relative_path in ("public/ui-config.js", "docker/write-ui-runtime-config.sh"):
+        text = (repo_root() / relative_path).read_text(encoding="utf-8")
+        missing = [fragment for fragment in required_fragments if fragment not in text]
+        assert not missing, (
+            f"{relative_path} is missing the same-origin OIDC override fragments: {missing}"
+        )
+
+
 def test_ui_release_workflow_fails_fast_when_azure_repo_vars_are_missing() -> None:
     text = workflow_text("release.yml")
     assert "Verify required Azure repo vars" in text
