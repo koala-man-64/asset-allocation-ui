@@ -74,8 +74,7 @@ function createSessionRecord(config: MsalSessionConfig): MsalSessionRecord {
       clientId: config.clientId,
       authority: config.authority,
       redirectUri: config.redirectUri,
-      postLogoutRedirectUri: config.postLogoutRedirectUri,
-      navigateToLoginRequestUrl: false
+      postLogoutRedirectUri: config.postLogoutRedirectUri
     },
     cache: {
       cacheLocation: 'sessionStorage'
@@ -139,7 +138,9 @@ export function getMsalSession(config: MsalSessionConfig): MsalSessionHandle | n
 
       const bootstrapPromise = (async (): Promise<MsalBootstrapResult> => {
         const instance = await record.ensureInitialized();
-        const redirectResult = await instance.handleRedirectPromise();
+        const redirectResult = await instance.handleRedirectPromise({
+          navigateToLoginRequestUrl: false
+        });
         const redirectAccount = chooseAccount(instance, redirectResult);
         if (redirectAccount) {
           return {

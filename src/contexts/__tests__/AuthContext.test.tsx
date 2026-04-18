@@ -116,10 +116,16 @@ describe('AuthProvider', () => {
     expect(PublicClientApplication).toHaveBeenCalledWith(
       expect.objectContaining({
         auth: expect.objectContaining({
-          navigateToLoginRequestUrl: false
+          clientId: 'spa-client-id',
+          authority: 'https://login.microsoftonline.com/tenant-id',
+          redirectUri: 'https://asset-allocation.example.com/auth/callback',
+          postLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
         })
       })
     );
+    expect(mockMsal.handleRedirectPromise).toHaveBeenCalledWith({
+      navigateToLoginRequestUrl: false
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(screen.getByTestId('phase')).toHaveTextContent('redirecting');
