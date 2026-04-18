@@ -11,8 +11,19 @@ cat > "${output_path}" <<EOF
 // This file must not contain secrets.
 /* global window */
 
+const currentUiConfig = window.__API_UI_CONFIG__ || {};
+const oidcConfigured = Boolean(
+  currentUiConfig.oidcEnabled ||
+    (currentUiConfig.oidcAuthority && currentUiConfig.oidcClientId)
+);
+const sameOriginRedirectUri = new URL('/auth/callback', window.location.origin).toString();
+const sameOriginPostLogoutRedirectUri = new URL(
+  '/auth/logout-complete',
+  window.location.origin
+).toString();
+
 window.__API_UI_CONFIG__ = {
-  ...(window.__API_UI_CONFIG__ || {}),
+  ...currentUiConfig,
 EOF
 
 if [ -n "${ui_auth_enabled}" ]; then
@@ -20,5 +31,13 @@ if [ -n "${ui_auth_enabled}" ]; then
 fi
 
 cat >> "${output_path}" <<'EOF'
+  ...(oidcConfigured
+    ? {
+        // The UI owns both callback routes, so always return to the current UI origin
+        // even if the upstream control plane advertises an API-host callback URL.
+        oidcRedirectUri: sameOriginRedirectUri,
+        oidcPostLogoutRedirectUri: sameOriginPostLogoutRedirectUri,
+      }
+    : {}),
 };
 EOF

@@ -49,6 +49,24 @@ const SLOW_REDIRECT_HELPER =
 const SLOW_ACCESS_HELPER =
   'The session is authenticated, but the control plane is still validating access. Retry if this does not clear.';
 
+function resolveCrossOriginRedirectMisconfiguration(redirectUri: string): string {
+  const normalizedRedirectUri = String(redirectUri ?? '').trim();
+  if (!normalizedRedirectUri || typeof window === 'undefined') {
+    return '';
+  }
+
+  try {
+    const redirectUrl = new URL(normalizedRedirectUri, window.location.origin);
+    if (redirectUrl.origin === window.location.origin) {
+      return '';
+    }
+
+    return `This deployment is advertising oidcRedirectUri=${redirectUrl.toString()}, which sends Microsoft Entra back to ${redirectUrl.origin} instead of this UI origin (${window.location.origin}). Update the control-plane UI_OIDC_REDIRECT_URI or let the UI runtime override load before retrying sign-in.`;
+  } catch {
+    return `This deployment is advertising an invalid oidcRedirectUri (${normalizedRedirectUri}). Update the control-plane OIDC settings before retrying sign-in.`;
+  }
+}
+
 function useDelayedHelper(enabled: boolean, delayMs = 4000) {
   const [visible, setVisible] = useState(false);
 
@@ -448,7 +466,12 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
   const [accessState, setAccessState] = useState<AccessState>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [retryNonce, setRetryNonce] = useState(0);
-  const browserOidcMisconfigured = config.authRequired && (!config.oidcEnabled || !auth.enabled);
+  const missingBrowserOidcConfig = config.authRequired && (!config.oidcEnabled || !auth.enabled);
+  const crossOriginRedirectMisconfiguration = resolveCrossOriginRedirectMisconfiguration(
+    config.oidcRedirectUri
+  );
+  const browserOidcMisconfigured =
+    missingBrowserOidcConfig || Boolean(crossOriginRedirectMisconfiguration);
   const accessCheckPending = auth.authenticated && (accessState === 'checking' || accessState === 'idle');
   const showRedirectHelper = useDelayedHelper(auth.phase === 'redirecting');
   const showAccessHelper = useDelayedHelper(accessCheckPending);
@@ -536,9 +559,13 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
   if (browserOidcMisconfigured) {
     return (
       <AuthStatusScreen
-        body={DEPLOYMENT_AUTH_MISCONFIGURED_BODY}
+        body={crossOriginRedirectMisconfiguration || DEPLOYMENT_AUTH_MISCONFIGURED_BODY}
         layout="inline"
-        statusLabel="The browser OIDC configuration is incomplete for this deployment."
+        statusLabel={
+          crossOriginRedirectMisconfiguration
+            ? 'The advertised OIDC callback points to a different origin than this UI.'
+            : 'The browser OIDC configuration is incomplete for this deployment.'
+        }
         title="Deployment auth misconfigured"
       />
     );

@@ -96,6 +96,8 @@ GitHub secrets:
 
 1. Publish the contracts repo first and pin the version consumed here.
 2. Deploy the control-plane first. The UI depends on `/config.js` from the API.
+   - After the UI Container App has a stable public FQDN, update the control-plane `UI_OIDC_REDIRECT_URI` to `https://<ui-fqdn>/auth/callback`.
+   - Do not leave `UI_OIDC_REDIRECT_URI` pointed at the API Container App. That produces the exact first-run failure where Microsoft Entra returns to `https://<api-fqdn>/auth/callback` and the browser sees `{"detail":"Not Found"}`.
 3. Run `powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1 -NpmrcPath C:\path\to\ui.npmrc` to refresh both `.env.web` and `.env.local`.
 4. Run `powershell -ExecutionPolicy Bypass -File scripts\sync-all-to-github.ps1`.
 5. Run the UI validation steps:
@@ -109,9 +111,11 @@ GitHub secrets:
 8. Verify:
    - `/`
    - `/config.js`
+   - `/ui-config.js`
    - `/system-status` loads without `System Link Failure`
    - DevTools show same-origin `/api/...` requests without `301` redirects or CORS/preflight failures
    - browser sign-in flow against the Entra UI app registration
+   - the effective browser callback resolves to the UI origin, not the API origin
 
 ## Rollback
 
@@ -126,6 +130,8 @@ GitHub secrets:
 - If Docker build fails before install, verify the build was invoked with `--secret id=npmrc,src=<path-to-npmrc>`.
 - If `deploy-prod.yml` fails before apply, verify the selected release uploaded the `ui-release` artifact, then verify `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APPS_ENVIRONMENT_NAME`, `API_UPSTREAM`, `API_UPSTREAM_SCHEME`, and `UI_AUTH_ENABLED`.
 - If `deploy-prod.yml` fails verification, inspect the public FQDN, `/`, `/config.js`, `/api/system/status-view`, and `/api/realtime/ticket`, then confirm the proxied control-plane host is reachable without redirecting the browser cross-origin.
+- If the first sign-in hop lands on `https://<api-fqdn>/auth/callback` and returns `{"detail":"Not Found"}`, the control-plane `UI_OIDC_REDIRECT_URI` is pointed at the API app instead of the UI app. Fix that value in `asset-allocation-control-plane` and redeploy the control plane auth configuration.
+- The UI container now publishes a same-origin callback override in `/ui-config.js` for `/auth/callback` and `/auth/logout-complete`, but treat that as a safety rail rather than the source of truth. The upstream control-plane setting still needs to match the UI FQDN.
 
 ## Dependencies
 
@@ -141,6 +147,7 @@ GitHub secrets:
 - Manual `deploy-prod.yml` and `rollback-prod.yml` runs must be started from `main`.
 - `NPMRC` is now a repo-synced GitHub secret and normal install paths use `--frozen-lockfile`.
 - This repo does not own shared Azure provisioning scripts.
+- The current browser-auth source of truth still lives in `..\asset-allocation-control-plane\api\service\app.py` and `..\asset-allocation-control-plane\scripts\ops\provision\provision_entra_oidc.ps1`. If browser sign-in breaks only after the Entra redirect, inspect `UI_OIDC_REDIRECT_URI` there first.
 
 ## Evidence
 

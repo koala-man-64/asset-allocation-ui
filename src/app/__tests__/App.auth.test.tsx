@@ -12,6 +12,7 @@ const mockConfig = vi.hoisted(() => ({
   apiBaseUrl: '/api',
   oidcEnabled: true,
   authRequired: true,
+  oidcRedirectUri: 'http://localhost/auth/callback',
   oidcPostLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
 }));
 
@@ -68,6 +69,7 @@ describe('App OIDC access flow', () => {
     mockConfig.apiBaseUrl = '/api';
     mockConfig.oidcEnabled = true;
     mockConfig.authRequired = true;
+    mockConfig.oidcRedirectUri = 'http://localhost/auth/callback';
     mockAuth.enabled = true;
     mockAuth.ready = true;
     mockAuth.authenticated = false;
@@ -176,6 +178,19 @@ describe('App OIDC access flow', () => {
 
     expect(await screen.findByText('Deployment auth misconfigured')).toBeInTheDocument();
     expect(screen.getByText(/UI_OIDC_CLIENT_ID/i)).toBeInTheDocument();
+    expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
+    expect(mockUseRealtime).not.toHaveBeenCalled();
+  });
+
+  it('shows a deployment misconfiguration screen when the callback origin points at another host', async () => {
+    mockConfig.oidcRedirectUri = 'https://asset-allocation-api.example.com/auth/callback';
+    window.history.pushState({}, 'System Status', '/system-status');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByText('Deployment auth misconfigured')).toBeInTheDocument();
+    expect(screen.getByText(/asset-allocation-api\.example\.com\/auth\/callback/i)).toBeInTheDocument();
+    expect(screen.getByText(/instead of this UI origin/i)).toBeInTheDocument();
     expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
     expect(mockUseRealtime).not.toHaveBeenCalled();
   });
