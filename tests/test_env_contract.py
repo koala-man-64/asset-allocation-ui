@@ -109,6 +109,7 @@ def test_ui_repo_has_bootstrap_scripts_and_no_shared_provisioner() -> None:
     scripts_dir = repo_root() / "scripts"
     assert (scripts_dir / "setup-env.ps1").exists()
     assert (scripts_dir / "sync-all-to-github.ps1").exists()
+    assert (scripts_dir / "validate_deployed_ui_oidc.py").exists()
     assert not (scripts_dir / "provision_azure.ps1").exists()
 
 
@@ -169,13 +170,16 @@ def test_nginx_https_proxying_enables_sni() -> None:
 
 def test_ui_runtime_deploy_workflow_verifies_proxied_api_contract() -> None:
     text = workflow_text("deploy-ui-runtime.yml")
-    assert 'UI_AUTH_ENABLED=false is invalid because the proxied /config.js reports authRequired=true.' in text
+    validator_text = (repo_root() / "scripts" / "validate_deployed_ui_oidc.py").read_text(encoding="utf-8")
+    assert 'UI_AUTH_ENABLED=false is invalid because the proxied /config.js reports authRequired=true.' in validator_text
     assert 'vars.API_UPSTREAM_SCHEME || \'https\'' in text
     assert 'vars.UI_AUTH_ENABLED || \'true\'' in text
+    assert 'python scripts/validate_deployed_ui_oidc.py \\' in text
+    assert '--ui-origin "https://${fqdn}"' in text
+    assert '--ui-auth-enabled "${UI_AUTH_ENABLED}"' in text
     assert 'https://${fqdn}/api/system/status-view' in text
     assert 'https://${fqdn}/api/realtime/ticket' in text
     assert 'Allowed: $*' in text
-    assert 'fetch_200_body "https://${fqdn}/config.js"' in text
 
 
 def test_ui_runtime_config_sources_publish_same_origin_oidc_overrides() -> None:

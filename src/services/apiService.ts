@@ -8,6 +8,7 @@ import {
   hasInteractiveAuthHandler,
   requestInteractiveReauth
 } from '@/services/authTransport';
+import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
 
 const API_WARMUP_PATH = '/healthz';
 const API_COLD_START_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -53,8 +54,15 @@ function isRetryableFetchError(error: unknown, externalSignal?: AbortSignal | nu
 }
 
 function resolveWarmupUrl(apiBaseUrl: string): string {
-  const base = apiBaseUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
-  return `${base || ''}${API_WARMUP_PATH}`;
+  const trimmed = apiBaseUrl.replace(/\/+$/, '');
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      return `${new URL(trimmed).origin}${API_WARMUP_PATH}`;
+    } catch {
+      return API_WARMUP_PATH;
+    }
+  }
+  return API_WARMUP_PATH;
 }
 
 function buildRequestUrl(
@@ -87,61 +95,6 @@ async function wait(delayMs: number): Promise<void> {
   });
 }
 
-async function fetchWithOptionalTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number | undefined,
-  endpointLabel: string,
-  requestId: string
-): Promise<Response> {
-  let timeoutController: AbortController | undefined;
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  let mergedSignal: AbortSignal | null | undefined = init.signal;
-  let removeExternalAbortListener: (() => void) | undefined;
-
-  if (typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0) {
-    timeoutController = new AbortController();
-    timeoutHandle = setTimeout(
-      () => {
-        timeoutController?.abort();
-      },
-      Math.max(1, Math.floor(timeoutMs))
-    );
-
-    if (init.signal) {
-      if (init.signal.aborted) {
-        timeoutController.abort();
-      } else {
-        const relayAbort = () => timeoutController?.abort();
-        init.signal.addEventListener('abort', relayAbort, { once: true });
-        removeExternalAbortListener = () => init.signal?.removeEventListener('abort', relayAbort);
-      }
-    }
-    mergedSignal = timeoutController.signal;
-  }
-
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: mergedSignal ?? undefined
-    });
-  } catch (error) {
-    if (timeoutController?.signal.aborted && !init.signal?.aborted) {
-      throw new Error(
-        `API timeout after ${Math.floor(timeoutMs || 0)}ms [requestId=${requestId}] - ${endpointLabel}`
-      );
-    }
-    throw error;
-  } finally {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-    if (removeExternalAbortListener) {
-      removeExternalAbortListener();
-    }
-  }
-}
-
 async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
   if (apiWarmupAttempted.has(apiBaseUrl)) {
     return;
@@ -163,9 +116,12 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
                 headers: new Headers({ 'X-Request-ID': createRequestId() }),
                 cache: 'no-store'
               },
-              API_WARMUP_TIMEOUT_MS,
-              API_WARMUP_PATH,
-              'warmup'
+              {
+                timeoutMs: API_WARMUP_TIMEOUT_MS,
+                label: API_WARMUP_PATH,
+                requestId: 'warmup',
+                timeoutMessagePrefix: 'API timeout after'
+              }
             );
             if (response.status < 400) {
               return;
@@ -282,9 +238,12 @@ async function performRequest<T>(
           headers: authHeaders,
           ...customConfig
         },
-        timeoutMs,
-        endpoint,
-        requestId
+        {
+          timeoutMs,
+          label: endpoint,
+          requestId,
+          timeoutMessagePrefix: 'API timeout after'
+        }
       );
     } catch (error) {
       if (!shouldRetry || !isRetryableFetchError(error, customConfig.signal)) {

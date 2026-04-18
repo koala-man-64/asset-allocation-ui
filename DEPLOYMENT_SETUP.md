@@ -112,6 +112,7 @@ GitHub secrets:
    - `/`
    - `/config.js`
    - `/ui-config.js`
+   - `python scripts/validate_deployed_ui_oidc.py --ui-origin https://<ui-fqdn> --ui-auth-enabled true`
    - `/system-status` loads without `System Link Failure`
    - DevTools show same-origin `/api/...` requests without `301` redirects or CORS/preflight failures
    - browser sign-in flow against the Entra UI app registration
@@ -130,7 +131,9 @@ GitHub secrets:
 - If Docker build fails before install, verify the build was invoked with `--secret id=npmrc,src=<path-to-npmrc>`.
 - If `deploy-prod.yml` fails before apply, verify the selected release uploaded the `ui-release` artifact, then verify `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APPS_ENVIRONMENT_NAME`, `API_UPSTREAM`, `API_UPSTREAM_SCHEME`, and `UI_AUTH_ENABLED`.
 - If `deploy-prod.yml` fails verification, inspect the public FQDN, `/`, `/config.js`, `/api/system/status-view`, and `/api/realtime/ticket`, then confirm the proxied control-plane host is reachable without redirecting the browser cross-origin.
+- If `python scripts/validate_deployed_ui_oidc.py --ui-origin https://<ui-fqdn> --ui-auth-enabled true` fails because `oidcRedirectUri` or `oidcPostLogoutRedirectUri` still point at the API origin, update `UI_OIDC_REDIRECT_URI` in the sibling `asset-allocation-control-plane` repo and rerun `powershell -ExecutionPolicy Bypass -File ..\asset-allocation-control-plane\scripts\ops\provision\provision_entra_oidc.ps1`.
 - If the first sign-in hop lands on `https://<api-fqdn>/auth/callback` and returns `{"detail":"Not Found"}`, the control-plane `UI_OIDC_REDIRECT_URI` is pointed at the API app instead of the UI app. Fix that value in `asset-allocation-control-plane` and redeploy the control plane auth configuration.
+- If Microsoft Entra still returns `AADSTS50011` after the control-plane redirect URI is corrected, rerun `powershell -ExecutionPolicy Bypass -File ..\asset-allocation-control-plane\scripts\ops\provision\provision_entra_oidc.ps1` so the UI SPA app registration is updated with the UI callback URI.
 - The UI container now publishes a same-origin callback override in `/ui-config.js` for `/auth/callback` and `/auth/logout-complete`, but treat that as a safety rail rather than the source of truth. The upstream control-plane setting still needs to match the UI FQDN.
 
 ## Dependencies

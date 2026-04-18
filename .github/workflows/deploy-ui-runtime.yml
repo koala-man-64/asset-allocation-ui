@@ -166,65 +166,13 @@ jobs:
             exit 1
           }
 
-          fetch_200_body() {
-            local url="$1"
-            local status
-            local body_file
-            body_file="$(mktemp)"
-            status="$(curl --silent --show-error --retry 12 --retry-delay 10 --retry-connrefused --output "${body_file}" --write-out '%{http_code}' "${url}")"
-            if [ "${status}" != "200" ]; then
-              echo "Unexpected HTTP status ${status} for GET ${url}. Allowed: 200" >&2
-              cat "${body_file}" >&2 || true
-              rm -f "${body_file}"
-              exit 1
-            fi
-            cat "${body_file}"
-            rm -f "${body_file}"
-          }
-
           fqdn="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.configuration.ingress.fqdn' -o tsv)"
           actual_image="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.template.containers[0].image' -o tsv)"
           test "${actual_image}" = "${{ steps.rollout.outputs.image_digest }}"
           expect_one_of GET "https://${fqdn}/" 200
-          config_js="$(fetch_200_body "https://${fqdn}/config.js")"
-          CONFIG_JS="${config_js}" python - "${UI_AUTH_ENABLED}" <<'PY'
-          import json
-          import os
-          import re
-          import sys
-
-          text = os.environ["CONFIG_JS"]
-          match = re.search(r"window\.__API_UI_CONFIG__\s*=\s*(\{.*\})\s*;", text, re.S)
-          if not match:
-              raise SystemExit("Could not parse proxied /config.js payload.")
-
-          cfg = json.loads(match.group(1))
-          ui_auth_enabled = sys.argv[1].strip().lower() in {"1", "true", "yes", "y", "on"}
-          if cfg.get("authRequired") and not ui_auth_enabled:
-              raise SystemExit(
-                  "UI_AUTH_ENABLED=false is invalid because the proxied /config.js reports authRequired=true."
-              )
-          print(f"proxied_auth_required={cfg.get('authRequired')}")
-          PY
-          ui_config_js="$(fetch_200_body "https://${fqdn}/ui-config.js")"
-          UI_CONFIG_JS="${ui_config_js}" python - <<'PY'
-          import os
-
-          text = os.environ["UI_CONFIG_JS"]
-          required_fragments = [
-              "window.location.origin",
-              "oidcRedirectUri",
-              "/auth/callback",
-              "oidcPostLogoutRedirectUri",
-              "/auth/logout-complete",
-          ]
-          missing = [fragment for fragment in required_fragments if fragment not in text]
-          if missing:
-              raise SystemExit(
-                  "ui-config.js is missing the runtime same-origin OIDC override fragments: "
-                  + ", ".join(missing)
-              )
-          PY
+          python scripts/validate_deployed_ui_oidc.py \
+            --ui-origin "https://${fqdn}" \
+            --ui-auth-enabled "${UI_AUTH_ENABLED}"
           expect_one_of GET "https://${fqdn}/api/system/status-view" 200 401 403 405
           expect_one_of POST "https://${fqdn}/api/realtime/ticket" 200 401 403 405
           echo "fqdn=${fqdn}" >> "$GITHUB_OUTPUT"

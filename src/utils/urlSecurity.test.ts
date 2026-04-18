@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeExternalUrl } from './urlSecurity';
+import { sanitizeExternalUrl, sanitizeOperatorUrl } from './urlSecurity';
 
 describe('sanitizeExternalUrl', () => {
   it('allows https URLs on allowed hosts', () => {
@@ -28,5 +28,29 @@ describe('sanitizeExternalUrl', () => {
       allowedHosts: ['*.portal.azure.com']
     });
     expect(value).toContain('https://sub.portal.azure.com');
+  });
+});
+
+describe('sanitizeOperatorUrl', () => {
+  it('allows Azure portal resource IDs', () => {
+    const value = sanitizeOperatorUrl('/subscriptions/123/resourceGroups/demo/providers/Microsoft.App/jobs/job-1');
+    expect(value).toBe(
+      'https://portal.azure.com/#resource/subscriptions/123/resourceGroups/demo/providers/Microsoft.App/jobs/job-1'
+    );
+  });
+
+  it('allows same-origin URLs', () => {
+    const value = sanitizeOperatorUrl('/api/system/status-view');
+    expect(value).toBe(`${window.location.origin}/api/system/status-view`);
+  });
+
+  it('blocks arbitrary external hosts', () => {
+    expect(sanitizeOperatorUrl('https://evil.example.com/path')).toBe('');
+  });
+
+  it('blocks Azure portal links when that route type is disabled', () => {
+    expect(sanitizeOperatorUrl('https://portal.azure.com/#resource/foo', { allowAzurePortal: false })).toBe(
+      ''
+    );
   });
 });

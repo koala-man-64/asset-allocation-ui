@@ -10,6 +10,7 @@ import {
   isAuthReauthRequiredError,
   requestInteractiveReauth
 } from '@/services/authTransport';
+import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
 import { backtestKeys } from '@/services/backtestHooks';
 import {
   CONSOLE_LOG_STREAM_EVENT_TYPE,
@@ -28,6 +29,7 @@ const SUBSCRIPTION_TOPICS = [
 ] as const;
 
 const CONTAINER_APPS_QUERY_KEY = ['system', 'container-apps'] as const;
+const REALTIME_TICKET_TIMEOUT_MS = 5_000;
 
 type RealtimeEvent = {
   type?: unknown;
@@ -152,11 +154,19 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
 
     async function fetchRealtimeTicket(): Promise<string | null> {
       const headers = await appendAuthHeaders();
-      const response = await fetch(`${httpBase}/realtime/ticket`, {
-        method: 'POST',
-        headers,
-        cache: 'no-store'
-      });
+      const response = await fetchWithOptionalTimeout(
+        `${httpBase}/realtime/ticket`,
+        {
+          method: 'POST',
+          headers,
+          cache: 'no-store'
+        },
+        {
+          timeoutMs: REALTIME_TICKET_TIMEOUT_MS,
+          label: '/realtime/ticket',
+          timeoutMessagePrefix: 'Realtime ticket request timed out after'
+        }
+      );
 
       if (!response.ok) {
         if (response.status === 401 && hasInteractiveAuthHandler()) {
