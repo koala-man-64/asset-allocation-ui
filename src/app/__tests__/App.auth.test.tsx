@@ -23,6 +23,7 @@ const mockAuth = vi.hoisted(() => ({
   busy: false,
   userLabel: null as string | null,
   error: null as string | null,
+  interactionReason: null as string | null,
   signIn: vi.fn(),
   signOut: vi.fn()
 }));
@@ -68,6 +69,7 @@ describe('App OIDC access flow', () => {
     mockAuth.busy = false;
     mockAuth.userLabel = null;
     mockAuth.error = null;
+    mockAuth.interactionReason = null;
     mockUseRealtime.mockReset();
     mockAuth.signIn.mockReset();
     mockAuth.signOut.mockReset();
@@ -143,6 +145,20 @@ describe('App OIDC access flow', () => {
     });
 
     expect(screen.getByText(/The redirect is taking longer/i)).toBeInTheDocument();
+  });
+
+  it('shows a session-expired prompt instead of forcing a background redirect', async () => {
+    mockAuth.phase = 'session-expired';
+    mockAuth.interactionReason = 'API /system/status returned 401.';
+    window.history.pushState({}, 'System Status', '/system-status');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByText('Session expired')).toBeInTheDocument();
+    expect(screen.getByText(/API \/system\/status returned 401/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue sign-in' }));
+    expect(mockAuth.signIn).toHaveBeenCalledWith('/system-status');
   });
 
   it('shows a deployment misconfiguration screen when auth is required but browser OIDC is unavailable', async () => {

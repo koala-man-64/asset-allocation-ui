@@ -14,7 +14,11 @@ vi.mock('sonner', () => ({
 }));
 
 import { useRealtime } from './useRealtime';
-import { setAccessTokenProvider, setInteractiveAuthHandler } from '@/services/authTransport';
+import {
+  resetAuthTransportForTests,
+  setAccessTokenProvider,
+  setInteractiveAuthHandler
+} from '@/services/authTransport';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { REALTIME_SUBSCRIBE_EVENT, addConsoleLogStreamListener } from '@/services/realtimeBus';
 
@@ -85,8 +89,7 @@ describe('useRealtime', () => {
         json: async () => ({ ticket: 'default-ticket', expiresAt: '2026-03-15T12:00:00Z' })
       }) as unknown as typeof fetch
     );
-    setAccessTokenProvider(null);
-    setInteractiveAuthHandler(null);
+    resetAuthTransportForTests();
     (window as Window & { __API_UI_CONFIG__?: Record<string, unknown> }).__API_UI_CONFIG__ = {
       apiBaseUrl: '/api'
     };
@@ -96,8 +99,7 @@ describe('useRealtime', () => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
     mockToastError.mockReset();
-    setAccessTokenProvider(null);
-    setInteractiveAuthHandler(null);
+    resetAuthTransportForTests();
     delete (window as Window & { __API_UI_CONFIG__?: Record<string, unknown> }).__API_UI_CONFIG__;
   });
 
@@ -359,7 +361,8 @@ describe('useRealtime', () => {
       text: async () => 'Unauthorized'
     });
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
-    setInteractiveAuthHandler(async () => undefined);
+    const handler = vi.fn();
+    setInteractiveAuthHandler(handler);
 
     const queryClient = createQueryClient();
     render(
@@ -372,6 +375,35 @@ describe('useRealtime', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
     expect(mockToastError).not.toHaveBeenCalled();
+    expect(handler).toHaveBeenCalledTimes(1);
     expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it('collapses repeated websocket auth failures into one reauth notification', async () => {
+    const handler = vi.fn();
+    setInteractiveAuthHandler(handler);
+
+    const queryClient = createQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+    const ws = MockWebSocket.instances[0];
+
+    act(() => {
+      ws.open();
+      ws.onclose?.({ code: 4401 } as CloseEvent);
+      ws.onclose?.({ code: 4401 } as CloseEvent);
+    });
+
+    await waitFor(() => {
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+    expect(mockToastError).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,14 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import React from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthProvider, useAuth } from '../AuthContext';
+import { resetMsalSessionForTests } from '../msalSession';
+import {
+  AuthReauthRequiredError,
+  requestInteractiveReauth,
+  resetAuthTransportForTests
+} from '@/services/authTransport';
 
 const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
 
@@ -48,6 +55,7 @@ function Harness() {
       <div data-testid="busy">{String(auth.busy)}</div>
       <div data-testid="authenticated">{String(auth.authenticated)}</div>
       <div data-testid="error">{auth.error ?? ''}</div>
+      <div data-testid="interaction-reason">{auth.interactionReason ?? ''}</div>
       <button onClick={() => auth.signIn('/system-status')}>Sign in</button>
       <button onClick={() => auth.signOut()}>Sign out</button>
     </div>
@@ -66,6 +74,10 @@ describe('AuthProvider', () => {
     mockConfig.oidcRedirectUri = 'https://asset-allocation.example.com/auth/callback';
     mockConfig.oidcPostLogoutRedirectUri =
       'https://asset-allocation.example.com/auth/logout-complete';
+
+    resetAuthTransportForTests();
+    resetMsalSessionForTests();
+
     mockMsal.initialize.mockReset();
     mockMsal.handleRedirectPromise.mockReset();
     mockMsal.ssoSilent.mockReset();
@@ -86,6 +98,8 @@ describe('AuthProvider', () => {
   });
 
   it('initializes msal before starting the redirect flow', async () => {
+    const { PublicClientApplication } = await import('@azure/msal-browser');
+
     render(
       <AuthProvider>
         <Harness />
@@ -98,8 +112,14 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('ready')).toHaveTextContent('true');
     });
-    expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
-    expect(screen.getByTestId('busy')).toHaveTextContent('false');
+
+    expect(PublicClientApplication).toHaveBeenCalledWith(
+      expect.objectContaining({
+        auth: expect.objectContaining({
+          navigateToLoginRequestUrl: false
+        })
+      })
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(screen.getByTestId('phase')).toHaveTextContent('redirecting');
@@ -182,7 +202,7 @@ describe('AuthProvider', () => {
     });
   });
 
-  it('redirects automatically after a silent SSO interaction-required response', async () => {
+  it('does not auto-redirect after a silent SSO interaction-required response', async () => {
     const { InteractionRequiredAuthError } = await import('@azure/msal-browser');
     mockConfig.authRequired = true;
     window.history.pushState({}, 'System Status', '/system-status');
@@ -198,10 +218,10 @@ describe('AuthProvider', () => {
       expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
         scopes: ['api://asset-allocation-api/user_impersonation']
       });
-      expect(mockMsal.loginRedirect).toHaveBeenCalledWith({
-        scopes: ['api://asset-allocation-api/user_impersonation']
-      });
-      expect(screen.getByTestId('phase')).toHaveTextContent('redirecting');
+      expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
+      expect(screen.getByTestId('ready')).toHaveTextContent('true');
+      expect(screen.getByTestId('interaction-reason')).toHaveTextContent('');
+      expect(mockMsal.loginRedirect).not.toHaveBeenCalled();
     });
   });
 
@@ -224,6 +244,60 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
       expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
       expect(mockMsal.loginRedirect).not.toHaveBeenCalled();
+    });
+  });
+
+  it('switches into session-expired when background reauth is requested', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'System Status', '/system-status');
+    mockMsal.getAllAccounts.mockReturnValue([account]);
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+    });
+
+    await act(async () => {
+      await expect(
+        requestInteractiveReauth({
+          reason: 'API /system/status returned 401.',
+          source: 'api:/system/status'
+        })
+      ).rejects.toBeInstanceOf(AuthReauthRequiredError);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('session-expired');
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
+      expect(screen.getByTestId('interaction-reason')).toHaveTextContent(
+        'API /system/status returned 401.'
+      );
+      expect(mockMsal.loginRedirect).not.toHaveBeenCalled();
+    });
+  });
+
+  it('dedupes bootstrap work across strict-mode remounts', async () => {
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'System Status', '/system-status');
+    mockMsal.ssoSilent.mockImplementation(() => new Promise(() => {}));
+
+    render(
+      <React.StrictMode>
+        <AuthProvider>
+          <Harness />
+        </AuthProvider>
+      </React.StrictMode>
+    );
+
+    await waitFor(() => {
+      expect(mockMsal.handleRedirectPromise).toHaveBeenCalledTimes(1);
+      expect(mockMsal.ssoSilent).toHaveBeenCalledTimes(1);
     });
   });
 });

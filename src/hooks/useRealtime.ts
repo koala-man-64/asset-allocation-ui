@@ -7,7 +7,7 @@ import { queryKeys } from '@/hooks/useDataQueries';
 import {
   appendAuthHeaders,
   hasInteractiveAuthHandler,
-  isAuthRedirectStartedError,
+  isAuthReauthRequiredError,
   requestInteractiveReauth
 } from '@/services/authTransport';
 import { backtestKeys } from '@/services/backtestHooks';
@@ -160,7 +160,10 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
 
       if (!response.ok) {
         if (response.status === 401 && hasInteractiveAuthHandler()) {
-          await requestInteractiveReauth({ reason: 'Realtime ticket request returned 401.' });
+          await requestInteractiveReauth({
+            reason: 'Realtime ticket request returned 401.',
+            source: 'realtime-ticket'
+          });
         }
         const message = await response.text();
         throw new Error(message || `Realtime ticket request failed (${response.status})`);
@@ -231,9 +234,10 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
 
           if (event.code === 4401 && hasInteractiveAuthHandler()) {
             void requestInteractiveReauth({
-              reason: 'Realtime websocket authentication was rejected.'
+              reason: 'Realtime websocket authentication was rejected.',
+              source: 'realtime-websocket'
             }).catch((error) => {
-              if (isAuthRedirectStartedError(error)) {
+              if (isAuthReauthRequiredError(error)) {
                 return;
               }
               markRealtimeUnavailable(
@@ -254,7 +258,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
       } catch (err) {
         connectInFlightRef.current = false;
         wsRef.current = null;
-        if (isAuthRedirectStartedError(err)) {
+        if (isAuthReauthRequiredError(err)) {
           return;
         }
         console.error('[Realtime] Ticket request failed:', err);

@@ -6,7 +6,6 @@ import { config as uiConfig } from '@/config';
 import {
   appendAuthHeaders,
   hasInteractiveAuthHandler,
-  isAuthRedirectStartedError,
   requestInteractiveReauth
 } from '@/services/authTransport';
 
@@ -317,13 +316,10 @@ async function performRequest<T>(
   if (!response.ok) {
     const errorBody = await response.text();
     if (response.status === 401 && hasInteractiveAuthHandler()) {
-      try {
-        await requestInteractiveReauth({ reason: `API ${endpoint} returned 401.` });
-      } catch (error) {
-        if (isAuthRedirectStartedError(error)) {
-          throw error;
-        }
-      }
+      await requestInteractiveReauth({
+        reason: `API ${endpoint} returned 401.`,
+        source: `api:${endpoint}`
+      });
     }
     throw new ApiError(
       response.status,

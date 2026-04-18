@@ -13,7 +13,7 @@ import {
 import { useRealtime } from '@/hooks/useRealtime';
 import { ApiError } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
-import { isAuthRedirectStartedError } from '@/services/authTransport';
+import { isAuthReauthRequiredError } from '@/services/authTransport';
 
 type AccessState = 'idle' | 'checking' | 'allowed' | 'forbidden' | 'error';
 type AuthStepId = 'sign-in' | 'redirect' | 'access';
@@ -481,7 +481,7 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
       if (cancelled) {
         return;
       }
-      if (isAuthRedirectStartedError(error)) {
+      if (isAuthReauthRequiredError(error)) {
         setAccessState('idle');
         return;
       }
@@ -594,6 +594,25 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
   }
 
   if (!auth.authenticated) {
+    if (auth.phase === 'session-expired') {
+      return (
+        <AuthStatusScreen
+          actionLabel="Continue sign-in"
+          activeStep="sign-in"
+          body={
+            auth.interactionReason ||
+            'Your secure session expired or the control plane rejected it. Sign in again to continue.'
+          }
+          completedSteps={[]}
+          errorStep="sign-in"
+          layout="inline"
+          onAction={() => auth.signIn(`${location.pathname}${location.search}${location.hash}`)}
+          statusLabel="The session needs to be refreshed before protected data can load."
+          title="Session expired"
+        />
+      );
+    }
+
     return (
       <AuthStatusScreen
         actionLabel={auth.error ? 'Try again' : 'Continue sign-in'}
