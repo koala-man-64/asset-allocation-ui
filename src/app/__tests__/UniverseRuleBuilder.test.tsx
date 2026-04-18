@@ -32,30 +32,18 @@ describe('UniverseRuleBuilder', () => {
 
     vi.mocked(strategyApi.getUniverseCatalog).mockResolvedValue({
       source: 'postgres_gold',
-      tables: [
+      fields: [
         {
-          name: 'market_data',
-          asOfColumn: 'date',
-          columns: [
-            {
-              name: 'close',
-              dataType: 'double precision',
-              valueKind: 'number',
-              operators: ['eq', 'gt']
-            }
-          ]
+          field: 'market.close',
+          dataType: 'double precision',
+          valueKind: 'number',
+          operators: ['eq', 'gt']
         },
         {
-          name: 'finance_data',
-          asOfColumn: 'obs_date',
-          columns: [
-            {
-              name: 'f_score',
-              dataType: 'integer',
-              valueKind: 'number',
-              operators: ['gte', 'lte']
-            }
-          ]
+          field: 'quality.piotroski_f_score',
+          dataType: 'integer',
+          valueKind: 'number',
+          operators: ['gte', 'lte']
         }
       ]
     });
@@ -64,16 +52,16 @@ describe('UniverseRuleBuilder', () => {
       source: 'postgres_gold',
       symbolCount: 2,
       sampleSymbols: ['AAPL', 'MSFT'],
-      tablesUsed: ['finance_data'],
+      fieldsUsed: ['quality.piotroski_f_score'],
       warnings: []
     });
   });
 
-  it('supports nested groups, resets dependent selections on table change, and previews the current universe', async () => {
+  it('supports nested groups, resets dependent selections on field change, and previews the current universe', async () => {
     renderWithProviders(<BuilderHarness />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/gold table/i)).toHaveValue('market_data');
+      expect(screen.getByLabelText(/field/i)).toHaveValue('market.close');
     });
 
     fireEvent.click(screen.getByRole('button', { name: /add group to universe group root/i }));
@@ -82,12 +70,11 @@ describe('UniverseRuleBuilder', () => {
       expect(screen.getByText(/nested group/i)).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getAllByLabelText(/gold table/i)[0], {
-      target: { value: 'finance_data' }
+    fireEvent.change(screen.getAllByLabelText(/field/i)[0], {
+      target: { value: 'quality.piotroski_f_score' }
     });
 
     await waitFor(() => {
-      expect(screen.getAllByLabelText(/column/i)[0]).toHaveValue('f_score');
       expect(screen.getAllByLabelText(/operator/i)[0]).toHaveValue('gte');
     });
 
@@ -105,8 +92,7 @@ describe('UniverseRuleBuilder', () => {
             clauses: expect.arrayContaining([
               expect.objectContaining({
                 kind: 'condition',
-                table: 'finance_data',
-                column: 'f_score',
+                field: 'quality.piotroski_f_score',
                 operator: 'gte',
                 value: 7
               })
@@ -120,6 +106,8 @@ describe('UniverseRuleBuilder', () => {
     expect(await screen.findByText(/2 symbols/i)).toBeInTheDocument();
     expect(screen.getByText('AAPL')).toBeInTheDocument();
     expect(screen.getByText('MSFT')).toBeInTheDocument();
-    expect(screen.getByTestId('universe-json').textContent).toContain('"table":"finance_data"');
+    expect(screen.getByTestId('universe-json').textContent).toContain(
+      '"field":"quality.piotroski_f_score"'
+    );
   });
 });

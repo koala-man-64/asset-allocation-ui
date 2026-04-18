@@ -47,8 +47,7 @@ describe('UniverseConfigPage', () => {
       clauses: [
         {
           kind: 'condition' as const,
-          table: 'market_data',
-          column: 'close',
+          field: 'market.close',
           operator: 'gt' as const,
           value: 10
         }
@@ -81,18 +80,12 @@ describe('UniverseConfigPage', () => {
     });
     (strategyApi.getUniverseCatalog as Mock).mockResolvedValue({
       source: 'postgres_gold',
-      tables: [
+      fields: [
         {
-          name: 'market_data',
-          asOfColumn: 'date',
-          columns: [
-            {
-              name: 'close',
-              dataType: 'double precision',
-              valueKind: 'number',
-              operators: ['eq', 'gt']
-            }
-          ]
+          field: 'market.close',
+          dataType: 'double precision',
+          valueKind: 'number',
+          operators: ['eq', 'gt']
         }
       ]
     });
@@ -100,7 +93,7 @@ describe('UniverseConfigPage', () => {
       source: 'postgres_gold',
       symbolCount: 2,
       sampleSymbols: ['AAPL', 'MSFT'],
-      tablesUsed: ['market_data'],
+      fieldsUsed: ['market.close'],
       warnings: []
     });
   });

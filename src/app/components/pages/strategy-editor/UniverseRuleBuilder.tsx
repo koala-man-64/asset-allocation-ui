@@ -10,11 +10,11 @@ import { Textarea } from '@/app/components/ui/textarea';
 import { cn } from '@/app/components/ui/utils';
 import { strategyApi } from '@/services/strategyApi';
 import type {
-  UniverseCatalogColumn,
   UniverseCatalogResponse,
   UniverseCondition,
   UniverseConditionOperator,
   UniverseDefinition,
+  UniverseFieldDefinition,
   UniverseGroup,
   UniverseNode,
   UniversePreviewResponse,
@@ -26,7 +26,7 @@ import {
   buildEmptyUniverseCondition,
   buildEmptyUniverseGroup,
   cloneUniverse,
-  collectUniverseTables,
+  collectUniverseFields,
   coerceDraftValue,
   countUniverseConditions,
   formatUniverseOperator,
@@ -112,17 +112,11 @@ function removeNodeAtPath(universe: UniverseDefinition, path: NodePath): Univers
   return nextUniverse;
 }
 
-function getCatalogTable(catalog: UniverseCatalogResponse | undefined, tableName: string) {
-  return catalog?.tables.find((table) => table.name === tableName) || null;
-}
-
-function getCatalogColumn(
+function getCatalogField(
   catalog: UniverseCatalogResponse | undefined,
-  tableName: string,
-  columnName: string
-): UniverseCatalogColumn | null {
-  const table = getCatalogTable(catalog, tableName);
-  return table?.columns.find((column) => column.name === columnName) || null;
+  fieldName: string
+): UniverseFieldDefinition | null {
+  return catalog?.fields.find((field) => field.field === fieldName) || null;
 }
 
 function toMultiValueText(values: UniverseCondition['values']): string {
@@ -142,7 +136,7 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
   const [preview, setPreview] = useState<UniversePreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const conditionCount = countUniverseConditions(value.root);
-  const tableCount = collectUniverseTables(value.root).length;
+  const fieldCount = collectUniverseFields(value.root).length;
 
   const catalogQuery = useQuery({
     queryKey: ['strategies', 'universe-catalog'],
@@ -172,22 +166,16 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
 
   useEffect(() => {
     const catalog = catalogQuery.data;
-    if (!catalog?.tables.length) return;
+    if (!catalog?.fields.length) return;
     if (value.root.clauses.length !== 1) return;
     const firstClause = value.root.clauses[0];
     if (isUniverseGroup(firstClause)) return;
-    if (
-      firstClause.table ||
-      firstClause.column ||
-      firstClause.value !== undefined ||
-      firstClause.values?.length
-    ) {
+    if (firstClause.field || firstClause.value !== undefined || firstClause.values?.length) {
       return;
     }
 
-    const firstTable = catalog.tables[0];
-    const firstColumn = firstTable.columns[0];
-    if (!firstColumn) return;
+    const firstField = catalog.fields[0];
+    if (!firstField) return;
 
     onChange({
       ...value,
@@ -196,9 +184,8 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
         clauses: [
           {
             ...firstClause,
-            table: firstTable.name,
-            column: firstColumn.name,
-            operator: firstColumn.operators[0] || 'eq'
+            field: firstField.field,
+            operator: firstField.operators[0] || 'eq'
           }
         ]
       }
@@ -245,30 +232,12 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
     );
   };
 
-  const handleTableChange = (path: NodePath, tableName: string) => {
-    const table = getCatalogTable(catalogQuery.data, tableName);
-    const firstColumn = table?.columns[0] || null;
+  const handleFieldChange = (path: NodePath, fieldName: string) => {
+    const field = getCatalogField(catalogQuery.data, fieldName);
     updateCondition(path, (condition) => ({
       ...condition,
-      table: tableName,
-      column: firstColumn?.name || '',
-      operator: (firstColumn?.operators[0] || 'eq') as UniverseConditionOperator,
-      value: undefined,
-      values: undefined
-    }));
-  };
-
-  const handleColumnChange = (path: NodePath, columnName: string) => {
-    const current = getNodeAtPath(value.root, path);
-    if (isUniverseGroup(current)) return;
-    const column = getCatalogColumn(catalogQuery.data, current.table, columnName);
-    updateCondition(path, (condition) => ({
-      ...condition,
-      column: columnName,
-      operator:
-        (column?.operators.includes(condition.operator)
-          ? condition.operator
-          : column?.operators[0]) || 'eq',
+      field: fieldName,
+      operator: (field?.operators[0] || 'eq') as UniverseConditionOperator,
       value: undefined,
       values: undefined
     }));
@@ -313,8 +282,8 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
   };
 
   const renderConditionValueEditor = (condition: UniverseCondition, path: NodePath) => {
-    const column = getCatalogColumn(catalogQuery.data, condition.table, condition.column);
-    const valueKind = column?.valueKind || 'string';
+    const field = getCatalogField(catalogQuery.data, condition.field);
+    const valueKind = field?.valueKind || 'string';
 
     if (isNullOperator(condition.operator)) {
       return (
@@ -380,9 +349,8 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
 
   const renderNode = (node: UniverseNode, path: NodePath = [], depth: number = 0) => {
     if (!isUniverseGroup(node)) {
-      const table = getCatalogTable(catalogQuery.data, node.table);
-      const selectedColumn = getCatalogColumn(catalogQuery.data, node.table, node.column);
-      const availableOperators = selectedColumn?.operators || [];
+      const selectedField = getCatalogField(catalogQuery.data, node.field);
+      const availableOperators = selectedField?.operators || [];
 
       return (
         <div key={path.join('-') || 'condition-root'} className={surfaceClassName}>
@@ -392,14 +360,14 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
                 Condition
               </div>
               <div className="text-sm text-muted-foreground">
-                {node.table && node.column
-                  ? `${node.table}.${node.column}`
-                  : 'Select a table, column, and operator to define this rule.'}
+                {node.field
+                  ? node.field
+                  : 'Select a field and operator to define this rule.'}
               </div>
-              {selectedColumn ? (
+              {selectedField ? (
                 <div className="text-xs text-muted-foreground">
                   Data type:{' '}
-                  <span className="font-medium text-foreground">{selectedColumn.dataType}</span>
+                  <span className="font-medium text-foreground">{selectedField.dataType}</span>
                 </div>
               ) : null}
             </div>
@@ -417,36 +385,18 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
 
           <div className="grid gap-3 md:grid-cols-3">
             <div className="grid gap-2">
-              <Label htmlFor={`universe-table-${path.join('-')}`}>Gold Table</Label>
+              <Label htmlFor={`universe-field-${path.join('-')}`}>Field</Label>
               <select
-                id={`universe-table-${path.join('-')}`}
+                id={`universe-field-${path.join('-')}`}
                 className={selectClassName}
-                value={node.table}
-                onChange={(event) => handleTableChange(path, event.target.value)}
-                disabled={catalogQuery.isLoading || !catalogQuery.data?.tables.length}
+                value={node.field}
+                onChange={(event) => handleFieldChange(path, event.target.value)}
+                disabled={catalogQuery.isLoading || !catalogQuery.data?.fields.length}
               >
-                <option value="">Select a table</option>
-                {(catalogQuery.data?.tables || []).map((item) => (
-                  <option key={item.name} value={item.name}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor={`universe-column-${path.join('-')}`}>Column</Label>
-              <select
-                id={`universe-column-${path.join('-')}`}
-                className={selectClassName}
-                value={node.column}
-                onChange={(event) => handleColumnChange(path, event.target.value)}
-                disabled={!table}
-              >
-                <option value="">Select a column</option>
-                {(table?.columns || []).map((column) => (
-                  <option key={column.name} value={column.name}>
-                    {column.name}
+                <option value="">Select a field</option>
+                {(catalogQuery.data?.fields || []).map((item) => (
+                  <option key={item.field} value={item.field}>
+                    {item.field}
                   </option>
                 ))}
               </select>
@@ -461,7 +411,7 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
                 onChange={(event) =>
                   handleOperatorChange(path, event.target.value as UniverseConditionOperator)
                 }
-                disabled={!selectedColumn}
+                disabled={!selectedField}
               >
                 <option value="">Select an operator</option>
                 {availableOperators.map((operator) => (
@@ -567,14 +517,12 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">Source: Postgres Gold</Badge>
             <Badge variant="outline">{conditionCount} conditions</Badge>
-            <Badge variant="outline">{tableCount} tables</Badge>
+            <Badge variant="outline">{fieldCount} fields</Badge>
           </div>
         </div>
 
         {catalogQuery.isLoading ? (
-          <p className="px-5 pt-5 text-sm text-muted-foreground">
-            Loading gold tables and columns...
-          </p>
+          <p className="px-5 pt-5 text-sm text-muted-foreground">Loading field catalog...</p>
         ) : null}
         {catalogQuery.error ? (
           <div className="mx-5 mt-5 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
@@ -625,10 +573,10 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
                 </div>
                 <div className={mutedSurfaceClassName}>
                   <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                    Tables used
+                    Fields used
                   </div>
                   <div className="mt-2 font-mono text-lg font-semibold text-foreground">
-                    {preview.tablesUsed.length}
+                    {preview.fieldsUsed.length}
                   </div>
                 </div>
                 <div className={mutedSurfaceClassName}>
@@ -643,9 +591,9 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
 
               <div className="flex flex-wrap items-center gap-3">
                 <Badge variant="outline">{preview.symbolCount} symbols</Badge>
-                {preview.tablesUsed.map((tableName) => (
-                  <Badge key={tableName} variant="outline">
-                    {tableName}
+                {preview.fieldsUsed.map((fieldName) => (
+                  <Badge key={fieldName} variant="outline">
+                    {fieldName}
                   </Badge>
                 ))}
               </div>
@@ -677,7 +625,7 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-border/70 bg-muted/15 p-4 text-sm text-muted-foreground">
-              Run a preview to inspect the current symbol count and table coverage before saving.
+              Run a preview to inspect the current symbol count and field coverage before saving.
             </div>
           )}
         </div>
