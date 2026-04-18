@@ -166,11 +166,27 @@ jobs:
             exit 1
           }
 
+          fetch_200_body() {
+            local url="$1"
+            local status
+            local body_file
+            body_file="$(mktemp)"
+            status="$(curl --silent --show-error --retry 12 --retry-delay 10 --retry-connrefused --output "${body_file}" --write-out '%{http_code}' "${url}")"
+            if [ "${status}" != "200" ]; then
+              echo "Unexpected HTTP status ${status} for GET ${url}. Allowed: 200" >&2
+              cat "${body_file}" >&2 || true
+              rm -f "${body_file}"
+              exit 1
+            fi
+            cat "${body_file}"
+            rm -f "${body_file}"
+          }
+
           fqdn="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.configuration.ingress.fqdn' -o tsv)"
           actual_image="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.template.containers[0].image' -o tsv)"
           test "${actual_image}" = "${{ steps.rollout.outputs.image_digest }}"
           expect_one_of GET "https://${fqdn}/" 200
-          config_js="$(curl --silent --show-error --retry 12 --retry-delay 10 --retry-connrefused "https://${fqdn}/config.js")"
+          config_js="$(fetch_200_body "https://${fqdn}/config.js")"
           CONFIG_JS="${config_js}" python - "${UI_AUTH_ENABLED}" <<'PY'
           import json
           import os

@@ -128,6 +128,12 @@ def test_ui_manifest_carries_upstream_host_and_scheme() -> None:
     assert 'value: "${API_UPSTREAM_SCHEME}"' in text
 
 
+def test_nginx_https_proxying_enables_sni() -> None:
+    text = (repo_root() / "nginx.conf").read_text(encoding="utf-8")
+    assert "proxy_ssl_server_name on;" in text
+    assert "proxy_ssl_name $proxy_host;" in text
+
+
 def test_ui_runtime_deploy_workflow_verifies_proxied_api_contract() -> None:
     text = workflow_text("deploy-ui-runtime.yml")
     assert 'UI_AUTH_ENABLED=false is invalid because the proxied /config.js reports authRequired=true.' in text
@@ -136,6 +142,7 @@ def test_ui_runtime_deploy_workflow_verifies_proxied_api_contract() -> None:
     assert 'https://${fqdn}/api/system/status-view' in text
     assert 'https://${fqdn}/api/realtime/ticket' in text
     assert 'Allowed: $*' in text
+    assert 'fetch_200_body "https://${fqdn}/config.js"' in text
 
 
 def test_ui_release_workflow_fails_fast_when_azure_repo_vars_are_missing() -> None:
