@@ -91,7 +91,27 @@ describe('apiService cold start handling', () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('/asset-allocation/healthz');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/healthz');
     expect(fetchMock.mock.calls[1]?.[0]).toContain('/asset-allocation/api/system/health');
+  });
+
+  it('warms the API origin when apiBaseUrl is absolute', async () => {
+    windowWithConfig.__API_UI_CONFIG__ = {
+      apiBaseUrl: 'https://api.example.com/asset-allocation/api'
+    };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ data: 3 }));
+
+    const { request } = await importApiService();
+
+    const response = await request<{ data: number }>('/system/health');
+
+    expect(response.data).toBe(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.example.com/healthz');
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      'https://api.example.com/asset-allocation/api/system/health'
+    );
   });
 });

@@ -40,6 +40,7 @@ import { cn } from '@/app/components/ui/utils';
 import { formatTimeAgo, getAzurePortalUrl } from './SystemStatusHelpers';
 import { getLogStreamFeedback } from './logStreamFeedback';
 import { formatSystemStatusText } from './systemStatusText';
+import { sanitizeOperatorUrl } from '@/utils/urlSecurity';
 
 const QUERY_KEY = ['system', 'container-apps'] as const;
 const LOG_TAIL_LINES = 50;
@@ -444,6 +445,10 @@ export function ContainerAppsPanel() {
                   const enabled = isAppRunning(app);
                   const isPending = Boolean(pendingByName[name]);
                   const probeUrl = app.health?.url || null;
+                  const safePortalUrl = getAzurePortalUrl(app.azureId);
+                  const safeProbeUrl = sanitizeOperatorUrl(probeUrl, {
+                    allowAzurePortal: false
+                  });
                   const lastChecked = app.health?.checkedAt || app.checkedAt || null;
                   const runningState = app.runningState || app.provisioningState || 'Unknown';
                   const isExpanded = expandedAppName === name;
@@ -457,9 +462,9 @@ export function ContainerAppsPanel() {
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <span>{name}</span>
-                            {app.azureId && (
+                            {safePortalUrl && (
                               <a
-                                href={getAzurePortalUrl(app.azureId)}
+                                href={safePortalUrl}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="text-muted-foreground hover:text-primary transition-colors"
@@ -490,9 +495,9 @@ export function ContainerAppsPanel() {
                           {runningState}
                         </TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground max-w-[320px] truncate">
-                          {probeUrl ? (
+                          {safeProbeUrl ? (
                             <a
-                              href={probeUrl}
+                              href={safeProbeUrl}
                               target="_blank"
                               rel="noreferrer"
                               className="hover:text-primary transition-colors"
@@ -500,6 +505,8 @@ export function ContainerAppsPanel() {
                             >
                               {probeUrl}
                             </a>
+                          ) : probeUrl ? (
+                            <span title={probeUrl}>{probeUrl}</span>
                           ) : (
                             '—'
                           )}

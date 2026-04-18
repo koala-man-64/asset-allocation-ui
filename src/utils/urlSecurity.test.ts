@@ -44,8 +44,17 @@ describe('sanitizeOperatorUrl', () => {
     expect(value).toBe(`${window.location.origin}/api/system/status-view`);
   });
 
+  it('allows same-origin absolute URLs', () => {
+    const value = sanitizeOperatorUrl(`${window.location.origin}/readyz`);
+    expect(value).toBe(`${window.location.origin}/readyz`);
+  });
+
   it('blocks arbitrary external hosts', () => {
     expect(sanitizeOperatorUrl('https://evil.example.com/path')).toBe('');
+  });
+
+  it('blocks javascript operator links', () => {
+    expect(sanitizeOperatorUrl('javascript:alert(1)')).toBe('');
   });
 
   it('blocks Azure portal links when that route type is disabled', () => {

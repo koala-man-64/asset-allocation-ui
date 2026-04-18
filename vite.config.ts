@@ -83,6 +83,16 @@ export default defineConfig(({ mode }) => {
       port: serverPort,
       strictPort: true,
       proxy: {
+        // Health and readiness stay root-scoped on the upstream origin even when
+        // API requests are mounted under a prefixed /<root>/api path.
+        '/healthz': {
+          target: apiProxyOrigin,
+          changeOrigin: true,
+        },
+        '/readyz': {
+          target: apiProxyOrigin,
+          changeOrigin: true,
+        },
         '/api': {
           target: apiProxyOrigin,
           changeOrigin: true,
@@ -99,6 +109,8 @@ export default defineConfig(({ mode }) => {
           : {}),
         ...(apiRootPrefix
           ? {
+              // Prefixed API traffic keeps the configured API mount. Health endpoints
+              // stay rooted at /healthz and /readyz rather than using the prefix.
               [`${apiRootPrefix}/api`]: {
                 target: apiProxyOrigin,
                 changeOrigin: true,

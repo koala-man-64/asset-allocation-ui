@@ -333,6 +333,64 @@ describe('useRealtime', () => {
     );
   });
 
+  it('recovers from realtime ticket timeouts by surfacing an operator error and retrying', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(
+        (_url: RequestInfo | URL, init?: RequestInit) =>
+          new Promise((_, reject) => {
+            const signal = init?.signal as AbortSignal | undefined;
+            signal?.addEventListener(
+              'abort',
+              () => reject(new DOMException('Aborted', 'AbortError')),
+              { once: true }
+            );
+          })
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ticket: 'ticket-2', expiresAt: '2026-03-15T12:00:05Z' })
+      });
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const queryClient = createQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(MockWebSocket.instances).toHaveLength(0);
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      'Realtime updates unavailable: Realtime ticket request timed out after 5000ms - /realtime/ticket'
+    );
+    expect(MockWebSocket.instances).toHaveLength(0);
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(MockWebSocket.instances[0]?.url).toBe(
+      'ws://localhost:3000/api/ws/updates?ticket=ticket-2'
+    );
+  });
+
   it('surfaces realtime as unavailable when ticket retrieval fails', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

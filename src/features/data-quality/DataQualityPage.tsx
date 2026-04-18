@@ -25,7 +25,7 @@ import {
   getStatusConfig
 } from '@/app/components/pages/system-status/SystemStatusHelpers';
 import { formatSystemStatusText } from '@/app/components/pages/system-status/systemStatusText';
-import { sanitizeExternalUrl } from '@/utils/urlSecurity';
+import { sanitizeOperatorUrl } from '@/utils/urlSecurity';
 import type { RequestMeta, StorageUsageResponse } from '@/services/apiService';
 import {
   computeLayerDrift,
@@ -253,11 +253,6 @@ export function DataQualityPage() {
       setIsForceRefreshing(false);
     }
   }, [isForceRefreshing, queryClient, setRunAllStatusMessage]);
-
-  const safeExternalHosts = useMemo(
-    () => [window.location.hostname, 'portal.azure.com', '*.portal.azure.com'].filter(Boolean),
-    []
-  );
 
   const headerStatus = getStatusConfig(summary.overall);
 
@@ -574,15 +569,9 @@ export function DataQualityPage() {
                   const probeStatus = probe?.status || 'idle';
                   const impactedStrategies =
                     impactsByDomain[String(domainName).toLowerCase()] || [];
-                  const safePortalUrl = sanitizeExternalUrl(row.domain.portalUrl, {
-                    allowedHosts: safeExternalHosts
-                  });
-                  const safeJobUrl = sanitizeExternalUrl(row.domain.jobUrl, {
-                    allowedHosts: safeExternalHosts
-                  });
-                  const safeTriggerUrl = sanitizeExternalUrl(row.domain.triggerUrl, {
-                    allowedHosts: safeExternalHosts
-                  });
+                  const safePortalUrl = sanitizeOperatorUrl(row.domain.portalUrl);
+                  const safeJobUrl = sanitizeOperatorUrl(row.domain.jobUrl);
+                  const safeTriggerUrl = sanitizeOperatorUrl(row.domain.triggerUrl);
 
                   return (
                     <TableRow key={domainKey(row)} className="dq-tr">

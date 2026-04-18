@@ -13,6 +13,7 @@ import {
 import { StatusColors } from './StatusTokens';
 import { Badge } from '@/app/components/ui/badge';
 import type { JobRun } from '@/types/strategy';
+import { sanitizeOperatorUrl } from '@/utils/urlSecurity';
 
 interface StatusConfig {
   bg: string;
@@ -265,26 +266,7 @@ export const formatSchedule = (schedule?: string | null) => {
 };
 
 export const normalizeAzurePortalUrl = (value?: string | null) => {
-  if (!value) {
-    return '';
-  }
-  const trimmed = String(value).trim();
-  if (!trimmed) {
-    return '';
-  }
-
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-  if (/^portal\.azure\.com/i.test(trimmed)) {
-    return `https://${trimmed}`;
-  }
-  if (trimmed.startsWith('#')) {
-    return `https://portal.azure.com/${trimmed}`;
-  }
-
-  const resourceId = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  return `https://portal.azure.com/#resource${resourceId}`;
+  return sanitizeOperatorUrl(value);
 };
 
 const normalizeManagedJobSegment = (value?: string | null) =>

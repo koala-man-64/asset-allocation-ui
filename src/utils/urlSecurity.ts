@@ -130,6 +130,13 @@ export function sanitizeOperatorUrl(
     });
   }
 
+  const azurePortalUrl = toAzurePortalUrl(raw);
+  if (azurePortalUrl) {
+    return sanitizeExternalUrl(azurePortalUrl, {
+      allowedHosts: Array.from(AZURE_PORTAL_ALLOWED_HOSTS)
+    });
+  }
+
   if (allowSameOrigin && raw.startsWith('/')) {
     return sanitizeExternalUrl(raw, {
       allowRelative: true,
@@ -138,16 +145,5 @@ export function sanitizeOperatorUrl(
     });
   }
 
-  if (!allowAzurePortal) {
-    return '';
-  }
-
-  const azurePortalUrl = toAzurePortalUrl(raw);
-  if (!azurePortalUrl) {
-    return '';
-  }
-
-  return sanitizeExternalUrl(azurePortalUrl, {
-    allowedHosts: Array.from(AZURE_PORTAL_ALLOWED_HOSTS)
-  });
+  return '';
 }
