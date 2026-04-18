@@ -12,8 +12,8 @@ const mockConfig = vi.hoisted(() => ({
   apiBaseUrl: '/api',
   oidcEnabled: true,
   authRequired: true,
-  oidcRedirectUri: 'http://localhost/auth/callback',
-  oidcPostLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
+  oidcRedirectUri: 'http://localhost:3000/auth/callback',
+  oidcPostLogoutRedirectUri: 'http://localhost:3000/auth/logout-complete'
 }));
 
 const mockAuth = vi.hoisted(() => ({
@@ -66,10 +66,13 @@ vi.mock('@/features/postgres-explorer/PostgresExplorerPage', () => ({
 
 describe('App OIDC access flow', () => {
   beforeEach(() => {
+    const sameOrigin = window.location.origin;
+
     mockConfig.apiBaseUrl = '/api';
     mockConfig.oidcEnabled = true;
     mockConfig.authRequired = true;
-    mockConfig.oidcRedirectUri = 'http://localhost/auth/callback';
+    mockConfig.oidcRedirectUri = `${sameOrigin}/auth/callback`;
+    mockConfig.oidcPostLogoutRedirectUri = `${sameOrigin}/auth/logout-complete`;
     mockAuth.enabled = true;
     mockAuth.ready = true;
     mockAuth.authenticated = false;
