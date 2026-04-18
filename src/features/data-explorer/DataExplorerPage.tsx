@@ -1,193 +1,58 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button } from '@/app/components/ui/button';
-import { Label } from '@/app/components/ui/label';
+import { DataExplorerHierarchyNavigator } from '@/features/data-explorer/components/DataExplorerHierarchyNavigator';
+import { DataExplorerPreviewDossier } from '@/features/data-explorer/components/DataExplorerPreviewDossier';
+import { DataExplorerRail } from '@/features/data-explorer/components/DataExplorerRail';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/app/components/ui/select';
+  DOMAIN_OPTIONS_BY_LAYER,
+  EXPLORER_ROOT_PATHS,
+  normalizeFilePath,
+  normalizeFolderPath,
+  type DomainKey,
+  type LayerKey,
+  type TreeMeta
+} from '@/features/data-explorer/lib/dataExplorer';
 import { DataService } from '@/services/DataService';
 import type { AdlsFilePreviewResponse, AdlsHierarchyEntry } from '@/services/apiService';
-import {
-  ChevronDown,
-  ChevronRight,
-  Database,
-  File,
-  FileText,
-  Folder,
-  RefreshCw
-} from 'lucide-react';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
-import { formatPreviewContent } from '@/utils/formatPreviewContent';
+import { Database } from 'lucide-react';
 
-const TEXT_FILE_EXTENSIONS = new Set([
-  'txt',
-  'csv',
-  'json',
-  'jsonl',
-  'log',
-  'yaml',
-  'yml',
-  'xml',
-  'md',
-  'py',
-  'sql',
-  'ts',
-  'tsx',
-  'js',
-  'jsx',
-  'css',
-  'html',
-  'htm',
-  'env'
-]);
+function HeaderMetric({
+  label,
+  value,
+  detail
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-[1.6rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
+      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-2 break-all font-display text-2xl text-foreground">{value}</div>
+      <div className="mt-2 text-sm text-muted-foreground">{detail}</div>
+    </div>
+  );
+}
 
-const normalizeFolderPath = (value: string): string => {
-  const cleaned = String(value || '')
-    .trim()
-    .replace(/\\/g, '/')
-    .replace(/^\/+/g, '')
-    .replace(/\/+$/g, '');
-  return cleaned ? `${cleaned}/` : '';
-};
-
-const normalizeFilePath = (value: string): string => {
-  return String(value || '')
-    .trim()
-    .replace(/\\/g, '/')
-    .replace(/^\/+/g, '')
-    .replace(/\/+$/g, '');
-};
-
-const formatBytes = (value?: number | null): string => {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return '-';
+function getPreviewStatusLabel(preview: AdlsFilePreviewResponse | null): string {
+  if (!preview?.previewMode) {
+    return 'Awaiting File';
   }
-  if (value < 1024) {
-    return `${value} B`;
+  switch (preview.previewMode) {
+    case 'delta-table':
+      return 'Delta Table';
+    case 'parquet-table':
+      return 'Parquet Table';
+    case 'delta-log':
+      return 'Delta Log';
+    case 'blob':
+      return 'Blob';
+    default:
+      return preview.previewMode;
   }
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let size = value / 1024;
-  let unitIndex = 0;
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-  return `${size.toFixed(size >= 100 ? 0 : size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
-};
-
-const isLikelyTextFile = (name: string): boolean => {
-  const idx = name.lastIndexOf('.');
-  if (idx < 0) {
-    return false;
-  }
-  const ext = name.slice(idx + 1).toLowerCase();
-  return TEXT_FILE_EXTENSIONS.has(ext);
-};
-
-type LayerKey = 'bronze' | 'silver' | 'gold' | 'platinum';
-type DomainKey = 'market' | 'finance' | 'earnings' | 'price-target' | 'regime';
-
-const CONTAINER_OPTIONS: Array<{ value: LayerKey; label: string }> = [
-  { value: 'bronze', label: 'Bronze' },
-  { value: 'silver', label: 'Silver' },
-  { value: 'gold', label: 'Gold' },
-  { value: 'platinum', label: 'Platinum' }
-];
-
-const DOMAIN_OPTIONS_BY_LAYER: Record<LayerKey, Array<{ value: DomainKey; label: string }>> = {
-  bronze: [
-    { value: 'market', label: 'Market' },
-    { value: 'finance', label: 'Finance' },
-    { value: 'earnings', label: 'Earnings' },
-    { value: 'price-target', label: 'Targets' }
-  ],
-  silver: [
-    { value: 'market', label: 'Market' },
-    { value: 'finance', label: 'Finance' },
-    { value: 'earnings', label: 'Earnings' },
-    { value: 'price-target', label: 'Targets' }
-  ],
-  gold: [
-    { value: 'market', label: 'Market' },
-    { value: 'finance', label: 'Finance' },
-    { value: 'earnings', label: 'Earnings' },
-    { value: 'price-target', label: 'Targets' },
-    { value: 'regime', label: 'Regime' }
-  ],
-  platinum: [
-    { value: 'market', label: 'Market' },
-    { value: 'finance', label: 'Finance' },
-    { value: 'earnings', label: 'Earnings' },
-    { value: 'price-target', label: 'Targets' }
-  ]
-};
-
-const EXPLORER_ROOT_PATHS: Record<LayerKey, Record<DomainKey, string>> = {
-  bronze: {
-    market: 'market-data/',
-    finance: 'finance-data/',
-    earnings: 'earnings-data/',
-    'price-target': 'price-target-data/',
-    regime: 'regime/'
-  },
-  silver: {
-    market: 'market-data/buckets/',
-    finance: 'finance-data/',
-    earnings: 'earnings-data/buckets/',
-    'price-target': 'price-target-data/buckets/',
-    regime: 'regime/'
-  },
-  gold: {
-    market: 'market/buckets/',
-    finance: 'finance/',
-    earnings: 'earnings/buckets/',
-    'price-target': 'targets/buckets/',
-    regime: 'regime/'
-  },
-  platinum: {
-    market: 'market/buckets/',
-    finance: 'finance/',
-    earnings: 'earnings/buckets/',
-    'price-target': 'targets/buckets/',
-    regime: 'regime/'
-  }
-};
-
-const DELTA_PREVIEW_FILE_OPTIONS = [
-  { value: '0', label: '0' },
-  ...Array.from({ length: 25 }, (_, index) => {
-    const value = String(index + 1).padStart(2, '0');
-    return { value, label: value };
-  })
-];
-
-const formatTwoDigitCount = (value?: number | null): string => {
-  const normalized = Number.isFinite(Number(value)) ? Number(value) : 0;
-  return String(Math.max(0, Math.floor(normalized))).padStart(2, '0');
-};
-
-const formatPreviewTableCell = (value: unknown): string => {
-  if (value === null || value === undefined) {
-    return '-';
-  }
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
-};
-
-type TreeMeta = {
-  container: string;
-  scanLimit: number;
-  truncated: boolean;
-};
+}
 
 export const DataExplorerPage: React.FC = () => {
   const [layer, setLayer] = useState<LayerKey>('gold');
@@ -288,7 +153,7 @@ export const DataExplorerPage: React.FC = () => {
     setPreview(null);
     setPreviewError(null);
     void loadFolder(rootPath);
-  }, [layer, rootPath, scanLimit, loadFolder]);
+  }, [layer, loadFolder, rootPath]);
 
   const rootEntries = treeByPath[rootPath] || [];
   const rootMeta = treeMetaByPath[rootPath];
@@ -304,6 +169,23 @@ export const DataExplorerPage: React.FC = () => {
       }
     },
     [expandedFolders, loadFolder, treeByPath]
+  );
+
+  const handleSelectFile = useCallback(
+    (filePath: string) => {
+      void loadPreview(filePath);
+    },
+    [loadPreview]
+  );
+
+  const handleDeltaFilesChange = useCallback(
+    (value: string) => {
+      setMaxDeltaFiles(value);
+      if (selectedFilePath) {
+        void loadPreview(selectedFilePath, { maxDeltaFiles: Number(value) });
+      }
+    },
+    [loadPreview, selectedFilePath]
   );
 
   const refreshExplorer = useCallback(async () => {
@@ -339,369 +221,82 @@ export const DataExplorerPage: React.FC = () => {
     selectedFilePath
   ]);
 
-  const renderEntries = useCallback(
-    (entries: AdlsHierarchyEntry[], depth: number): React.ReactNode => {
-      return entries.map((entry) => {
-        if (entry.type === 'folder') {
-          const folderPath = normalizeFolderPath(entry.path);
-          const isExpanded = Boolean(expandedFolders[folderPath]);
-          const isLoading = Boolean(loadingPaths[folderPath]);
-          const children = treeByPath[folderPath] || [];
-
-          return (
-            <div key={folderPath}>
-              <button
-                type="button"
-                onClick={() => handleToggleFolder(folderPath)}
-                className="flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-sm transition-colors hover:bg-accent"
-                style={{ paddingLeft: `${depth * 14 + 8}px` }}
-              >
-                {isExpanded ? (
-                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                )}
-                <Folder className="h-4 w-4 shrink-0 text-mcm-teal" />
-                <span className="truncate">{entry.name}</span>
-              </button>
-
-              {isExpanded && (
-                <div>
-                  {isLoading ? (
-                    <div
-                      className="py-1 font-mono text-xs text-muted-foreground"
-                      style={{ paddingLeft: `${depth * 14 + 34}px` }}
-                    >
-                      Loading...
-                    </div>
-                  ) : children.length ? (
-                    renderEntries(children, depth + 1)
-                  ) : (
-                    <div
-                      className="py-1 font-mono text-xs text-muted-foreground"
-                      style={{ paddingLeft: `${depth * 14 + 34}px` }}
-                    >
-                      Empty folder
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        }
-
-        const normalizedFilePath = normalizeFilePath(entry.path);
-        const isSelected = selectedFilePath === normalizedFilePath;
-        const textLike = isLikelyTextFile(entry.name);
-
-        return (
-          <button
-            key={normalizedFilePath}
-            type="button"
-            onClick={() => void loadPreview(normalizedFilePath)}
-            className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left font-mono text-sm transition-colors hover:bg-accent ${
-              isSelected ? 'bg-accent/80' : ''
-            }`}
-            style={{ paddingLeft: `${depth * 14 + 26}px` }}
-          >
-            {textLike ? (
-              <FileText className="h-4 w-4 shrink-0 text-mcm-copper" />
-            ) : (
-              <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-            )}
-            <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-            <span className="shrink-0 text-[11px] text-muted-foreground">
-              {formatBytes(entry.size)}
-            </span>
-          </button>
-        );
-      });
-    },
-    [expandedFolders, handleToggleFolder, loadPreview, loadingPaths, selectedFilePath, treeByPath]
-  );
-
-  const selectedFileLabel = useMemo(() => {
-    if (!selectedFilePath) {
-      return null;
-    }
-    return selectedFilePath.split('/').pop() || selectedFilePath;
-  }, [selectedFilePath]);
-
-  const formattedPreviewContent = useMemo(() => {
-    return formatPreviewContent(preview?.contentPreview, {
-      path: selectedFilePath,
-      contentType: preview?.contentType
-    });
-  }, [preview?.contentPreview, preview?.contentType, selectedFilePath]);
-
-  const isTablePreview =
-    preview?.previewMode === 'delta-table' || preview?.previewMode === 'parquet-table';
-  const previewTableColumns = preview?.tableColumns ?? [];
-  const previewTableRows = preview?.tableRows ?? [];
-  const previewRowCount = preview?.tableRowCount ?? previewTableRows.length;
-  const previewRowLimit = preview?.tablePreviewLimit ?? previewTableRows.length;
-  const displayedPreviewRows = Math.min(previewRowCount, previewRowLimit);
+  const previewStatusLabel = useMemo(() => getPreviewStatusLabel(preview), [preview]);
+  const selectedAssetLabel = selectedFilePath?.split('/').pop() || 'No file selected';
 
   return (
     <div className="page-shell">
       <div className="page-header-row items-start gap-6">
         <div className="page-header min-w-0 flex-1">
           <p className="page-kicker">Live Operations</p>
-          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end md:gap-4">
-            <h1 className="page-title flex items-center gap-2">
-              <Database className="h-5 w-5 text-mcm-teal" />
-              Data Explorer
-            </h1>
-            <p className="page-subtitle max-w-none md:pb-0.5">
-              Browse ADLS folders/files and preview plaintext blobs in a dedicated side panel.
-            </p>
-          </div>
+          <h1 className="page-title flex items-center gap-2">
+            <Database className="h-5 w-5 text-mcm-teal" />
+            Data Explorer
+          </h1>
+          <p className="page-subtitle max-w-3xl">
+            Browse ADLS hierarchies with a dedicated navigation pane, then inspect text, parquet,
+            and delta-backed assets in a professional preview dossier.
+          </p>
         </div>
 
-        <div className="grid w-full max-w-[52rem] gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_9rem_auto]">
-          <div className="space-y-2">
-            <Label htmlFor="data-explorer-container">Container</Label>
-            <Select value={layer} onValueChange={(value) => setLayer(value as LayerKey)}>
-              <SelectTrigger id="data-explorer-container" className="font-mono uppercase">
-                <SelectValue placeholder="Select container" />
-              </SelectTrigger>
-              <SelectContent>
-                {CONTAINER_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="data-explorer-domain">Domain</Label>
-            <Select value={domain} onValueChange={(value) => setDomain(value as DomainKey)}>
-              <SelectTrigger id="data-explorer-domain" className="font-mono uppercase">
-                <SelectValue placeholder="Select domain" />
-              </SelectTrigger>
-              <SelectContent>
-                {domainOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="data-explorer-delta-files">Delta Files</Label>
-            <Select
-              value={maxDeltaFiles}
-              onValueChange={(value) => {
-                setMaxDeltaFiles(value);
-                if (selectedFilePath) {
-                  void loadPreview(selectedFilePath, { maxDeltaFiles: Number(value) });
-                }
-              }}
-            >
-              <SelectTrigger id="data-explorer-delta-files" className="font-mono">
-                <SelectValue placeholder="0" />
-              </SelectTrigger>
-              <SelectContent>
-                {DELTA_PREVIEW_FILE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void refreshExplorer()}
-              disabled={refreshing}
-              className="w-full sm:w-auto"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-              {refreshing ? 'Refreshing...' : 'Refresh Metadata'}
-            </Button>
-          </div>
+        <div className="grid w-full max-w-[48rem] gap-3 sm:grid-cols-3">
+          <HeaderMetric
+            label="Desk Scope"
+            value={`${layer} / ${domain}`}
+            detail="Current container and domain selection."
+          />
+          <HeaderMetric
+            label="Root Path"
+            value={rootPath || '/'}
+            detail={rootMeta?.truncated ? 'Listing is truncated at the current scan limit.' : 'Listing is currently within the scan limit.'}
+          />
+          <HeaderMetric
+            label="Preview Status"
+            value={previewStatusLabel}
+            detail={selectedFilePath ? `Focused on ${selectedAssetLabel}.` : 'No asset selected yet.'}
+          />
         </div>
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 font-mono text-sm text-destructive">
-          <strong>Error:</strong> {error}
-        </div>
-      )}
+      <div className="grid flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_380px]">
+        <DataExplorerRail
+          layer={layer}
+          domain={domain}
+          domainOptions={domainOptions}
+          maxDeltaFiles={maxDeltaFiles}
+          rootPath={rootPath}
+          rootEntries={rootEntries}
+          rootMeta={rootMeta}
+          selectedFilePath={selectedFilePath}
+          preview={preview}
+          refreshing={refreshing}
+          onLayerChange={setLayer}
+          onDomainChange={setDomain}
+          onMaxDeltaFilesChange={handleDeltaFilesChange}
+          onRefresh={() => void refreshExplorer()}
+        />
 
-      <div className="grid flex-1 gap-4 overflow-hidden lg:grid-cols-[minmax(320px,42%)_1fr]">
-        <div className="mcm-panel flex min-h-[420px] flex-col overflow-hidden p-0">
-          <div className="border-b border-border/60 px-4 py-3">
-            <p className="font-mono text-xs text-muted-foreground">
-              {rootMeta ? `container=${rootMeta.container}` : 'container=...'} | path=
-              {rootPath || '/'}
-            </p>
-            {rootMeta?.truncated ? (
-              <p className="mt-1 font-mono text-xs text-amber-600">
-                Listing truncated at {rootMeta.scanLimit.toLocaleString()} scanned blobs.
-              </p>
-            ) : null}
-          </div>
+        <DataExplorerHierarchyNavigator
+          rootPath={rootPath}
+          rootEntries={rootEntries}
+          rootMeta={rootMeta}
+          rootLoading={rootLoading}
+          error={error}
+          treeByPath={treeByPath}
+          expandedFolders={expandedFolders}
+          loadingPaths={loadingPaths}
+          selectedFilePath={selectedFilePath}
+          onToggleFolder={handleToggleFolder}
+          onSelectFile={handleSelectFile}
+        />
 
-          <div className="flex-1 overflow-auto px-2 py-2">
-            {rootLoading ? (
-              <div className="p-2 font-mono text-sm text-muted-foreground">Loading tree...</div>
-            ) : rootEntries.length ? (
-              renderEntries(rootEntries, 0)
-            ) : (
-              <div className="p-2 font-mono text-sm text-muted-foreground">
-                No folders or files found for this path.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="mcm-panel flex min-h-[420px] flex-col overflow-hidden p-0">
-          <div className="border-b border-border/60 px-4 py-3">
-            <p className="font-mono text-xs text-muted-foreground">Preview</p>
-            <p className="truncate font-mono text-sm">
-              {selectedFilePath ? selectedFilePath : 'Select a file from the hierarchy'}
-            </p>
-          </div>
-
-          <div className="flex-1 overflow-auto p-4">
-            {!selectedFilePath ? (
-              <div className="font-mono text-sm text-muted-foreground">
-                Choose a file to preview plaintext content.
-              </div>
-            ) : previewLoading ? (
-              <div className="font-mono text-sm text-muted-foreground">
-                Loading preview for {selectedFileLabel}...
-              </div>
-            ) : previewError ? (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 font-mono text-sm text-destructive">
-                <strong>Error:</strong> {previewError}
-              </div>
-            ) : preview && isTablePreview ? (
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">
-                  <span>
-                    {preview.previewMode === 'delta-table' ? 'delta snapshot' : 'parquet preview'}
-                  </span>
-                  {preview.resolvedTablePath ? (
-                    <span>table={preview.resolvedTablePath}</span>
-                  ) : null}
-                  {preview.tableVersion !== null && preview.tableVersion !== undefined ? (
-                    <span>version={preview.tableVersion}</span>
-                  ) : (
-                    <span>version=latest</span>
-                  )}
-                  {preview.processedDeltaFiles !== null &&
-                  preview.processedDeltaFiles !== undefined ? (
-                    <span>commits={formatTwoDigitCount(preview.processedDeltaFiles)}</span>
-                  ) : null}
-                  <span>
-                    rows={displayedPreviewRows.toLocaleString()}
-                    {previewRowCount > 0 ? `/${previewRowCount.toLocaleString()}` : ''}
-                  </span>
-                  {preview.deltaLogPath ? <span>log={preview.deltaLogPath}</span> : null}
-                </div>
-
-                {previewTableColumns.length ? (
-                  <div className="max-h-[60vh] overflow-auto rounded-md border border-border/60 bg-background">
-                    <table className="min-w-full border-collapse font-mono text-xs">
-                      <thead className="sticky top-0 z-10 bg-mcm-paper">
-                        <tr className="border-b border-border/60">
-                          <th className="w-12 border-r border-border/50 px-3 py-2 text-right text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                            #
-                          </th>
-                          {previewTableColumns.map((column) => (
-                            <th
-                              key={column}
-                              className="border-r border-border/50 px-3 py-2 text-left text-[10px] uppercase tracking-[0.2em] text-muted-foreground last:border-r-0"
-                            >
-                              {column}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {previewTableRows.length ? (
-                          previewTableRows.map((row, rowIndex) => (
-                            <tr
-                              key={`${selectedFilePath}-${rowIndex}`}
-                              className="border-b border-border/40 align-top last:border-b-0"
-                            >
-                              <td className="border-r border-border/40 px-3 py-2 text-right text-muted-foreground">
-                                {rowIndex + 1}
-                              </td>
-                              {previewTableColumns.map((column) => {
-                                const displayValue = formatPreviewTableCell(row[column]);
-                                return (
-                                  <td
-                                    key={`${selectedFilePath}-${rowIndex}-${column}`}
-                                    className="max-w-[18rem] border-r border-border/40 px-3 py-2 last:border-r-0"
-                                    title={displayValue}
-                                  >
-                                    <div className="truncate">{displayValue}</div>
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td
-                              colSpan={previewTableColumns.length + 1}
-                              className="px-3 py-6 text-center text-muted-foreground"
-                            >
-                              Delta preview returned no rows.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="font-mono text-sm text-muted-foreground">
-                    Preview returned no table columns.
-                  </div>
-                )}
-              </div>
-            ) : preview && !preview.isPlainText ? (
-              <div className="space-y-2 font-mono text-sm text-muted-foreground">
-                <div>
-                  This file does not appear to be plaintext and cannot be rendered as text preview.
-                </div>
-                {preview.contentType ? <div>contentType={preview.contentType}</div> : null}
-                {preview.truncated ? (
-                  <div>Preview bytes truncated at {preview.maxBytes.toLocaleString()}.</div>
-                ) : null}
-              </div>
-            ) : preview ? (
-              <div className="space-y-2">
-                {preview.previewMode === 'delta-log' ? (
-                  <div className="font-mono text-xs text-mcm-olive">
-                    delta-log preview from {preview.deltaLogPath || '_delta_log/'} | files=
-                    {formatTwoDigitCount(preview.processedDeltaFiles ?? Number(maxDeltaFiles))}
-                  </div>
-                ) : null}
-                <div className="font-mono text-xs text-muted-foreground">
-                  encoding={preview.encoding || 'unknown'}
-                  {preview.contentType ? ` | contentType=${preview.contentType}` : ''}
-                  {preview.truncated
-                    ? ` | truncated at ${preview.maxBytes.toLocaleString()} bytes`
-                    : ''}
-                </div>
-                <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/60 bg-background p-3 font-mono text-xs leading-5">
-                  {formattedPreviewContent}
-                </pre>
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <DataExplorerPreviewDossier
+          selectedFilePath={selectedFilePath}
+          preview={preview}
+          previewLoading={previewLoading}
+          previewError={previewError}
+          maxDeltaFiles={maxDeltaFiles}
+        />
       </div>
     </div>
   );

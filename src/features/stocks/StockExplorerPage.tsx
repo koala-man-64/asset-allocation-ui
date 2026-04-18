@@ -21,6 +21,7 @@ import { DataService } from '@/services/DataService';
 import { cn } from '@/app/components/ui/utils';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { PageLoader } from '@/app/components/common/PageLoader';
+import { buildStockDetailPath } from '@/features/stocks/stockRoutes';
 
 type SortDirection = 'asc' | 'desc';
 
@@ -335,7 +336,7 @@ export function StockExplorerPage() {
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => navigate(`/stock/${encodeURIComponent(symbol)}`)}
+                              onClick={() => navigate(buildStockDetailPath(symbol))}
                               className="text-primary hover:underline decoration-dotted underline-offset-4"
                             >
                               {symbol || '—'}
@@ -418,7 +419,7 @@ export function StockExplorerPage() {
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7"
-                            onClick={() => navigate(`/stock/${encodeURIComponent(symbol)}`)}
+                            onClick={() => navigate(buildStockDetailPath(symbol))}
                             aria-label={`Open ${symbol}`}
                           >
                             <ArrowRight className="h-4 w-4 text-muted-foreground" />

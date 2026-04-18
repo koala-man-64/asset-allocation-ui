@@ -95,6 +95,10 @@ function isAppRunning(app: ContainerAppStatusItem): boolean {
   return false;
 }
 
+function getAppHealthStatus(app: ContainerAppStatusItem): string {
+  return normalizeState(app.health?.status || app.status || 'unknown');
+}
+
 function statusBadgeClass(status: string): string {
   const normalized = normalizeState(status);
   if (normalized === 'healthy') return 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30';
@@ -104,7 +108,7 @@ function statusBadgeClass(status: string): string {
 }
 
 function HealthBadge({ app }: { app: ContainerAppStatusItem }) {
-  const healthStatus = normalizeState(app.health?.status || app.status || 'unknown');
+  const healthStatus = getAppHealthStatus(app);
   const label = healthStatus ? healthStatus.toUpperCase() : 'UNKNOWN';
   return (
     <Badge
@@ -131,6 +135,15 @@ export function ContainerAppsPanel() {
   });
 
   const apps = useMemo(() => containerAppsQuery.data?.apps || [], [containerAppsQuery.data?.apps]);
+  const runningCount = useMemo(() => apps.filter((app) => isAppRunning(app)).length, [apps]);
+  const healthyCount = useMemo(
+    () => apps.filter((app) => getAppHealthStatus(app) === 'healthy').length,
+    [apps]
+  );
+  const probeCount = useMemo(
+    () => apps.filter((app) => Boolean(app.health?.url)).length,
+    [apps]
+  );
 
   const setPending = (name: string, pending: boolean) => {
     setPendingByName((prev) => {
@@ -308,11 +321,14 @@ export function ContainerAppsPanel() {
 
   if (containerAppsQuery.isLoading) {
     return (
-      <Card>
-        <CardHeader>
+      <Card className="gap-0">
+        <CardHeader className="border-b border-border/40">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+            Runtime Controls
+          </p>
           <CardTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
-            Container Apps
+            Container App Switchboard
           </CardTitle>
           <CardDescription>Loading container app health and controls…</CardDescription>
         </CardHeader>
@@ -323,15 +339,18 @@ export function ContainerAppsPanel() {
   if (containerAppsQuery.error) {
     const message = formatSystemStatusText(containerAppsQuery.error);
     return (
-      <Card>
-        <CardHeader>
+      <Card className="gap-0">
+        <CardHeader className="border-b border-border/40">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+            Runtime Controls
+          </p>
           <CardTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
-            Container Apps
+            Container App Switchboard
           </CardTitle>
           <CardDescription>Container app controls are unavailable.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="font-mono text-xs text-rose-500">{message}</div>
         </CardContent>
       </Card>
@@ -339,34 +358,75 @@ export function ContainerAppsPanel() {
   }
 
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between gap-2">
-          <span className="flex items-center gap-2">
-            <Server className="h-5 w-5" />
-            Container Apps
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={() => void refreshApps()}
-            disabled={containerAppsQuery.isFetching}
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${containerAppsQuery.isFetching ? 'animate-spin' : ''}`}
-            />
-            Refresh
-          </Button>
-        </CardTitle>
-        <CardDescription>
-          Toggle API/UI container apps and run live accessibility checks.
-        </CardDescription>
+    <Card className="h-full flex flex-col gap-0">
+      <CardHeader className="gap-4 border-b border-border/40">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+              Runtime Controls
+            </p>
+            <CardTitle className="flex items-center gap-2">
+              <Server className="h-5 w-5" />
+              Container App Switchboard
+            </CardTitle>
+            <CardDescription>
+              Toggle API and UI workloads, confirm probe health, and open live console tails from
+              the same operational surface.
+            </CardDescription>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{apps.length} apps tracked</Badge>
+            <Badge variant="outline">{runningCount} running</Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => void refreshApps()}
+              disabled={containerAppsQuery.isFetching}
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${containerAppsQuery.isFetching ? 'animate-spin' : ''}`}
+              />
+              Refresh
+            </Button>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="flex-1 overflow-hidden">
-        <div className="rounded-md border overflow-hidden">
+      <CardContent className="flex-1 space-y-4 overflow-hidden pt-6">
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+              Running workloads
+            </div>
+            <div className="mt-2 font-display text-2xl text-foreground">{runningCount}</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              Container apps currently responding as active workloads.
+            </div>
+          </div>
+          <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+              Healthy probes
+            </div>
+            <div className="mt-2 font-display text-2xl text-foreground">{healthyCount}</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              Apps reporting healthy probe status in the latest runtime payload.
+            </div>
+          </div>
+          <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+              Probe endpoints
+            </div>
+            <div className="mt-2 font-display text-2xl text-foreground">{probeCount}</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              Workloads exposing a direct health URL for spot verification.
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-paper/55 overflow-hidden">
           <div className="-my-2">
-            <Table className="[&_[data-slot=table-head]]:px-5 [&_[data-slot=table-cell]]:px-5">
+            <Table className="[&_[data-slot=table-head]]:bg-mcm-paper/70 [&_[data-slot=table-head]]:px-5 [&_[data-slot=table-head]]:text-[10px] [&_[data-slot=table-head]]:font-black [&_[data-slot=table-head]]:uppercase [&_[data-slot=table-head]]:tracking-[0.18em] [&_[data-slot=table-cell]]:px-5">
               <TableHeader>
                 <TableRow>
                   <TableHead>App</TableHead>
@@ -470,7 +530,7 @@ export function ContainerAppsPanel() {
                         </TableCell>
                       </TableRow>
                       <TableRow className="border-0 hover:bg-transparent">
-                        <TableCell colSpan={7} className="bg-muted/20 p-0">
+                        <TableCell colSpan={7} className="bg-mcm-cream/45 p-0">
                           <div
                             className={`will-change-[max-height,opacity,transform] transition-[max-height,opacity,transform] duration-450 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
                               isExpanded
@@ -480,8 +540,8 @@ export function ContainerAppsPanel() {
                             aria-hidden={!isExpanded}
                           >
                             <div className="p-4">
-                              <div className="rounded-md border bg-background">
-                                <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-3">
+                              <div className="rounded-[1.2rem] border border-mcm-walnut/20 bg-mcm-paper/80">
+                                <div className="flex items-center justify-between gap-3 border-b border-mcm-walnut/15 px-3 py-2 text-xs font-semibold text-muted-foreground">
                                   <span className="flex items-center gap-2">
                                     <ScrollText className="h-3.5 w-3.5" />
                                     Recent Console Logs

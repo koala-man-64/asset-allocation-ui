@@ -1346,7 +1346,7 @@ export function DomainLayerComparisonPanel({
   ]);
 
   return (
-    <Card className="h-full">
+    <Card className="h-full gap-0">
       <DomainListViewerSheet
         target={listViewerTarget}
         open={Boolean(listViewerTarget)}
@@ -1514,7 +1514,10 @@ export function DomainLayerComparisonPanel({
         </AlertDialogContent>
       </AlertDialog>
 
-      <CardHeader className="gap-3">
+      <CardHeader className="gap-4 border-b border-border/40">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+          Coverage Matrix
+        </p>
         <div className="flex min-w-0 items-center gap-2">
           <GitCompareArrows className="h-5 w-5 shrink-0" />
           <CardTitle className="leading-tight">Domain Layer Coverage</CardTitle>
@@ -1527,7 +1530,7 @@ export function DomainLayerComparisonPanel({
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 pt-6">
         {layerColumns.length === 0 ? (
           <div className="rounded-xl border-2 border-mcm-walnut/15 bg-mcm-cream/40 p-4 text-sm text-mcm-walnut/70">
             No medallion layers are currently available in the system health payload.

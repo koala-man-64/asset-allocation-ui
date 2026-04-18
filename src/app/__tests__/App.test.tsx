@@ -132,5 +132,8 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/system-status');
+    });
   });
 });

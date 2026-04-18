@@ -6,6 +6,7 @@ import { QueryProvider } from '@/providers/QueryProvider';
 
 import { useUIStore } from '@/stores/useUIStore';
 
+import { ErrorBoundary } from '@/app/components/common/ErrorBoundary';
 import { LeftNavigation } from '@/app/components/layout/LeftNavigation';
 import {
   OidcAccessGate,
@@ -64,10 +65,10 @@ function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="h-screen flex flex-col bg-background">
       <RouteTransitionIndicator />
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-w-0 overflow-hidden">
         <LeftNavigation />
 
-        <main className="flex-1 overflow-y-auto">
+        <main className="min-w-0 flex-1 overflow-y-auto">
           <div className="container mx-auto p-8 max-w-[1800px]">{children}</div>
         </main>
       </div>
@@ -98,9 +99,11 @@ export default function App() {
             path="*"
             element={
               <AppShell>
-                <OidcAccessGate>
-                  <AppRoutes />
-                </OidcAccessGate>
+                <ErrorBoundary>
+                  <OidcAccessGate>
+                    <AppRoutes />
+                  </OidcAccessGate>
+                </ErrorBoundary>
               </AppShell>
             }
           />

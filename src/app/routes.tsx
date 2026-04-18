@@ -1,5 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { STOCK_DETAIL_ROUTE } from '@/features/stocks/stockRoutes';
 
 const DataExplorerPage = lazy(() =>
   import('@/features/data-explorer/DataExplorerPage').then((m) => ({ default: m.DataExplorerPage }))
@@ -92,7 +93,7 @@ export function AppRoutes() {
         <Route path="/rankings" element={<RankingConfigPage />} />
         <Route path="/strategy-exploration" element={<StrategyDataCatalogPage />} />
         <Route path="/postgres-explorer" element={<PostgresExplorerPage />} />
-        <Route path="/stock-detail/:ticker?" element={<StockDetailPage />} />
+        <Route path={STOCK_DETAIL_ROUTE} element={<StockDetailPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>

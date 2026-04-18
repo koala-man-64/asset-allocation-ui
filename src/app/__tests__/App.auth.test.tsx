@@ -29,7 +29,7 @@ const mockAuth = vi.hoisted(() => ({
 }));
 
 const consumePostLoginRedirectPath = vi.hoisted(() => vi.fn(() => '/system-status'));
-const peekPostLoginRedirectPath = vi.hoisted(() => vi.fn(() => '/postgres-explorer?foo=1'));
+const peekPostLoginRedirectPath = vi.hoisted(() => vi.fn(() => '/postgres-explorer?foo=1#bar'));
 
 vi.mock('@/hooks/useRealtime', () => ({
   useRealtime: mockUseRealtime
@@ -57,6 +57,12 @@ vi.mock('@/features/system-status/SystemStatusPage', () => ({
   SystemStatusPage: () => <div data-testid="mock-system-status">Mock System Status</div>
 }));
 
+vi.mock('@/features/postgres-explorer/PostgresExplorerPage', () => ({
+  PostgresExplorerPage: () => (
+    <div data-testid="mock-postgres-explorer">Mock Postgres Explorer</div>
+  )
+}));
+
 describe('App OIDC access flow', () => {
   beforeEach(() => {
     mockConfig.apiBaseUrl = '/api';
@@ -76,7 +82,7 @@ describe('App OIDC access flow', () => {
     consumePostLoginRedirectPath.mockReset();
     consumePostLoginRedirectPath.mockReturnValue('/system-status');
     peekPostLoginRedirectPath.mockReset();
-    peekPostLoginRedirectPath.mockReturnValue('/postgres-explorer?foo=1');
+    peekPostLoginRedirectPath.mockReturnValue('/postgres-explorer?foo=1#bar');
     vi.mocked(DataService.getAuthSessionStatusWithMeta).mockReset();
     vi.mocked(DataService.getSystemHealthWithMeta).mockReset();
   });
@@ -267,6 +273,7 @@ describe('App OIDC access flow', () => {
   it('completes the callback route and returns to the saved location', async () => {
     mockAuth.authenticated = true;
     mockAuth.phase = 'authenticated';
+    consumePostLoginRedirectPath.mockReturnValue('/postgres-explorer?foo=1#bar');
     vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue({
       data: {
         authMode: 'oidc',
@@ -282,8 +289,12 @@ describe('App OIDC access flow', () => {
 
     await waitFor(() => {
       expect(consumePostLoginRedirectPath).toHaveBeenCalledTimes(1);
-      expect(screen.getByTestId('mock-system-status')).toBeInTheDocument();
+      expect(screen.getByTestId('mock-postgres-explorer')).toBeInTheDocument();
     });
+
+    expect(window.location.pathname).toBe('/postgres-explorer');
+    expect(window.location.search).toBe('?foo=1');
+    expect(window.location.hash).toBe('#bar');
   });
 
   it('falls back to the legacy system-health probe while /api/auth/session is unavailable', async () => {
@@ -324,6 +335,6 @@ describe('App OIDC access flow', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
     expect(peekPostLoginRedirectPath).toHaveBeenCalledTimes(1);
-    expect(mockAuth.signIn).toHaveBeenCalledWith('/postgres-explorer?foo=1');
+    expect(mockAuth.signIn).toHaveBeenCalledWith('/postgres-explorer?foo=1#bar');
   });
 });

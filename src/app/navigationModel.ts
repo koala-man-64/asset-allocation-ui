@@ -13,6 +13,7 @@ import {
   SlidersHorizontal,
   Target
 } from 'lucide-react';
+import { STOCK_DETAIL_BASE_PATH } from '@/features/stocks/stockRoutes';
 
 export type NavSectionKey = 'market-intelligence' | 'live-operations';
 export type NavZoneKey = NavSectionKey | 'pinned';
@@ -44,7 +45,7 @@ export const NAV_SECTIONS: NavSection[] = [
         sectionKey: 'market-intelligence'
       },
       {
-        path: '/stock-detail',
+        path: STOCK_DETAIL_BASE_PATH,
         label: 'Live Stock View',
         icon: Target,
         sectionKey: 'market-intelligence'

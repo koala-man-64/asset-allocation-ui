@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, ExternalLink, Loader2, ScrollText } from 'lucide-react';
 
+import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import {
   Card,
@@ -402,6 +403,13 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
   const sortedJobs = useMemo(() => sortJobsForDisplay(jobs), [jobs]);
+  const runningJobCount = useMemo(
+    () =>
+      sortedJobs.filter(
+        (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'running'
+      ).length,
+    [sortedJobs]
+  );
 
   const selectedJob = useMemo(
     () => sortedJobs.find((job) => job.name === selectedJobName) ?? null,
@@ -569,8 +577,11 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
 
   if (!sortedJobs.length) {
     return (
-      <Card>
-        <CardHeader>
+      <Card className="gap-0">
+        <CardHeader className="border-b border-border/40">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+            Execution Tails
+          </p>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
             Job Console Stream
@@ -589,19 +600,25 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
   const memorySignal = findUsageSignal(usageSignals, MEMORY_SIGNAL_NAMES);
 
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader>
+    <Card className="h-full flex flex-col gap-0">
+      <CardHeader className="gap-4 border-b border-border/40">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
+          <div className="min-w-0 space-y-1">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+              Execution Tails
+            </p>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5" />
               Job Console Stream
             </CardTitle>
             <CardDescription>
-              Select one job to tail live logs. Only one job stream is active at a time.
+              Select one job to tail live logs. Keep the stream focused on the active execution
+              instead of spreading attention across multiple noisy feeds.
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{sortedJobs.length} jobs tracked</Badge>
+            <Badge variant="outline">{runningJobCount} running</Badge>
             {executionUrl ? (
               <Button asChild variant="outline" size="sm">
                 <a href={executionUrl} target="_blank" rel="noreferrer">
@@ -621,12 +638,12 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pt-6">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,340px)_1fr]">
           <div className="space-y-2">
             <label
               htmlFor="job-log-stream-select"
-              className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground"
             >
               Monitored Job
             </label>
@@ -645,8 +662,8 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <div className="rounded-md border bg-muted/20 p-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
                 Status
               </div>
               <div className="mt-2 flex items-center gap-2 text-sm">
@@ -654,30 +671,30 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
                 {getStatusBadge(status)}
               </div>
             </div>
-            <div className="rounded-md border bg-muted/20 p-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
                 Layer / Domain
               </div>
               <div className="mt-2 text-sm">
                 {selectedJob?.layerName || '-'} / {selectedJob?.domainName || '-'}
               </div>
             </div>
-            <div className="rounded-md border bg-muted/20 p-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
                 Run Start
               </div>
               <div className="mt-2 text-sm">
                 {selectedJob?.startTime ? `${formatTimeAgo(selectedJob.startTime)} ago` : '-'}
               </div>
             </div>
-            <div className="rounded-md border bg-muted/20 p-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
                 CPU Usage
               </div>
               <div className="mt-2 text-sm font-medium">{formatUsageValue(cpuSignal, 'cpu')}</div>
             </div>
-            <div className="rounded-md border bg-muted/20 p-3">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
                 Memory Usage
               </div>
               <div className="mt-2 text-sm font-medium">
@@ -687,8 +704,8 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
           </div>
         </div>
 
-        <div className="rounded-md border bg-background">
-          <div className="flex items-center justify-between gap-3 border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
+        <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-paper/80">
+          <div className="flex items-center justify-between gap-3 border-b border-mcm-walnut/15 px-3 py-2 text-xs font-semibold text-muted-foreground">
             <span>Live Console Tail</span>
             <span className="text-[11px] font-normal text-muted-foreground/80">
               {selectedJob ? selectedJob.name : 'No job selected'}

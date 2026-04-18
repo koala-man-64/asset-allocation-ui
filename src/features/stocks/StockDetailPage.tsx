@@ -25,6 +25,7 @@ import {
 } from '@/app/components/ui/table';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { PageLoader } from '@/app/components/common/PageLoader';
+import { buildStockDetailPath } from '@/features/stocks/stockRoutes';
 
 export function StockDetailPage() {
   const { ticker: paramTicker } = useParams();
@@ -46,7 +47,7 @@ export function StockDetailPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (ticker) {
-      navigate(`/stock/${ticker.toUpperCase()}`);
+      navigate(buildStockDetailPath(ticker));
     }
   };
 

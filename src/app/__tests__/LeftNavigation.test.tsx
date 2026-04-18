@@ -1,18 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter, useLocation } from 'react-router-dom';
+
+import { findNavItem, NAV_SECTIONS, createDefaultNavOrderBySection } from '@/app/navigationModel';
 import { LeftNavigation } from '../components/layout/LeftNavigation';
 import { useUIStore, UI_STORAGE_KEY } from '@/stores/useUIStore';
-import { createDefaultNavOrderBySection } from '@/app/navigationModel';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: false
-    }
-  }
-});
 
 vi.mock('lucide-react', () => ({
   Activity: () => <div data-testid="icon-activity" />,
@@ -34,12 +27,55 @@ vi.mock('lucide-react', () => ({
   GripVertical: () => <div data-testid="icon-grip" />
 }));
 
-function renderNavigation() {
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0
+      }
+    }
+  });
+}
+
+function LocationProbe() {
+  const location = useLocation();
+
+  return <div data-testid="location-probe">{`${location.pathname}${location.search}${location.hash}`}</div>;
+}
+
+function setViewportWidth(width: number) {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: width
+  });
+  window.dispatchEvent(new Event('resize'));
+}
+
+function navSnapshot(paths: string[]) {
+  return paths.map((path) => ({
+    name: findNavItem(path)?.label ?? path,
+    path
+  }));
+}
+
+function getRenderedLinks() {
+  return screen.getAllByRole('link').map((link) => ({
+    name: link.getAttribute('aria-label') ?? link.textContent?.trim() ?? '',
+    path: new URL((link as HTMLAnchorElement).href).pathname
+  }));
+}
+
+function renderNavigation(initialEntries: string[] = ['/system-status']) {
+  const queryClient = createTestQueryClient();
+
   return render(
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <MemoryRouter initialEntries={initialEntries}>
         <LeftNavigation />
-      </BrowserRouter>
+        <LocationProbe />
+      </MemoryRouter>
     </QueryClientProvider>
   );
 }
@@ -53,47 +89,40 @@ function resetNavigationState() {
   });
 }
 
-function getNavLinkLabels(): string[] {
-  return screen
-    .getAllByRole('link')
-    .map((link) => link.textContent?.trim() ?? '')
-    .filter(Boolean);
-}
-
 describe('LeftNavigation', () => {
   beforeEach(() => {
-    queryClient.clear();
+    setViewportWidth(1280);
     document.cookie = 'ag_pinned_tabs=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
     window.localStorage.clear();
-    resetNavigationState();
     window.localStorage.removeItem(UI_STORAGE_KEY);
+    resetNavigationState();
   });
 
-  it('renders the default navigation order', () => {
-    const { container } = renderNavigation();
+  it('renders the default navigation model with hrefs and active state', () => {
+    renderNavigation();
 
-    expect(container.firstChild).toHaveClass('w-[280px]');
-    expect(getNavLinkLabels()).toEqual([
-      'Stock Explorer',
-      'Live Stock View',
-      'Data Explorer',
-      'Data Quality',
-      'Data Profiling',
-      'Regime Monitor',
-      'System Status',
-      'Debug Symbols',
-      'Symbol Purge',
-      'Runtime Config',
-      'Strategy Exploration',
-      'Run Configurations',
-      'Universe Configurations',
-      'Ranking Configurations',
-      'Postgres Explorer'
-    ]);
-    expect(screen.getByText('UPTIME CLOCK')).toBeDefined();
+    expect(getRenderedLinks()).toEqual(
+      navSnapshot(NAV_SECTIONS.flatMap((section) => section.items.map((item) => item.path)))
+    );
+    expect(screen.getByRole('link', { name: 'System Status' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument();
+    expect(screen.getByText('UPTIME CLOCK')).toBeInTheDocument();
   });
 
-  it('renders from customized store-backed order', () => {
+  it('navigates through the shell when a nav link is clicked', async () => {
+    renderNavigation();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Data Explorer' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-probe')).toHaveTextContent('/data-explorer');
+    });
+  });
+
+  it('renders a customized store-backed order with pinned items first', () => {
     act(() => {
       useUIStore.setState({
         pinnedNavPaths: ['/strategies', '/system-status'],
@@ -118,44 +147,48 @@ describe('LeftNavigation', () => {
       });
     });
 
-    renderNavigation();
+    renderNavigation(['/strategies']);
 
-    expect(screen.getByText('PINNED')).toBeDefined();
-    expect(getNavLinkLabels()).toEqual([
-      'Run Configurations',
-      'System Status',
-      'Live Stock View',
-      'Stock Explorer',
-      'Postgres Explorer',
-      'Data Explorer',
-      'Data Quality',
-      'Data Profiling',
-      'Regime Monitor',
-      'Debug Symbols',
-      'Symbol Purge',
-      'Runtime Config',
-      'Strategy Exploration',
-      'Universe Configurations',
-      'Ranking Configurations'
-    ]);
+    expect(screen.getByText('PINNED')).toBeInTheDocument();
+    expect(getRenderedLinks()).toEqual(
+      navSnapshot([
+        '/strategies',
+        '/system-status',
+        '/stock-detail',
+        '/stock-explorer',
+        '/postgres-explorer',
+        '/data-explorer',
+        '/data-quality',
+        '/data-profiling',
+        '/regimes',
+        '/debug-symbols',
+        '/symbol-purge',
+        '/runtime-config',
+        '/strategy-exploration',
+        '/universes',
+        '/rankings'
+      ])
+    );
+    expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
   });
 
-  it('moves run configurations to the pinned section without duplication', async () => {
+  it('moves strategies to the pinned section without duplication', async () => {
     renderNavigation();
 
-    fireEvent.click(screen.getByLabelText('Pin Run Configurations to top'));
+    fireEvent.click(screen.getByRole('button', { name: 'Pin Strategies to top' }));
 
     await waitFor(() => {
-      expect(screen.getByText('PINNED')).toBeDefined();
-      expect(screen.getAllByText('Run Configurations').length).toBe(1);
+      expect(screen.getByText('PINNED')).toBeInTheDocument();
+      expect(screen.getAllByRole('link', { name: 'Strategies' })).toHaveLength(1);
     });
 
     expect(useUIStore.getState().pinnedNavPaths).toEqual(['/strategies']);
-    expect(getNavLinkLabels().slice(0, 3)).toEqual([
-      'Run Configurations',
-      'Stock Explorer',
-      'Live Stock View'
-    ]);
+    expect(getRenderedLinks().slice(0, 3)).toEqual(
+      navSnapshot(['/strategies', '/stock-explorer', '/stock-detail'])
+    );
   });
 
   it('migrates legacy pinned tabs from the cookie when no nav customization is persisted', async () => {
@@ -173,18 +206,34 @@ describe('LeftNavigation', () => {
     );
     document.cookie = 'ag_pinned_tabs=["/rankings","/strategies"]; path=/';
 
-    renderNavigation();
+    renderNavigation(['/rankings']);
 
     await waitFor(() => {
       expect(useUIStore.getState().pinnedNavPaths).toEqual(['/rankings', '/strategies']);
     });
 
-    expect(getNavLinkLabels().slice(0, 4)).toEqual([
-      'Ranking Configurations',
-      'Run Configurations',
-      'Stock Explorer',
-      'Live Stock View'
-    ]);
-    expect(screen.getAllByText('Run Configurations').length).toBe(1);
+    expect(getRenderedLinks().slice(0, 4)).toEqual(
+      navSnapshot(['/rankings', '/strategies', '/stock-explorer', '/stock-detail'])
+    );
+    expect(screen.getAllByRole('link', { name: 'Strategies' })).toHaveLength(1);
+  });
+
+  it('starts collapsed on narrow viewports while keeping nav items accessible', () => {
+    setViewportWidth(640);
+
+    renderNavigation();
+
+    expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Stock Explorer' })).toHaveAttribute(
+      'aria-label',
+      'Stock Explorer'
+    );
+    expect(screen.queryByText('UPTIME CLOCK')).not.toBeInTheDocument();
+    expect(screen.queryByText('Stock Explorer')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand navigation' }));
+
+    expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument();
+    expect(screen.getByText('Stock Explorer')).toBeInTheDocument();
   });
 });

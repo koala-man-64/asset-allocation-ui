@@ -24,11 +24,20 @@ import Cookies from 'js-cookie';
 
 const LEGACY_PINNED_TABS_COOKIE = 'ag_pinned_tabs';
 const EXPANDED_NAV_WIDTH_CLASS = 'w-[280px]';
+const MOBILE_NAV_BREAKPOINT = 768;
 
 interface DragState {
   index: number;
   path: string;
   zoneKey: NavZoneKey;
+}
+
+function isNarrowViewport(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.innerWidth < MOBILE_NAV_BREAKPOINT;
 }
 
 function hasPersistedNavCustomizationSnapshot(): boolean {
@@ -56,7 +65,7 @@ function hasPersistedNavCustomizationSnapshot(): boolean {
 }
 
 export function LeftNavigation() {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => isNarrowViewport());
   const [clockNow, setClockNow] = useState(() => new Date());
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
@@ -88,6 +97,16 @@ export function LeftNavigation() {
   useEffect(() => {
     const handle = window.setInterval(() => setClockNow(new Date()), 1000);
     return () => window.clearInterval(handle);
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setCollapsed(isNarrowViewport());
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const centralClock = getCentralClockParts(clockNow);
@@ -170,6 +189,7 @@ export function LeftNavigation() {
             <TooltipTrigger asChild>
               <NavLink
                 to={item.path}
+                aria-label={item.label}
                 onMouseEnter={() => {
                   if (item.path === '/data-quality' || item.path === '/system-status') {
                     if (item.path === '/data-quality') {
@@ -278,6 +298,8 @@ export function LeftNavigation() {
           size="icon"
           className={cn('h-8 w-8', collapsed && 'mx-auto')}
           onClick={() => setCollapsed(!collapsed)}
+          aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+          title={collapsed ? 'Expand navigation' : 'Collapse navigation'}
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
