@@ -58,6 +58,39 @@ def powershell_exe() -> str:
     raise AssertionError("PowerShell executable not found for setup-env dry-run test")
 
 
+SYNTHETIC_ENV_VALUES = {
+    "AZURE_CLIENT_ID": "test-client-id",
+    "AZURE_TENANT_ID": "test-tenant-id",
+    "AZURE_SUBSCRIPTION_ID": "test-subscription-id",
+    "RESOURCE_GROUP": "test-resource-group",
+    "ACR_NAME": "testacr",
+    "ACR_PULL_IDENTITY_NAME": "test-acr-pull-identity",
+    "CONTAINER_APPS_ENVIRONMENT_NAME": "test-container-apps-env",
+    "SERVICE_ACCOUNT_NAME": "test-service-account",
+    "UI_APP_NAME": "test-ui-app",
+    "CONTRACTS_REPOSITORY": "example/asset-allocation-contracts",
+    "CONTRACTS_REF": "main",
+    "API_UPSTREAM": "example.internal.test",
+    "API_UPSTREAM_SCHEME": "https",
+    "UI_AUTH_ENABLED": "true",
+    "NPMRC": "//npm.pkg.github.com/:_authToken=fake\\n@asset-allocation:registry=https://npm.pkg.github.com",
+}
+
+
+def write_synthetic_env_file(path: Path) -> None:
+    contract_names = [row["name"] for row in contract_rows()]
+    missing = [name for name in contract_names if name not in SYNTHETIC_ENV_VALUES]
+    extra = sorted(set(SYNTHETIC_ENV_VALUES) - set(contract_names))
+    empty = [name for name in contract_names if not SYNTHETIC_ENV_VALUES.get(name)]
+
+    assert not missing, f"Missing synthetic env values for contract keys: {missing}"
+    assert not extra, f"Synthetic env values contain undocumented keys: {extra}"
+    assert not empty, f"Synthetic env values must be non-empty for contract keys: {empty}"
+
+    lines = [f"{name}={SYNTHETIC_ENV_VALUES[name]}" for name in contract_names]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def test_template_matches_contract_surface() -> None:
     assert env_keys(repo_root() / ".env.template") == set(contract_map())
 
@@ -190,7 +223,7 @@ def test_setup_env_writes_local_vite_env_file(tmp_path: Path) -> None:
     script = root / "scripts" / "setup-env.ps1"
     env_file = tmp_path / ".env.web"
     local_env_file = tmp_path / ".env.local"
-    env_file.write_text((root / ".env.web").read_text(encoding="utf-8"), encoding="utf-8")
+    write_synthetic_env_file(env_file)
 
     subprocess.run(
         [
@@ -211,6 +244,6 @@ def test_setup_env_writes_local_vite_env_file(tmp_path: Path) -> None:
 
     local_env_text = local_env_file.read_text(encoding="utf-8")
     assert "VITE_API_BASE_URL=/api" in local_env_text
-    assert "VITE_API_PROXY_TARGET=https://asset-allocation-api.bluesea-887e7a19.eastus.azurecontainerapps.io" in local_env_text
+    assert "VITE_API_PROXY_TARGET=https://example.internal.test" in local_env_text
     assert "VITE_PROXY_CONFIG_JS=true" in local_env_text
     assert "VITE_UI_AUTH_ENABLED=true" in local_env_text

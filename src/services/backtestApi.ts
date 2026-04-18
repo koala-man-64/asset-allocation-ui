@@ -26,6 +26,7 @@ export interface TimeseriesPointResponse {
   date: string;
   portfolio_value: number;
   drawdown: number;
+  period_return?: number | null;
   daily_return?: number | null;
   cumulative_return?: number | null;
   cash?: number | null;
@@ -36,7 +37,15 @@ export interface TimeseriesPointResponse {
   slippage_cost?: number | null;
 }
 
+export interface BacktestResultMetadata {
+  results_schema_version: number;
+  bar_size: string;
+  periods_per_year: number;
+  strategy_scope: string;
+}
+
 export interface TimeseriesResponse {
+  metadata?: BacktestResultMetadata | null;
   points: TimeseriesPointResponse[];
   total_points: number;
   truncated: boolean;
@@ -45,6 +54,7 @@ export interface TimeseriesResponse {
 export interface RollingMetricPointResponse {
   date: string;
   window_days: number;
+  window_periods?: number | null;
   rolling_return?: number | null;
   rolling_volatility?: number | null;
   rolling_sharpe?: number | null;
@@ -58,6 +68,7 @@ export interface RollingMetricPointResponse {
 }
 
 export interface RollingMetricsResponse {
+  metadata?: BacktestResultMetadata | null;
   points: RollingMetricPointResponse[];
   total_points: number;
   truncated: boolean;
@@ -150,10 +161,38 @@ export interface TradeResponse {
   commission: number;
   slippage_cost: number;
   cash_after: number;
+  position_id?: string | null;
+  trade_role?: 'entry' | 'rebalance_increase' | 'rebalance_decrease' | 'exit' | null;
 }
 
 export interface TradeListResponse {
   trades: TradeResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ClosedPositionResponse {
+  position_id: string;
+  symbol: string;
+  opened_at: string;
+  closed_at: string;
+  holding_period_bars: number;
+  average_cost: number;
+  exit_price: number;
+  max_quantity: number;
+  resize_count: number;
+  realized_pnl: number;
+  realized_return?: number | null;
+  total_commission: number;
+  total_slippage_cost: number;
+  total_transaction_cost: number;
+  exit_reason?: string | null;
+  exit_rule_id?: string | null;
+}
+
+export interface ClosedPositionListResponse {
+  positions: ClosedPositionResponse[];
   total: number;
   limit: number;
   offset: number;
@@ -174,6 +213,29 @@ export interface BacktestSummary {
   trades?: number;
   initial_cash?: number;
   final_equity?: number;
+  gross_total_return?: number;
+  gross_annualized_return?: number;
+  total_commission?: number;
+  total_slippage_cost?: number;
+  total_transaction_cost?: number;
+  cost_drag_bps?: number;
+  avg_gross_exposure?: number;
+  avg_net_exposure?: number;
+  sortino_ratio?: number;
+  calmar_ratio?: number;
+  closed_positions?: number;
+  winning_positions?: number;
+  losing_positions?: number;
+  hit_rate?: number;
+  avg_win_pnl?: number;
+  avg_loss_pnl?: number;
+  avg_win_return?: number;
+  avg_loss_return?: number;
+  payoff_ratio?: number;
+  profit_factor?: number;
+  expectancy_pnl?: number;
+  expectancy_return?: number;
+  metadata?: BacktestResultMetadata | null;
   [key: string]: unknown;
 }
 
@@ -203,6 +265,11 @@ export interface GetRollingParams {
 }
 
 export interface GetTradesParams {
+  limit?: number;
+  offset?: number;
+}
+
+export interface GetClosedPositionsParams {
   limit?: number;
   offset?: number;
 }
@@ -286,6 +353,23 @@ export const backtestApi = {
       },
       signal
     });
+  },
+
+  async getClosedPositions(
+    runId: string,
+    params: GetClosedPositionsParams = {},
+    signal?: AbortSignal
+  ): Promise<ClosedPositionListResponse> {
+    return apiRequest<ClosedPositionListResponse>(
+      `/backtests/${encodeURIComponent(runId)}/positions/closed`,
+      {
+        params: {
+          limit: params.limit ?? 2000,
+          offset: params.offset ?? 0
+        },
+        signal
+      }
+    );
   },
 
   async triggerJob(jobName: string, signal?: AbortSignal): Promise<JobTriggerResponse> {
