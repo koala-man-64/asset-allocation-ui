@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Database } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/app/components/ui/button';
 import { strategyApi } from '@/services/strategyApi';
 import { backtestApi } from '@/services/backtestApi';
@@ -46,6 +46,7 @@ function toIsoTimestamp(value: string): string | null {
 }
 
 export function StrategyConfigPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [selectedStrategyName, setSelectedStrategyName] = useState<string | null>(null);
   const [librarySearchText, setLibrarySearchText] = useState('');
@@ -141,11 +142,12 @@ export function StrategyConfigPage() {
         runName: backtestDraft.runName.trim() || undefined
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (run) => {
       await queryClient.invalidateQueries({ queryKey: ['backtest'] });
       setIsBacktestOpen(false);
       setBacktestDraft(DEFAULT_BACKTEST_DRAFT);
       toast.success('Strategy backtest submitted to the queue');
+      navigate(`/backtests/${run.run_id}`);
     },
     onError: (error) => {
       toast.error(`Failed to submit backtest: ${formatSystemStatusText(error)}`);

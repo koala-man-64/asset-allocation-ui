@@ -49,6 +49,11 @@ function formatRunDateRange(run: RunRecordResponse): string {
   return `${run.start_date || 'Unknown start'} to ${run.end_date || 'Unknown end'}`;
 }
 
+function formatRunVersion(run: RunRecordResponse): string {
+  if (!run.strategy_version) return 'Version unavailable';
+  return `Strategy v${run.strategy_version}`;
+}
+
 export function StrategyDossier({
   selectedStrategyName,
   strategy,
@@ -293,18 +298,30 @@ export function StrategyDossier({
                           <div className="text-sm text-muted-foreground">
                             {formatRunDateRange(run)}
                           </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <Badge variant="outline">{run.bar_size || 'n/a'}</Badge>
+                            <span>{formatRunVersion(run)}</span>
+                          </div>
                         </div>
-                        <Badge
-                          variant={
-                            run.status === 'completed'
-                              ? 'default'
-                              : run.status === 'failed'
-                                ? 'destructive'
-                                : 'outline'
-                          }
-                        >
-                          {run.status}
-                        </Badge>
+                        <div className="flex flex-col items-end gap-2">
+                          <Badge
+                            variant={
+                              run.status === 'completed'
+                                ? 'default'
+                                : run.status === 'failed'
+                                  ? 'destructive'
+                                  : 'outline'
+                            }
+                          >
+                            {run.status}
+                          </Badge>
+                          <Button asChild size="sm" variant="ghost">
+                            <Link to={`/backtests/${run.run_id}`}>
+                              Open Run
+                              <ArrowUpRight className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}

@@ -64,6 +64,21 @@ const SymbolPurgeByCriteriaPage = lazy(() =>
     default: m.SymbolPurgeByCriteriaPage
   }))
 );
+const BacktestRunsPage = lazy(() =>
+  import('@/features/backtests/BacktestRunsPage').then((m) => ({
+    default: m.BacktestRunsPage
+  }))
+);
+const BacktestRunWorkspacePage = lazy(() =>
+  import('@/features/backtests/BacktestRunWorkspacePage').then((m) => ({
+    default: m.BacktestRunWorkspacePage
+  }))
+);
+const PerformanceReviewPage = lazy(() =>
+  import('@/features/performance-review/PerformanceReviewPage').then((m) => ({
+    default: m.PerformanceReviewPage
+  }))
+);
 
 function RouteLoadingFallback() {
   return (
@@ -87,6 +102,9 @@ export function AppRoutes() {
         <Route path="/runtime-config" element={<RuntimeConfigPage />} />
         <Route path="/symbol-purge" element={<SymbolPurgeByCriteriaPage />} />
         <Route path="/stock-explorer" element={<StockExplorerPage />} />
+        <Route path="/backtests" element={<BacktestRunsPage />} />
+        <Route path="/backtests/:runId/*" element={<BacktestRunWorkspacePage />} />
+        <Route path="/performance-review/*" element={<PerformanceReviewPage />} />
         <Route path="/strategies" element={<StrategyConfigPage />} />
         <Route path="/universes" element={<UniverseConfigPage />} />
         <Route path="/rankings" element={<RankingConfigPage />} />

@@ -18,7 +18,7 @@ import { Textarea } from '@/app/components/ui/textarea';
 import { UniverseRuleBuilder } from '@/app/components/pages/strategy-editor/UniverseRuleBuilder';
 import {
   buildEmptyUniverse,
-  collectUniverseTables,
+  collectUniverseFields,
   countUniverseConditions,
   summarizeUniverse
 } from '@/app/components/pages/strategy-editor/universeUtils';
@@ -140,7 +140,7 @@ export function UniverseConfigPage() {
   const listError = formatSystemStatusText(error);
   const detailError = formatSystemStatusText(detailQuery.error);
   const selectedUniverseLabel = selectedUniverseName || draft.name || 'New Universe Configuration';
-  const tableCount = collectUniverseTables(draft.config.root).length;
+  const fieldCount = collectUniverseFields(draft.config.root).length;
   const conditionCount = countUniverseConditions(draft.config.root);
   const draftSummary = summarizeUniverse(draft.config);
 
@@ -195,9 +195,9 @@ export function UniverseConfigPage() {
           detail="Individual eligibility checks in the active rule tree."
         />
         <MetricCard
-          label="Referenced tables"
-          value={String(tableCount)}
-          detail="Gold datasets currently used by the active definition."
+          label="Referenced fields"
+          value={String(fieldCount)}
+          detail="Public field ids currently used by the active definition."
         />
       </div>
 
@@ -356,7 +356,7 @@ export function UniverseConfigPage() {
                         Current scope
                       </div>
                       <div className="mt-2 text-sm font-medium text-foreground">
-                        {conditionCount} conditions across {tableCount} tables
+                        {conditionCount} conditions across {fieldCount} fields
                       </div>
                     </div>
                   </div>

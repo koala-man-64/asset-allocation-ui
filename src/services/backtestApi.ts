@@ -14,12 +14,33 @@ export interface RunRecordResponse {
   start_date?: string | null;
   end_date?: string | null;
   error?: string | null;
+  strategy_name?: string | null;
+  strategy_version?: number | null;
+  bar_size?: string | null;
+  execution_name?: string | null;
 }
 
 export interface RunListResponse {
   runs: RunRecordResponse[];
   limit: number;
   offset: number;
+}
+
+export interface RunPinsResponse {
+  strategyName?: string | null;
+  strategyVersion?: number | null;
+  rankingSchemaName?: string | null;
+  rankingSchemaVersion?: number | null;
+  universeName?: string | null;
+  universeVersion?: number | null;
+  regimeModelName?: string | null;
+  regimeModelVersion?: number | null;
+}
+
+export interface RunStatusResponse extends RunRecordResponse {
+  results_ready_at?: string | null;
+  results_schema_version?: number | null;
+  pins?: RunPinsResponse | null;
 }
 
 export interface TimeseriesPointResponse {
@@ -35,6 +56,7 @@ export interface TimeseriesPointResponse {
   turnover?: number | null;
   commission?: number | null;
   slippage_cost?: number | null;
+  trade_count?: number | null;
 }
 
 export interface BacktestResultMetadata {
@@ -304,6 +326,12 @@ export const backtestApi = {
     signal?: AbortSignal
   ): Promise<BacktestSummary> {
     return apiRequest<BacktestSummary>(`/backtests/${encodeURIComponent(runId)}/summary`, {
+      signal
+    });
+  },
+
+  async getStatus(runId: string, signal?: AbortSignal): Promise<RunStatusResponse> {
+    return apiRequest<RunStatusResponse>(`/backtests/${encodeURIComponent(runId)}/status`, {
       signal
     });
   },

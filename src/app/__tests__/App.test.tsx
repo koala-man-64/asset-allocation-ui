@@ -46,6 +46,22 @@ vi.mock('@/features/strategies/StrategyConfigPage', () => ({
   StrategyConfigPage: () => <div data-testid="mock-strategy-config">Mock Strategy Workbench</div>
 }));
 
+vi.mock('@/features/backtests/BacktestRunsPage', () => ({
+  BacktestRunsPage: () => <div data-testid="mock-backtest-runs">Mock Backtest Runs</div>
+}));
+
+vi.mock('@/features/backtests/BacktestRunWorkspacePage', () => ({
+  BacktestRunWorkspacePage: () => (
+    <div data-testid="mock-backtest-run-workspace">Mock Backtest Run Workspace</div>
+  )
+}));
+
+vi.mock('@/features/performance-review/PerformanceReviewPage', () => ({
+  PerformanceReviewPage: () => (
+    <div data-testid="mock-performance-review">Mock Performance Review</div>
+  )
+}));
+
 vi.mock('@/features/universes/UniverseConfigPage', () => ({
   UniverseConfigPage: () => <div data-testid="mock-universe-config">Mock Universe Workbench</div>
 }));
@@ -98,6 +114,27 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-strategy-config')).toBeInTheDocument();
+  });
+
+  it('renders the backtest runs route through the application shell', async () => {
+    window.history.pushState({}, 'Backtest Runs', '/backtests');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-backtest-runs')).toBeInTheDocument();
+  });
+
+  it('renders the backtest workspace route through the application shell', async () => {
+    window.history.pushState({}, 'Backtest Run Workspace', '/backtests/run-42/trades');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-backtest-run-workspace')).toBeInTheDocument();
+  });
+
+  it('renders the performance review route through the application shell', async () => {
+    window.history.pushState({}, 'Performance Review', '/performance-review/compare');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-performance-review')).toBeInTheDocument();
   });
 
   it('renders the ranking workbench route through the application shell', async () => {

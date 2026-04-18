@@ -25,6 +25,8 @@ describe('navigationModel', () => {
       '/data-explorer',
       '/data-quality'
     ]);
+    expect(normalizedOrder['live-operations']).toContain('/backtests');
+    expect(normalizedOrder['live-operations']).toContain('/performance-review');
     expect(normalizedOrder['live-operations']).toContain('/rankings');
   });
 

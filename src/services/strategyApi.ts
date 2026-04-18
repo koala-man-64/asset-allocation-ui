@@ -1,9 +1,9 @@
 import { request } from '@/services/apiService';
 import type {
+  UniverseCatalogResponse,
   StrategyConfig,
   StrategyDetail,
   StrategySummary,
-  UniverseCatalogResponse,
   UniverseDefinition,
   UniversePreviewResponse
 } from '@/types/strategy';
@@ -26,6 +26,7 @@ export type {
   UniverseGroup,
   UniverseGroupOperator,
   UniverseNode,
+  UniverseFieldDefinition,
   UniversePreviewResponse,
   UniverseValue,
   UniverseValueKind

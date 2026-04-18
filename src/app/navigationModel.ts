@@ -110,6 +110,18 @@ export const NAV_SECTIONS: NavSection[] = [
         sectionKey: 'live-operations'
       },
       {
+        path: '/backtests',
+        label: 'Backtest Runs',
+        icon: BarChart3,
+        sectionKey: 'live-operations'
+      },
+      {
+        path: '/performance-review',
+        label: 'Performance Review',
+        icon: BarChart3,
+        sectionKey: 'live-operations'
+      },
+      {
         path: '/strategies',
         label: 'Strategies',
         icon: Target,

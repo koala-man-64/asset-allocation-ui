@@ -180,6 +180,12 @@ export function StrategyActionRail({
               <ArrowUpRight className="h-4 w-4" />
             </Link>
           </Button>
+          <Button asChild variant="ghost" className="w-full justify-between">
+            <Link to="/backtests">
+              Backtest runs
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </Button>
         </div>
       </div>
     </aside>

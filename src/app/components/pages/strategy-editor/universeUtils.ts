@@ -10,8 +10,7 @@ import type {
 export function buildEmptyUniverseCondition(): UniverseCondition {
   return {
     kind: 'condition',
-    table: '',
-    column: '',
+    field: '',
     operator: 'eq'
   };
 }
@@ -52,26 +51,26 @@ export function countUniverseConditions(node: UniverseNode): number {
   return node.clauses.reduce((sum, clause) => sum + countUniverseConditions(clause), 0);
 }
 
-export function collectUniverseTables(node: UniverseNode): string[] {
-  const tables = new Set<string>();
-  collectUniverseTablesInto(node, tables);
-  return Array.from(tables).sort();
+export function collectUniverseFields(node: UniverseNode): string[] {
+  const fields = new Set<string>();
+  collectUniverseFieldsInto(node, fields);
+  return Array.from(fields).sort();
 }
 
-function collectUniverseTablesInto(node: UniverseNode, tables: Set<string>): void {
+function collectUniverseFieldsInto(node: UniverseNode, fields: Set<string>): void {
   if (!isUniverseGroup(node)) {
-    if (node.table) tables.add(node.table);
+    if (node.field) fields.add(node.field);
     return;
   }
-  node.clauses.forEach((clause) => collectUniverseTablesInto(clause, tables));
+  node.clauses.forEach((clause) => collectUniverseFieldsInto(clause, fields));
 }
 
 export function summarizeUniverse(universe: UniverseDefinition): string {
   const conditionCount = countUniverseConditions(universe.root);
-  const tableCount = collectUniverseTables(universe.root).length;
+  const fieldCount = collectUniverseFields(universe.root).length;
   const conditionLabel = conditionCount === 1 ? 'condition' : 'conditions';
-  const tableLabel = tableCount === 1 ? 'table' : 'tables';
-  return `${conditionCount} ${conditionLabel} across ${tableCount} ${tableLabel}`;
+  const fieldLabel = fieldCount === 1 ? 'field' : 'fields';
+  return `${conditionCount} ${conditionLabel} across ${fieldCount} ${fieldLabel}`;
 }
 
 export function formatUniverseOperator(operator: 'and' | 'or'): string {

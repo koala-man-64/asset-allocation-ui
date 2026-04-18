@@ -143,6 +143,32 @@ describe('backtestApi', () => {
   });
 
   describe('backtest result endpoints', () => {
+    it('fetches the run list with expanded metadata fields', async () => {
+      await invokeWithWarmup(
+        jsonResponse({
+          runs: [
+            {
+              run_id: 'run-1',
+              status: 'queued',
+              submitted_at: '2026-03-08T00:00:00Z',
+              strategy_name: 'quality-trend',
+              strategy_version: 4,
+              bar_size: '5m',
+              execution_name: 'backtest-exec-01'
+            }
+          ],
+          limit: 25,
+          offset: 0
+        }),
+        (api) => api.listRuns({ limit: 25, offset: 0 })
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      expect(url.pathname).toBe('/api/backtests');
+      expect(url.searchParams.get('limit')).toBe('25');
+      expect(url.searchParams.get('offset')).toBe('0');
+    });
+
     it('fetches summary without a source query parameter', async () => {
       await invokeWithWarmup(
         jsonResponse({ run_id: 'run-1', sharpe_ratio: 1.2 }),
@@ -151,6 +177,29 @@ describe('backtestApi', () => {
 
       const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
       expect(url.pathname).toBe('/api/backtests/run-1/summary');
+      expect(url.searchParams.get('source')).toBeNull();
+    });
+
+    it('fetches run status and frozen pin metadata', async () => {
+      await invokeWithWarmup(
+        jsonResponse({
+          run_id: 'run-1',
+          status: 'completed',
+          submitted_at: '2026-03-08T00:00:00Z',
+          strategy_name: 'quality-trend',
+          strategy_version: 4,
+          bar_size: '5m',
+          results_schema_version: 4,
+          pins: {
+            rankingSchemaName: 'quality-momentum',
+            rankingSchemaVersion: 7
+          }
+        }),
+        (api) => api.getStatus('run-1')
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      expect(url.pathname).toBe('/api/backtests/run-1/status');
       expect(url.searchParams.get('source')).toBeNull();
     });
 
@@ -187,6 +236,19 @@ describe('backtestApi', () => {
 
       const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
       expect(url.pathname).toBe('/api/backtests/run-1/trades');
+      expect(url.searchParams.get('limit')).toBe('100');
+      expect(url.searchParams.get('offset')).toBe('50');
+      expect(url.searchParams.get('source')).toBeNull();
+    });
+
+    it('fetches closed positions without a source query parameter', async () => {
+      await invokeWithWarmup(
+        jsonResponse({ positions: [], total: 0, limit: 100, offset: 50 }),
+        (api) => api.getClosedPositions('run-1', { limit: 100, offset: 50 })
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      expect(url.pathname).toBe('/api/backtests/run-1/positions/closed');
       expect(url.searchParams.get('limit')).toBe('100');
       expect(url.searchParams.get('offset')).toBe('50');
       expect(url.searchParams.get('source')).toBeNull();

@@ -105,6 +105,7 @@ function buildStrategyDetail(name: string, overrides: Partial<Record<string, unk
 describe('StrategyConfigPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.pushState({}, 'Strategies', '/strategies');
 
     (rankingApi.listRankingSchemas as Mock).mockResolvedValue([
       {
@@ -172,6 +173,97 @@ describe('StrategyConfigPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /launch backtest/i }));
     expect(await screen.findByRole('heading', { name: /launch backtest/i })).toBeInTheDocument();
+  });
+
+  it('surfaces recent runs with cadence, version, and a workspace deep link', async () => {
+    (strategyApi.listStrategies as Mock).mockResolvedValue([
+      {
+        name: 'quality-trend',
+        type: 'configured',
+        description: 'Quality trend desk note',
+        updated_at: '2026-04-15T12:00:00Z'
+      }
+    ]);
+    (strategyApi.getStrategyDetail as Mock).mockImplementation((name: string) =>
+      Promise.resolve(buildStrategyDetail(name))
+    );
+    (backtestApi.listRuns as Mock).mockResolvedValue({
+      runs: [
+        {
+          run_id: 'run-77',
+          run_name: 'April rebalance review',
+          status: 'completed',
+          submitted_at: '2026-04-16T14:00:00Z',
+          completed_at: '2026-04-16T14:30:00Z',
+          start_date: '2024-01-01',
+          end_date: '2024-12-31',
+          strategy_name: 'quality-trend',
+          strategy_version: 3,
+          bar_size: '15m'
+        }
+      ],
+      limit: 6,
+      offset: 0
+    });
+
+    renderWithProviders(<StrategyConfigPage />);
+
+    expect(await screen.findByText('April rebalance review')).toBeInTheDocument();
+    expect(screen.getByText('Strategy v3')).toBeInTheDocument();
+    expect(screen.getByText('15m')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open run/i })).toHaveAttribute(
+      'href',
+      '/backtests/run-77'
+    );
+  });
+
+  it('redirects to the run workspace after submitting a backtest', async () => {
+    (strategyApi.listStrategies as Mock).mockResolvedValue([
+      {
+        name: 'quality-trend',
+        type: 'configured',
+        description: 'Quality trend desk note',
+        updated_at: '2026-04-15T12:00:00Z'
+      }
+    ]);
+    (strategyApi.getStrategyDetail as Mock).mockImplementation((name: string) =>
+      Promise.resolve(buildStrategyDetail(name))
+    );
+
+    renderWithProviders(<StrategyConfigPage />);
+
+    expect(await screen.findByRole('heading', { name: 'quality-trend' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /launch backtest/i }));
+    expect(await screen.findByRole('heading', { name: /launch backtest/i })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/run name/i), {
+      target: { value: 'Desk QA run' }
+    });
+    fireEvent.change(screen.getByLabelText(/start timestamp/i), {
+      target: { value: '2026-01-01T09:30' }
+    });
+    fireEvent.change(screen.getByLabelText(/end timestamp/i), {
+      target: { value: '2026-03-31T16:00' }
+    });
+    fireEvent.change(screen.getByLabelText(/bar size/i), {
+      target: { value: '15m' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /submit backtest/i }));
+
+    const expectedStartTs = new Date('2026-01-01T09:30').toISOString();
+    const expectedEndTs = new Date('2026-03-31T16:00').toISOString();
+
+    await waitFor(() => {
+      expect(backtestApi.submitRun).toHaveBeenCalledWith({
+        strategyName: 'quality-trend',
+        startTs: expectedStartTs,
+        endTs: expectedEndTs,
+        barSize: '15m',
+        runName: 'Desk QA run'
+      });
+      expect(window.location.pathname).toBe('/backtests/run-1');
+    });
   });
 
   it('falls back to the remaining strategy after deleting the selected one', async () => {

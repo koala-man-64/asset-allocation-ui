@@ -85,7 +85,9 @@ describe('LeftNavigation', () => {
       'Symbol Purge',
       'Runtime Config',
       'Strategy Exploration',
-      'Run Configurations',
+      'Backtest Runs',
+      'Performance Review',
+      'Strategies',
       'Universe Configurations',
       'Ranking Configurations',
       'Postgres Explorer'
@@ -110,6 +112,7 @@ describe('LeftNavigation', () => {
             '/symbol-purge',
             '/runtime-config',
             '/strategy-exploration',
+            '/performance-review',
             '/strategies',
             '/universes',
             '/rankings'
@@ -122,7 +125,7 @@ describe('LeftNavigation', () => {
 
     expect(screen.getByText('PINNED')).toBeDefined();
     expect(getNavLinkLabels()).toEqual([
-      'Run Configurations',
+      'Strategies',
       'System Status',
       'Live Stock View',
       'Stock Explorer',
@@ -135,24 +138,26 @@ describe('LeftNavigation', () => {
       'Symbol Purge',
       'Runtime Config',
       'Strategy Exploration',
+      'Performance Review',
       'Universe Configurations',
-      'Ranking Configurations'
+      'Ranking Configurations',
+      'Backtest Runs'
     ]);
   });
 
-  it('moves run configurations to the pinned section without duplication', async () => {
+  it('moves backtest runs to the pinned section without duplication', async () => {
     renderNavigation();
 
-    fireEvent.click(screen.getByLabelText('Pin Run Configurations to top'));
+    fireEvent.click(screen.getByLabelText('Pin Backtest Runs to top'));
 
     await waitFor(() => {
       expect(screen.getByText('PINNED')).toBeDefined();
-      expect(screen.getAllByText('Run Configurations').length).toBe(1);
+      expect(screen.getAllByText('Backtest Runs').length).toBe(1);
     });
 
-    expect(useUIStore.getState().pinnedNavPaths).toEqual(['/strategies']);
+    expect(useUIStore.getState().pinnedNavPaths).toEqual(['/backtests']);
     expect(getNavLinkLabels().slice(0, 3)).toEqual([
-      'Run Configurations',
+      'Backtest Runs',
       'Stock Explorer',
       'Live Stock View'
     ]);
@@ -181,10 +186,10 @@ describe('LeftNavigation', () => {
 
     expect(getNavLinkLabels().slice(0, 4)).toEqual([
       'Ranking Configurations',
-      'Run Configurations',
+      'Strategies',
       'Stock Explorer',
       'Live Stock View'
     ]);
-    expect(screen.getAllByText('Run Configurations').length).toBe(1);
+    expect(screen.getAllByText('Strategies').length).toBe(1);
   });
 });
