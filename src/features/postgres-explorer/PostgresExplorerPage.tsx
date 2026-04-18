@@ -31,7 +31,7 @@ import {
 } from '@/features/postgres-explorer/lib/postgresExplorer';
 import {
   PostgresService,
-  type PostgresQueryFilter,
+  type QueryFilter,
   type PostgresTableMetadata,
   type QueryFilterOperator
 } from '@/services/PostgresService';
@@ -114,7 +114,7 @@ export const PostgresExplorerPage: React.FC = () => {
     setError(null);
     setStatusMessage(null);
     try {
-      const filters: PostgresQueryFilter[] = queryFilters.map((filter) => {
+      const filters: QueryFilter[] = queryFilters.map((filter) => {
         const column = tableMetadata?.columns.find((item) => item.name === filter.columnName);
         if (!column) {
           throw new Error(`Unknown filter column "${filter.columnName}".`);
