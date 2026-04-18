@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest';
-import { StrategyConfigPage } from '@/app/components/pages/StrategyConfigPage';
+import { StrategyConfigPage } from '@/features/strategies/StrategyConfigPage';
 import { backtestApi } from '@/services/backtestApi';
 import { rankingApi } from '@/services/rankingApi';
 import { strategyApi } from '@/services/strategyApi';

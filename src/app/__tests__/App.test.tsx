@@ -46,6 +46,12 @@ vi.mock('@/features/strategies/StrategyConfigPage', () => ({
   StrategyConfigPage: () => <div data-testid="mock-strategy-config">Mock Strategy Workbench</div>
 }));
 
+vi.mock('@/features/strategy-runs/StrategyRunMonitorPage', () => ({
+  StrategyRunMonitorPage: () => (
+    <div data-testid="mock-strategy-run-monitor">Mock Strategy Run Monitor</div>
+  )
+}));
+
 vi.mock('@/features/universes/UniverseConfigPage', () => ({
   UniverseConfigPage: () => <div data-testid="mock-universe-config">Mock Universe Workbench</div>
 }));
@@ -98,6 +104,13 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-strategy-config')).toBeInTheDocument();
+  });
+
+  it('renders the strategy run monitor route through the application shell', async () => {
+    window.history.pushState({}, 'Strategy Runs', '/strategy-runs');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-strategy-run-monitor')).toBeInTheDocument();
   });
 
   it('renders the ranking workbench route through the application shell', async () => {

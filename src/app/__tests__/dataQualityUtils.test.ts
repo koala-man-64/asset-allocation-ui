@@ -4,7 +4,7 @@ import {
   getProbeIdForRow,
   isValidTickerSymbol,
   parseImpactsByDomain
-} from '@/app/components/pages/data-quality/dataQualityUtils';
+} from '@/features/data-quality/lib/dataQualityUtils';
 import type { DataLayer } from '@/types/strategy';
 
 describe('dataQualityUtils', () => {

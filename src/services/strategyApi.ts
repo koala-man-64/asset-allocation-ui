@@ -2,10 +2,7 @@ import { request } from '@/services/apiService';
 import type {
   StrategyConfig,
   StrategyDetail,
-  StrategySummary,
-  UniverseCatalogResponse,
-  UniverseDefinition,
-  UniversePreviewResponse
+  StrategySummary
 } from '@/types/strategy';
 
 export type {
@@ -19,14 +16,12 @@ export type {
   StrategyDetail,
   StrategySummary,
   TargetGrossExposureByRegime,
-  UniverseCatalogResponse,
   UniverseCondition,
   UniverseConditionOperator,
   UniverseDefinition,
   UniverseGroup,
   UniverseGroupOperator,
   UniverseNode,
-  UniversePreviewResponse,
   UniverseValue,
   UniverseValueKind
 } from '@/types/strategy';
@@ -42,24 +37,6 @@ export const strategyApi = {
 
   async getStrategyDetail(name: string, signal?: AbortSignal): Promise<StrategyDetail> {
     return request<StrategyDetail>(`/strategies/${encodeURIComponent(name)}/detail`, { signal });
-  },
-
-  async getUniverseCatalog(signal?: AbortSignal): Promise<UniverseCatalogResponse> {
-    return request<UniverseCatalogResponse>('/universes/catalog', { signal });
-  },
-
-  async previewUniverse(
-    payload: {
-      universe: UniverseDefinition;
-      sampleLimit?: number;
-    },
-    signal?: AbortSignal
-  ): Promise<UniversePreviewResponse> {
-    return request<UniversePreviewResponse>('/universes/preview', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-      signal
-    });
   },
 
   async saveStrategy(

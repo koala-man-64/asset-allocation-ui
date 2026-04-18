@@ -1,0 +1,93 @@
+baseline:
+  branch: main
+
+standards:
+  format: []
+  lint:
+    - "corepack pnpm lint"
+  typecheck:
+    - "corepack pnpm exec tsc --noEmit"
+  test_fast:
+    - "python -m pytest tests/test_env_contract.py tests/test_multirepo_dependency_contract.py -q"
+    - "corepack pnpm vitest run src/services/__tests__/apiService.test.ts src/services/__tests__/universeApi.test.ts src/app/__tests__/UniverseRuleBuilder.test.tsx src/app/__tests__/UniverseConfigPage.test.tsx src/app/__tests__/universeUtils.test.ts"
+  test_full:
+    - "python -m pytest tests/test_env_contract.py tests/test_multirepo_dependency_contract.py -q"
+    - "corepack pnpm vitest run src/services/__tests__/apiService.test.ts src/services/__tests__/universeApi.test.ts src/app/__tests__/UniverseRuleBuilder.test.tsx src/app/__tests__/UniverseConfigPage.test.tsx src/app/__tests__/universeUtils.test.ts"
+  format_fix: []
+  lint_fix: []
+
+architecture:
+  layers:
+    - name: "types"
+      path_glob: "src/types/**/*.ts"
+    - name: "services"
+      path_glob: "src/services/**/*.ts"
+    - name: "features"
+      path_glob: "src/features/**/*.tsx"
+    - name: "workflows"
+      path_glob: ".github/workflows/*.yml"
+  module_boundaries: []
+  blessed_patterns:
+    - "Shared contract imports come from @asset-allocation/contracts"
+    - "Universe editor draft state materializes at the API boundary"
+
+dependencies:
+  allowlist:
+    - "@asset-allocation/contracts"
+    - "react"
+    - "typescript"
+    - "vite"
+    - "vitest"
+  denylist: []
+  lockfile_required: true
+
+api:
+  public_globs:
+    - "src/services/**/*.ts"
+    - "src/types/strategy.ts"
+    - ".github/workflows/contracts-compat.yml"
+  breaking_change_policy: "strict"
+
+thresholds:
+  drift_score_fail: 35
+  category_weights:
+    api: 35
+    architecture: 25
+    test: 25
+    dependency: 20
+    security: 20
+    behavioral: 20
+    config_infra: 10
+    style: 5
+
+auto_remediate:
+  enabled: false
+  max_files_changed: 20
+  safe_directories:
+    - "src/**"
+    - "tests/**"
+    - ".github/workflows/**"
+  commands: []
+
+risk_controls:
+  protected_globs:
+    - "package.json"
+    - "pnpm-lock.yaml"
+    - ".github/workflows/*.yml"
+  require_tests_passing_before_automerge: true
+
+reporting:
+  markdown_path: "artifacts/drift_report.md"
+  json_path: "artifacts/drift_report.json"
+  patch_path: "artifacts/drift_remediation.patch"
+
+detection:
+  lookback_days: 14
+  exclude_globs:
+    - "artifacts/**"
+  speculative_safeguards:
+    enabled: true
+    patterns:
+      - '\?\?\s*(?:null|undefined)\b'
+      - '\|\|\s*(?:null|undefined)\b'
+      - '\breturn\s+(?:null|undefined|false)\b'

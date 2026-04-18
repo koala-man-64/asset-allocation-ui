@@ -5,7 +5,7 @@ import { queryKeys } from '@/hooks/useDataQueries';
 import { DataService } from '@/services/DataService';
 import { Button } from '@/app/components/ui/button';
 import { cn } from '@/app/components/ui/utils';
-import { getCentralClockParts } from '@/app/components/pages/system-status/systemStatusClock';
+import { getCentralClockParts } from '@/features/system-status/lib/systemStatusClock';
 import { useUIStore, UI_STORAGE_KEY } from '@/stores/useUIStore';
 import {
   resolveVisibleNavSections,

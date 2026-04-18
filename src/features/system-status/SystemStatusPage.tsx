@@ -9,23 +9,23 @@ import type {
 import { ErrorBoundary } from '@/app/components/common/ErrorBoundary';
 import { Skeleton } from '@/app/components/ui/skeleton';
 import { PageLoader } from '@/app/components/common/PageLoader';
-import type { ManagedContainerJob } from '@/app/components/pages/system-status/JobKillSwitchPanel';
-import type { JobLogStreamTarget } from '@/app/components/pages/system-status/JobLogStreamPanel';
+import type { ManagedContainerJob } from '@/features/system-status/components/JobKillSwitchPanel';
+import type { JobLogStreamTarget } from '@/features/system-status/components/JobLogStreamPanel';
 import type { ResourceSignal } from '@/types/strategy';
 
 // Lazy load components to reduce initial bundle size of the page
 const DomainLayerComparisonPanel = lazy(() =>
-  import('@/app/components/pages/system-status/DomainLayerComparisonPanel').then((m) => ({
+  import('@/features/system-status/domain-layer-comparison/DomainLayerComparisonPanel').then((m) => ({
     default: m.DomainLayerComparisonPanel
   }))
 );
 const ContainerAppsPanel = lazy(() =>
-  import('@/app/components/pages/system-status/ContainerAppsPanel').then((m) => ({
+  import('@/features/system-status/components/ContainerAppsPanel').then((m) => ({
     default: m.ContainerAppsPanel
   }))
 );
 const JobLogStreamPanel = lazy(() =>
-  import('@/app/components/pages/system-status/JobLogStreamPanel').then((m) => ({
+  import('@/features/system-status/components/JobLogStreamPanel').then((m) => ({
     default: m.JobLogStreamPanel
   }))
 );
@@ -34,12 +34,12 @@ import {
   buildAnchoredJobRunIndex,
   normalizeAzureJobName,
   resolveManagedJobName
-} from '@/app/components/pages/system-status/SystemStatusHelpers';
+} from '@/features/system-status/lib/systemStatusHelpers';
 import {
   effectiveJobStatus,
   formatTimeAgo
-} from '@/app/components/pages/system-status/SystemStatusHelpers';
-import { normalizeDomainKey } from '@/app/components/pages/system-status/SystemPurgeControls';
+} from '@/features/system-status/lib/systemStatusHelpers';
+import { normalizeDomainKey } from '@/features/system-status/components/SystemPurgeControls';
 
 type JobResourceSummary = {
   name: string;

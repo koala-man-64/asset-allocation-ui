@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Database } from 'lucide-react';
+import { Database, Radar } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/app/components/ui/button';
 import { strategyApi } from '@/services/strategyApi';
@@ -207,6 +207,12 @@ export function StrategyConfigPage() {
             <Link to="/strategy-exploration">
               <Database className="h-4 w-4" />
               Strategy Exploration
+            </Link>
+          </Button>
+          <Button variant="outline" asChild className="gap-2">
+            <Link to="/strategy-runs">
+              <Radar className="h-4 w-4" />
+              Run Monitor
             </Link>
           </Button>
           <Button onClick={() => openEditor('create')}>Create Strategy</Button>

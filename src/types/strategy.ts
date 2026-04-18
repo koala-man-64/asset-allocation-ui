@@ -1,13 +1,5 @@
 // Core data types for the Strategy & Backtest Evaluation Dashboard
 
-import type {
-  RankingSchemaConfig,
-  StrategyConfig,
-  UniverseConditionOperator as ContractUniverseConditionOperator,
-  UniverseSource,
-  UniverseValue,
-} from '@asset-allocation/contracts';
-
 export type {
   ExitRule,
   ExitRuleAction,
@@ -29,33 +21,53 @@ export type {
   RegimePolicy,
   StrategyConfig,
   TargetGrossExposureByRegime,
+  UniverseCatalogResponse,
+  UniverseCondition,
+  UniverseConditionOperator,
+  UniverseDefinition,
+  UniverseFieldDefinition,
+  UniverseFieldId,
+  UniverseGroup,
+  UniverseGroupOperator,
+  UniverseNode,
+  UniversePreviewResponse,
+  UniverseSource,
+  UniverseValue,
+  UniverseValueKind
+} from '@/types/strategyContracts';
+import type {
+  RankingSchemaConfig,
+  StrategyConfig,
+  UniverseConditionOperator,
+  UniverseDefinition,
+  UniverseFieldId,
+  UniverseGroupOperator,
   UniverseSource,
   UniverseValue
-} from '@asset-allocation/contracts';
+} from '@/types/strategyContracts';
 
-export type UniverseConditionOperator = ContractUniverseConditionOperator;
+export type UniverseDraftFieldId = UniverseFieldId | '';
+export type UniverseDraftConditionOperator = UniverseConditionOperator | '';
 
-export type UniverseGroupOperator = 'and' | 'or';
-
-export interface UniverseCondition {
+export interface UniverseDraftCondition {
   kind: 'condition';
-  field: string;
-  operator: UniverseConditionOperator;
+  field: UniverseDraftFieldId;
+  operator: UniverseDraftConditionOperator;
   value?: UniverseValue;
   values?: UniverseValue[];
 }
 
-export interface UniverseGroup {
+export interface UniverseDraftGroup {
   kind: 'group';
   operator: UniverseGroupOperator;
-  clauses: UniverseNode[];
+  clauses: UniverseDraftNode[];
 }
 
-export type UniverseNode = UniverseCondition | UniverseGroup;
+export type UniverseDraftNode = UniverseDraftCondition | UniverseDraftGroup;
 
-export interface UniverseDefinition {
+export interface UniverseDraftDefinition {
   source: UniverseSource;
-  root: UniverseGroup;
+  root: UniverseDraftGroup;
 }
 export interface StrategyRun {
   id: string;
@@ -148,28 +160,7 @@ export interface Contribution {
   contribution: number; // total P&L
 }
 
-export type UniverseValueKind = 'string' | 'number' | 'boolean' | 'date' | 'datetime';
 export type RankingCatalogValueKind = 'number' | 'boolean';
-
-export interface UniverseFieldDefinition {
-  field: string;
-  dataType: string;
-  valueKind: UniverseValueKind;
-  operators: UniverseConditionOperator[];
-}
-
-export interface UniverseCatalogResponse {
-  source: UniverseSource;
-  fields: UniverseFieldDefinition[];
-}
-
-export interface UniversePreviewResponse {
-  source: UniverseSource;
-  symbolCount: number;
-  sampleSymbols: string[];
-  fieldsUsed: string[];
-  warnings: string[];
-}
 
 export interface StrategySummary {
   name: string;

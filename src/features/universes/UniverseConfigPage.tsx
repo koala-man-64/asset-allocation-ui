@@ -15,20 +15,26 @@ import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { PageLoader } from '@/app/components/common/PageLoader';
 import { Textarea } from '@/app/components/ui/textarea';
-import { UniverseRuleBuilder } from '@/app/components/pages/strategy-editor/UniverseRuleBuilder';
+import { UniverseRuleBuilder } from '@/features/universes/components/UniverseRuleBuilder';
 import {
   buildEmptyUniverse,
   collectUniverseFields,
   countUniverseConditions,
-  summarizeUniverse
-} from '@/app/components/pages/strategy-editor/universeUtils';
+  materializeUniverseDefinition,
+  summarizeUniverse,
+  toUniverseDraft
+} from '@/features/universes/lib/universeUtils';
 import { universeApi } from '@/services/universeApi';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
-import type { UniverseConfigDetail } from '@/types/strategy';
+import type { UniverseConfigDetail, UniverseDraftDefinition } from '@/types/strategy';
 import { cn } from '@/app/components/ui/utils';
 import { toast } from 'sonner';
 
-function buildEmptyUniverseConfig(): UniverseConfigDetail {
+type UniverseConfigDraftDetail = Omit<UniverseConfigDetail, 'config'> & {
+  config: UniverseDraftDefinition;
+};
+
+function buildEmptyUniverseConfig(): UniverseConfigDraftDetail {
   return {
     name: '',
     description: '',
@@ -62,7 +68,8 @@ function MetricCard({ label, value, detail }: { label: string; value: string; de
 export function UniverseConfigPage() {
   const queryClient = useQueryClient();
   const [selectedUniverseName, setSelectedUniverseName] = useState<string | null>(null);
-  const [draft, setDraft] = useState<UniverseConfigDetail>(buildEmptyUniverseConfig());
+  const [hasInitializedSelection, setHasInitializedSelection] = useState(false);
+  const [draft, setDraft] = useState<UniverseConfigDraftDetail>(buildEmptyUniverseConfig());
 
   const {
     data: universes = [],
@@ -80,23 +87,27 @@ export function UniverseConfigPage() {
   });
 
   useEffect(() => {
-    if (!selectedUniverseName && universes.length > 0) {
+    if (!hasInitializedSelection && !selectedUniverseName && universes.length > 0) {
       setSelectedUniverseName(universes[0].name);
+      setHasInitializedSelection(true);
     }
-  }, [selectedUniverseName, universes]);
+  }, [hasInitializedSelection, selectedUniverseName, universes]);
 
   useEffect(() => {
     if (detailQuery.data) {
-      setDraft(detailQuery.data);
+      setDraft({
+        ...detailQuery.data,
+        config: toUniverseDraft(detailQuery.data.config)
+      });
     }
   }, [detailQuery.data]);
 
   const saveMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: async () =>
       universeApi.saveUniverseConfig({
         name: draft.name,
         description: draft.description,
-        config: draft.config
+        config: materializeUniverseDefinition(draft.config)
       }),
     onSuccess: async (result) => {
       await Promise.all([

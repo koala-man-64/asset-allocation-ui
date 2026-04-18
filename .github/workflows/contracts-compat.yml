@@ -129,7 +129,7 @@ jobs:
               cd "${compat_dir}"
               pnpm install --no-frozen-lockfile
               pnpm exec tsc --noEmit
-              pnpm vitest run src/app/__tests__/App.auth.test.tsx src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/hooks/useRealtime.test.tsx
+              pnpm vitest run src/app/__tests__/App.auth.test.tsx src/app/__tests__/UniverseRuleBuilder.test.tsx src/app/__tests__/UniverseConfigPage.test.tsx src/app/__tests__/universeUtils.test.ts src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/services/__tests__/universeApi.test.ts src/hooks/useRealtime.test.tsx
               pnpm build
             '
 

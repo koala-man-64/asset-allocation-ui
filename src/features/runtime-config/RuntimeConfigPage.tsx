@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow
 } from '@/app/components/ui/table';
-import { formatTimeAgo } from '@/app/components/pages/system-status/SystemStatusHelpers';
+import { formatTimeAgo } from '@/features/system-status/lib/systemStatusHelpers';
 import type { RuntimeConfigItem } from '@/services/apiService';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { PageLoader } from '@/app/components/common/PageLoader';

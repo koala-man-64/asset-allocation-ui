@@ -14,7 +14,9 @@ export const backtestKeys = {
   rolling: (runId: string, windowDays: number, maxPoints: number) =>
     [...backtestKeys.run(runId), 'rolling', windowDays, maxPoints] as const,
   trades: (runId: string, limit: number, offset: number) =>
-    [...backtestKeys.run(runId), 'trades', limit, offset] as const
+    [...backtestKeys.run(runId), 'trades', limit, offset] as const,
+  closedPositions: (runId: string, limit: number, offset: number) =>
+    [...backtestKeys.run(runId), 'closed-positions', limit, offset] as const
 };
 
 function isNotFoundError(error: unknown): boolean {

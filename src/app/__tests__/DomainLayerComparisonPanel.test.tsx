@@ -3,7 +3,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 
-import { DomainLayerComparisonPanel } from '@/app/components/pages/system-status/DomainLayerComparisonPanel';
+import { DomainLayerComparisonPanel } from '@/features/system-status/domain-layer-comparison/DomainLayerComparisonPanel';
 import { DataService } from '@/services/DataService';
 import { renderWithProviders } from '@/test/utils';
 import type { DataLayer, DomainMetadata, JobRun } from '@/types/strategy';
@@ -35,11 +35,11 @@ vi.mock('@/hooks/useJobTrigger', () => ({
   })
 }));
 
-vi.mock('@/app/components/pages/system-status/DomainListViewerSheet', () => ({
+vi.mock('@/features/system-status/components/DomainListViewerSheet', () => ({
   DomainListViewerSheet: () => null
 }));
 
-vi.mock('@/app/components/pages/system-status/JobKillSwitchPanel', () => ({
+vi.mock('@/features/system-status/components/JobKillSwitchPanel', () => ({
   JobKillSwitchInline: () => null
 }));
 

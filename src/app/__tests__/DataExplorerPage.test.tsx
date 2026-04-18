@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/utils';
 
-import { DataExplorerPage } from '@/app/components/pages/DataExplorerPage';
+import { DataExplorerPage } from '@/features/data-explorer/DataExplorerPage';
 import { DataService } from '@/services/DataService';
 
 vi.mock('@/services/DataService', () => ({

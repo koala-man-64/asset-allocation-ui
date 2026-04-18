@@ -8,7 +8,7 @@ import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Textarea } from '@/app/components/ui/textarea';
 import { Badge } from '@/app/components/ui/badge';
-import { formatTimeAgo } from '@/app/components/pages/system-status/SystemStatusHelpers';
+import { formatTimeAgo } from '@/features/system-status/lib/systemStatusHelpers';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { PageLoader } from '@/app/components/common/PageLoader';
 

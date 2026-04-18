@@ -2,7 +2,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { useDataProbes } from '@/hooks/useDataProbes';
 import { DataService } from '@/services/DataService';
-import type { DomainRow } from '@/app/components/pages/data-quality/dataQualityUtils';
+import type { DomainRow } from '@/features/data-quality/lib/dataQualityUtils';
 
 vi.mock('@/services/DataService', () => ({
   DataService: {

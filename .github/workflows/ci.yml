@@ -70,4 +70,66 @@ jobs:
             -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
             -w /workspace/asset-allocation-ui \
             node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
-            bash -lc 'set -euo pipefail; corepack enable; pnpm install --frozen-lockfile; pnpm lint; pnpm exec tsc --noEmit; pnpm vitest run src/app/__tests__/App.auth.test.tsx src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/hooks/useRealtime.test.tsx; pnpm build'
+            bash -lc 'set -euo pipefail; corepack enable; pnpm install --frozen-lockfile; pnpm lint; pnpm exec tsc --noEmit; pnpm vitest run src/app/__tests__/App.auth.test.tsx src/app/__tests__/UniverseRuleBuilder.test.tsx src/app/__tests__/UniverseConfigPage.test.tsx src/app/__tests__/universeUtils.test.ts src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/services/__tests__/universeApi.test.ts src/hooks/useRealtime.test.tsx; pnpm build'
+
+  drift-audit:
+    name: drift-audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout UI repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: asset-allocation-ui
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.14"
+
+      - name: Set up Node
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: "20"
+
+      - name: Write required npmrc
+        id: npmrc
+        env:
+          NPMRC_CONTENT: ${{ secrets.NPMRC }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${NPMRC_CONTENT:?Set repository secret NPMRC to a complete .npmrc file with read access to @asset-allocation/contracts.}"
+          path="${RUNNER_TEMP}/ui.npmrc"
+          printf '%s' "${NPMRC_CONTENT}" > "${path}"
+          echo "path=${path}" >> "$GITHUB_OUTPUT"
+
+      - name: Install drift audit dependencies
+        shell: bash
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ steps.npmrc.outputs.path }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip PyYAML pytest
+          cd asset-allocation-ui
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Run drift audit (advisory)
+        continue-on-error: true
+        shell: bash
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ steps.npmrc.outputs.path }}
+        run: |
+          set -euo pipefail
+          cd asset-allocation-ui
+          python .codex/skills/code-drift-sentinel/scripts/codedrift_sentinel.py --mode audit --ci
+
+      - name: Upload drift artifacts
+        if: always()
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: ui-drift-audit
+          path: |
+            asset-allocation-ui/artifacts/drift_report.md
+            asset-allocation-ui/artifacts/drift_report.json
+          if-no-files-found: ignore

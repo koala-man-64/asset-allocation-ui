@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 
-import { SymbolPurgeByCriteriaPage } from '@/app/components/pages/SymbolPurgeByCriteriaPage';
+import { SymbolPurgeByCriteriaPage } from '@/features/symbol-purge/SymbolPurgeByCriteriaPage';
 import { DataService } from '@/services/DataService';
 import type {
   PurgeBlacklistSymbolsResponse,

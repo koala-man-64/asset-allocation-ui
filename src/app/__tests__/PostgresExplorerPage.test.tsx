@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderWithProviders } from '@/test/utils';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 
-import { PostgresExplorerPage } from '@/app/components/pages/PostgresExplorerPage';
+import { PostgresExplorerPage } from '@/features/postgres-explorer/PostgresExplorerPage';
 import { PostgresService } from '@/services/PostgresService';
 
 vi.mock('@/services/PostgresService', () => ({

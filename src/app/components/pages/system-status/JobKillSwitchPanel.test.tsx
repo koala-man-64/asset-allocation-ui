@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/utils';
 import { backtestApi } from '@/services/backtestApi';
 import { toast } from 'sonner';
-import { JobKillSwitchPanel } from './JobKillSwitchPanel';
+import { JobKillSwitchPanel } from '@/features/system-status/components/JobKillSwitchPanel';
 
 vi.mock('@/services/backtestApi', () => ({
   backtestApi: {

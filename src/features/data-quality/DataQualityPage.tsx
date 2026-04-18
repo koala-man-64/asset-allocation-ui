@@ -23,8 +23,8 @@ import { cn } from '@/app/components/ui/utils';
 import {
   formatTimeAgo,
   getStatusConfig
-} from '@/app/components/pages/system-status/SystemStatusHelpers';
-import { formatSystemStatusText } from '@/app/components/pages/system-status/systemStatusText';
+} from '@/features/system-status/lib/systemStatusHelpers';
+import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { sanitizeExternalUrl } from '@/utils/urlSecurity';
 import type { RequestMeta, StorageUsageResponse } from '@/services/apiService';
 import {
@@ -37,7 +37,7 @@ import {
   normalizeLayerName,
   parseImpactsByDomain,
   type DomainRow
-} from '@/app/components/pages/data-quality/dataQualityUtils';
+} from '@/features/data-quality/lib/dataQualityUtils';
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -51,7 +51,7 @@ import {
 } from 'lucide-react';
 // Lazy load DataPipelinePanel
 const DataPipelinePanel = lazy(() =>
-  import('@/app/components/pages/data-quality/DataPipelinePanel').then((m) => ({
+  import('@/features/data-quality/components/DataPipelinePanel').then((m) => ({
     default: m.DataPipelinePanel
   }))
 );

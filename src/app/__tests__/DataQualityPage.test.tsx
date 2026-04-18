@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/utils';
-import { DataQualityPage } from '@/app/components/pages/DataQualityPage';
+import { DataQualityPage } from '@/features/data-quality/DataQualityPage';
 import { DataService } from '@/services/DataService';
 import type { SystemHealth } from '@/types/strategy';
 
@@ -124,7 +124,7 @@ describe('DataQualityPage', () => {
     });
   });
 
-  vi.mock('@/app/components/pages/data-quality/DataPipelinePanel', () => ({
+  vi.mock('@/features/data-quality/components/DataPipelinePanel', () => ({
     DataPipelinePanel: () => <div data-testid="mock-data-pipeline-panel">Mock Pipeline Panel</div>
   }));
 
