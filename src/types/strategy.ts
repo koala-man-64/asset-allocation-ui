@@ -3,9 +3,9 @@
 import type {
   RankingSchemaConfig,
   StrategyConfig,
-  UniverseConditionOperator,
-  UniverseDefinition,
+  UniverseConditionOperator as ContractUniverseConditionOperator,
   UniverseSource,
+  UniverseValue,
 } from '@asset-allocation/contracts';
 
 export type {
@@ -29,15 +29,34 @@ export type {
   RegimePolicy,
   StrategyConfig,
   TargetGrossExposureByRegime,
-  UniverseCondition,
-  UniverseConditionOperator,
-  UniverseDefinition,
-  UniverseGroup,
-  UniverseGroupOperator,
-  UniverseNode,
   UniverseSource,
   UniverseValue
 } from '@asset-allocation/contracts';
+
+export type UniverseConditionOperator = ContractUniverseConditionOperator;
+
+export type UniverseGroupOperator = 'and' | 'or';
+
+export interface UniverseCondition {
+  kind: 'condition';
+  field: string;
+  operator: UniverseConditionOperator;
+  value?: UniverseValue;
+  values?: UniverseValue[];
+}
+
+export interface UniverseGroup {
+  kind: 'group';
+  operator: UniverseGroupOperator;
+  clauses: UniverseNode[];
+}
+
+export type UniverseNode = UniverseCondition | UniverseGroup;
+
+export interface UniverseDefinition {
+  source: UniverseSource;
+  root: UniverseGroup;
+}
 export interface StrategyRun {
   id: string;
   name: string;
@@ -132,29 +151,23 @@ export interface Contribution {
 export type UniverseValueKind = 'string' | 'number' | 'boolean' | 'date' | 'datetime';
 export type RankingCatalogValueKind = 'number' | 'boolean';
 
-export interface UniverseCatalogColumn {
-  name: string;
+export interface UniverseFieldDefinition {
+  field: string;
   dataType: string;
   valueKind: UniverseValueKind;
   operators: UniverseConditionOperator[];
 }
 
-export interface UniverseCatalogTable {
-  name: string;
-  asOfColumn: string;
-  columns: UniverseCatalogColumn[];
-}
-
 export interface UniverseCatalogResponse {
   source: UniverseSource;
-  tables: UniverseCatalogTable[];
+  fields: UniverseFieldDefinition[];
 }
 
 export interface UniversePreviewResponse {
   source: UniverseSource;
   symbolCount: number;
   sampleSymbols: string[];
-  tablesUsed: string[];
+  fieldsUsed: string[];
   warnings: string[];
 }
 
