@@ -11,6 +11,7 @@ import {
   Orbit,
   ScanSearch,
   SlidersHorizontal,
+  Sparkles,
   Target
 } from 'lucide-react';
 import { STOCK_DETAIL_BASE_PATH } from '@/features/stocks/stockRoutes';
@@ -96,6 +97,12 @@ export const NAV_SECTIONS: NavSection[] = [
         path: '/symbol-purge',
         label: 'Symbol Purge',
         icon: Filter,
+        sectionKey: 'live-operations'
+      },
+      {
+        path: '/symbol-enrichment',
+        label: 'Symbol Enrichment',
+        icon: Sparkles,
         sectionKey: 'live-operations'
       },
       {

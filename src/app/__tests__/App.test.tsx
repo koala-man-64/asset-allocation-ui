@@ -68,6 +68,11 @@ vi.mock('@/features/strategy-exploration/StrategyDataCatalogPage', () => ({
     <div data-testid="mock-strategy-data-catalog">Mock Strategy Data Catalog</div>
   )
 }));
+vi.mock('@/features/symbol-enrichment/SymbolEnrichmentPage', () => ({
+  SymbolEnrichmentPage: () => (
+    <div data-testid="mock-symbol-enrichment">Mock Symbol Enrichment</div>
+  )
+}));
 
 describe('App Smoke Test', () => {
   it('renders without crashing', async () => {
@@ -121,6 +126,13 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-regime-monitor')).toBeInTheDocument();
+  });
+
+  it('renders the symbol enrichment route through the application shell', async () => {
+    window.history.pushState({}, 'Symbol Enrichment', '/symbol-enrichment');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-symbol-enrichment')).toBeInTheDocument();
   });
 
   it('renders the universe workbench route through the application shell', async () => {
