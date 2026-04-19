@@ -97,3 +97,16 @@ def test_validator_allows_missing_oidc_repo_vars_when_auth_disabled() -> None:
         },
         "prod-runtime",
     )
+
+
+def test_parse_variable_map_json_normalizes_keys_and_values() -> None:
+    validator = load_validator_module()
+
+    parsed = validator.parse_variable_map_json(
+        '{" UI_AUTH_ENABLED ":" true ","UI_OIDC_CLIENT_ID":" example-client-id "}'
+    )
+
+    assert parsed == {
+        "UI_AUTH_ENABLED": "true",
+        "UI_OIDC_CLIENT_ID": "example-client-id",
+    }

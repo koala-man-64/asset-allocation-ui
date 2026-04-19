@@ -136,7 +136,8 @@ def test_ui_deploy_workflow_is_release_driven_and_uses_repo_var() -> None:
     assert "branches:\n      - main" in text
     assert "actions: read" in text
     assert "validate-runtime-repo-vars" in text
-    assert 'python scripts/validate_github_deploy_vars.py --repo "${GITHUB_REPOSITORY}" --mode prod-runtime' in text
+    assert 'REPO_VARS_JSON: ${{ toJson(vars) }}' in text
+    assert '--vars-json "${REPO_VARS_JSON}"' in text
     assert "vars.API_UPSTREAM" in text
     assert "actions/workflows/release.yml/runs?branch=main&per_page=20" in text
     assert "actions/runs/${{ steps.release-run.outputs.release_run_id }}/artifacts" in text
@@ -163,7 +164,8 @@ def test_ui_rollback_workflow_requires_only_image_digest() -> None:
     assert "api_upstream:" not in text
     assert "contracts_version:" not in text
     assert "Validate required repo deploy vars" in text
-    assert 'python scripts/validate_github_deploy_vars.py --repo "${GITHUB_REPOSITORY}" --mode prod-runtime' in text
+    assert 'REPO_VARS_JSON: ${{ toJson(vars) }}' in text
+    assert '--vars-json "${REPO_VARS_JSON}"' in text
     assert "uses: ./.github/workflows/deploy-ui-runtime.yml" in text
 
 
@@ -249,7 +251,8 @@ def test_ui_runtime_config_sources_publish_same_origin_oidc_overrides() -> None:
 def test_ui_release_workflow_fails_fast_when_required_repo_vars_are_missing() -> None:
     text = workflow_text("release.yml")
     assert "Validate required repo deploy vars" in text
-    assert 'python scripts/validate_github_deploy_vars.py --repo "${GITHUB_REPOSITORY}" --mode prod-runtime' in text
+    assert 'REPO_VARS_JSON: ${{ toJson(vars) }}' in text
+    assert '--vars-json "${REPO_VARS_JSON}"' in text
 
 
 def test_ui_release_workflow_publishes_release_manifest_artifact() -> None:

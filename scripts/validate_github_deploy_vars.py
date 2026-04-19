@@ -62,6 +62,22 @@ def parse_bool(value: str | None) -> bool:
     return normalize_text(value).lower() in TRUTHY_VALUES
 
 
+def parse_variable_map_json(raw_json: str) -> dict[str, str]:
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise ValidationError("--vars-json did not contain valid JSON.") from exc
+
+    if not isinstance(payload, Mapping):
+        raise ValidationError("--vars-json must decode to a JSON object.")
+
+    return {
+        normalize_text(name): normalize_text(value)
+        for name, value in payload.items()
+        if normalize_text(str(name))
+    }
+
+
 def load_repo_variable_map(repo: str) -> dict[str, str]:
     completed = subprocess.run(
         ["gh", "api", f"repos/{repo}/actions/variables?per_page=100"],
@@ -116,6 +132,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         choices=("prod-runtime",),
         help="Validation rule set to enforce.",
     )
+    parser.add_argument(
+        "--vars-json",
+        default="",
+        help="Optional JSON object containing repo variables, for example from toJson(vars) in GitHub Actions.",
+    )
     return parser
 
 
@@ -125,10 +146,14 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         repo = args.repo or resolve_default_repo()
-        variable_map = load_repo_variable_map(repo)
+        variable_map = parse_variable_map_json(args.vars_json) if args.vars_json else load_repo_variable_map(repo)
         validate_repo_variables(variable_map, args.mode)
-    except (ValidationError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+    except ValidationError as exc:
         print(str(exc), file=sys.stderr)
+        return 1
+    except subprocess.CalledProcessError as exc:
+        detail = normalize_text(exc.stderr) or normalize_text(exc.stdout) or str(exc)
+        print(detail, file=sys.stderr)
         return 1
 
     print(f"Validated GitHub repo deploy vars for {repo} ({args.mode})")

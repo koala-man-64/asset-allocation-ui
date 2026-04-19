@@ -31,11 +31,14 @@ jobs:
 
       - name: Validate required repo deploy vars
         env:
-          GH_TOKEN: ${{ github.token }}
+          REPO_VARS_JSON: ${{ toJson(vars) }}
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/validate_github_deploy_vars.py --repo "${GITHUB_REPOSITORY}" --mode prod-runtime
+          python scripts/validate_github_deploy_vars.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --mode prod-runtime \
+            --vars-json "${REPO_VARS_JSON}"
 
   resolve-release:
     name: resolve-release

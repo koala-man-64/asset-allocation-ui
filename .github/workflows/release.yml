@@ -70,12 +70,15 @@ jobs:
 
       - name: Validate required repo deploy vars
         env:
-          GH_TOKEN: ${{ github.token }}
+          REPO_VARS_JSON: ${{ toJson(vars) }}
         shell: bash
         run: |
           set -euo pipefail
           cd asset-allocation-ui
-          python scripts/validate_github_deploy_vars.py --repo "${GITHUB_REPOSITORY}" --mode prod-runtime
+          python scripts/validate_github_deploy_vars.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --mode prod-runtime \
+            --vars-json "${REPO_VARS_JSON}"
 
       - name: Azure login
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
