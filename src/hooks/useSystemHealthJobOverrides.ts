@@ -4,7 +4,7 @@ import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-quer
 import {
   hasActiveJobRunningState,
   normalizeAzureJobName
-} from '@/app/components/pages/system-status/SystemStatusHelpers';
+} from '@/features/system-status/lib/SystemStatusHelpers';
 import { queryKeys } from '@/hooks/useDataQueries';
 import type { JobTriggerResponse } from '@/services/backtestApi';
 import type { JobRun, ResourceHealth, SystemHealth } from '@/types/strategy';

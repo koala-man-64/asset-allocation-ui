@@ -1,11 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, ArrowUpDown, Database, RefreshCcw, Search } from 'lucide-react';
 
+import { PageHero } from '@/app/components/common/PageHero';
+import { PageLoader } from '@/app/components/common/PageLoader';
+import { StatePanel } from '@/app/components/common/StatePanel';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Input } from '@/app/components/ui/input';
 import { ScrollArea } from '@/app/components/ui/scroll-area';
 import {
@@ -16,55 +18,63 @@ import {
   TableHeader,
   TableRow
 } from '@/app/components/ui/table';
-import type { StockScreenerRow, StockScreenerResponse } from '@/services/backtestApi';
-import { DataService } from '@/services/DataService';
 import { cn } from '@/app/components/ui/utils';
-import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
-import { PageLoader } from '@/app/components/common/PageLoader';
 import { buildStockDetailPath } from '@/features/stocks/stockRoutes';
+import type { StockScreenerResponse, StockScreenerRow } from '@/services/backtestApi';
+import { DataService } from '@/services/DataService';
+import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 type SortDirection = 'asc' | 'desc';
 
 const PAGE_SIZE = 250;
 
-const formatPrice = (value: number | null | undefined): string => {
-  if (value === null || value === undefined) return '—';
-  if (!Number.isFinite(value)) return '—';
+function formatPrice(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '--';
+  }
   return `$${value.toFixed(2)}`;
-};
+}
 
-const formatPercent = (value: number | null | undefined, digits = 2): string => {
-  if (value === null || value === undefined) return '—';
-  if (!Number.isFinite(value)) return '—';
+function formatPercent(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '--';
+  }
   return `${(value * 100).toFixed(digits)}%`;
-};
+}
 
-const formatMillions = (value: number | null | undefined): string => {
-  if (value === null || value === undefined) return '—';
-  if (!Number.isFinite(value)) return '—';
+function formatMillions(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '--';
+  }
   return `${(value / 1_000_000).toFixed(1)}M`;
-};
+}
 
-const formatNumber = (value: number | null | undefined, digits = 2): string => {
-  if (value === null || value === undefined) return '—';
-  if (!Number.isFinite(value)) return '—';
+function formatNumber(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '--';
+  }
   return value.toFixed(digits);
-};
+}
 
-const heatClassForPercent = (value: number | null | undefined): string => {
-  if (value === null || value === undefined) return 'text-muted-foreground';
-  if (!Number.isFinite(value)) return 'text-muted-foreground';
-  if (value > 0) return 'text-emerald-600 dark:text-emerald-400';
-  if (value < 0) return 'text-rose-600 dark:text-rose-400';
+function heatClassForPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return 'text-muted-foreground';
+  }
+  if (value > 0) {
+    return 'text-emerald-600 dark:text-emerald-400';
+  }
+  if (value < 0) {
+    return 'text-rose-600 dark:text-rose-400';
+  }
   return 'text-muted-foreground';
-};
+}
 
 export function StockExplorerPage() {
   const navigate = useNavigate();
 
   const [rawQuery, setRawQuery] = useState('');
   const [query, setQuery] = useState('');
-  const [asOf, setAsOf] = useState<string>('');
+  const [asOf, setAsOf] = useState('');
   const [sort, setSort] = useState('volume');
   const [direction, setDirection] = useState<SortDirection>('desc');
 
@@ -75,7 +85,7 @@ export function StockExplorerPage() {
 
   const queryKey = useMemo(
     () => ['stockScreener', query || '-', sort, direction, asOf || '-'] as const,
-    [query, sort, direction, asOf]
+    [asOf, direction, query, sort]
   );
 
   const screenerQuery = useInfiniteQuery({
@@ -94,11 +104,11 @@ export function StockExplorerPage() {
       ),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => {
-      // Cast to any because the infinite query type inference is struggling with the response structure
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const page = lastPage as any;
+      const page = lastPage as StockScreenerResponse;
       const nextOffset = page.offset + (page.rows?.length ?? 0);
-      if (nextOffset >= page.total) return undefined;
+      if (nextOffset >= page.total) {
+        return undefined;
+      }
       return nextOffset;
     },
     staleTime: 15_000,
@@ -114,70 +124,52 @@ export function StockExplorerPage() {
   const total = firstPage?.total ?? 0;
   const resolvedAsOf = firstPage?.asOf ?? null;
   const showing = rows.length;
+  const sortChip = `${sort} ${direction === 'asc' ? 'up' : 'down'}`;
 
   const onToggleSort = (nextSort: string) => {
     if (sort === nextSort) {
-      setDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+      setDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
       return;
     }
+
     setSort(nextSort);
     setDirection('desc');
   };
 
-  const sortChip = `${sort}${direction === 'asc' ? ' ↑' : ' ↓'}`;
-
   return (
     <div className="page-shell">
-      {/* Design Direction: Institutional terminal (dense, honest, daily-only) */}
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-lg border border-mcm-walnut/30 bg-mcm-paper text-mcm-walnut shadow-sm">
-                <Database className="h-5 w-5" />
+      <PageHero
+        kicker="Market Intelligence"
+        title={
+          <span className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-mcm-teal" />
+            Stock Explorer
+          </span>
+        }
+        subtitle="Review the daily cross-section through one shared operations desk instead of a separate terminal-themed surface. Search, sort, and open symbol detail from the same readout."
+        actions={
+          <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-[34rem]">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative min-w-0 flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={rawQuery}
+                  onChange={(event) => setRawQuery(event.target.value)}
+                  placeholder="Search symbol or name..."
+                  className="h-10 pl-9 font-mono text-xs"
+                />
               </div>
-              <div className="min-w-0">
-                <h1 className="page-title text-xl">Stock Screener</h1>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
-                  <span>Daily</span>
-                  <span>•</span>
-                  <span>Universe: Postgres</span>
-                  <span>•</span>
-                  <span>Layers: Silver + Gold</span>
-                  {resolvedAsOf && (
-                    <>
-                      <span>•</span>
-                      <span>As-of {resolvedAsOf}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <div className="relative w-full sm:w-[320px]">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={rawQuery}
-                onChange={(e) => setRawQuery(e.target.value)}
-                placeholder="Search symbol or name…"
-                className="h-9 pl-9 font-mono text-xs"
-              />
-            </div>
-            <div className="flex items-center gap-2">
               <Input
                 type="date"
                 value={asOf}
-                onChange={(e) => setAsOf(e.target.value)}
-                className="h-9 w-[160px] font-mono text-xs"
+                onChange={(event) => setAsOf(event.target.value)}
+                className="h-10 w-full font-mono text-xs sm:w-[168px]"
                 aria-label="As-of date"
               />
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
-                className="h-9 gap-2 font-mono text-[11px]"
+                className="h-10 gap-2"
                 onClick={() => void screenerQuery.refetch()}
               >
                 <RefreshCcw className={cn('h-4 w-4', screenerQuery.isFetching && 'animate-spin')} />
@@ -185,50 +177,92 @@ export function StockExplorerPage() {
               </Button>
             </div>
           </div>
-        </div>
+        }
+        metrics={[
+          {
+            label: 'Result Set',
+            value: `${showing.toLocaleString()} / ${total.toLocaleString()}`,
+            detail: 'Rows currently materialized into the explorer table.'
+          },
+          {
+            label: 'Sort',
+            value: sortChip,
+            detail: 'Server-side screener sort applied to the current query.'
+          },
+          {
+            label: 'As Of',
+            value: resolvedAsOf || 'Latest snapshot',
+            detail: resolvedAsOf
+              ? 'Snapshot date returned by the screener response.'
+              : 'No explicit date filter is currently applied.'
+          }
+        ]}
+      />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-widest">
-            {screenerQuery.isFetching ? 'Loading' : screenerQuery.isError ? 'Unavailable' : 'Ready'}
-          </Badge>
-          <Badge variant="secondary" className="font-mono text-[10px] uppercase tracking-widest">
-            Sort: {sortChip}
-          </Badge>
-          <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-widest">
-            Showing {showing.toLocaleString()} / {total.toLocaleString()}
-          </Badge>
-        </div>
-      </div>
-
-      <Card className="mcm-panel flex-1 overflow-hidden">
-        <CardHeader className="flex flex-row items-center justify-between gap-3 border-b py-3">
-          <CardTitle className="text-xs font-black uppercase tracking-widest text-muted-foreground">
-            Cross-Section Snapshot
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-widest">
-              Silver: OHLCV
-            </Badge>
-            <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-widest">
-              Gold: Features
-            </Badge>
+      <section className="mcm-panel overflow-hidden">
+        <div className="border-b border-border/40 px-5 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="page-kicker">Cross-Section Snapshot</div>
+              <h2 className="text-lg">Daily Stock Screener</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Daily rows sourced from the shared stock screener response. Open any symbol to move
+                into the detail dossier.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant="outline"
+                className="font-mono text-[11px] uppercase tracking-[0.18em]"
+              >
+                {screenerQuery.isFetching
+                  ? 'Loading'
+                  : screenerQuery.isError
+                    ? 'Unavailable'
+                    : 'Ready'}
+              </Badge>
+              <Badge
+                variant="secondary"
+                className="font-mono text-[11px] uppercase tracking-[0.18em]"
+              >
+                Sort: {sortChip}
+              </Badge>
+              {resolvedAsOf ? (
+                <Badge
+                  variant="outline"
+                  className="font-mono text-[11px] uppercase tracking-[0.18em]"
+                >
+                  As-of {resolvedAsOf}
+                </Badge>
+              ) : null}
+            </div>
           </div>
-        </CardHeader>
+        </div>
 
-        <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-290px)]">
+        <div className="overflow-hidden">
+          <ScrollArea className="max-h-[calc(100vh-21rem)] xl:h-[calc(100vh-21rem)]">
             {screenerQuery.isError ? (
-              <div className="p-6 font-mono text-xs text-destructive">
-                {formatSystemStatusText(screenerQuery.error) || 'Failed to load screener.'}
-                <div className="mt-2 text-muted-foreground">
-                  Requires Postgres (`core.symbols`) + Silver/Gold regular Delta folders.
-                </div>
+              <div className="p-5">
+                <StatePanel
+                  tone="error"
+                  title="Screener Unavailable"
+                  message={
+                    <>
+                      <span className="font-mono text-xs">
+                        {formatSystemStatusText(screenerQuery.error) || 'Failed to load screener.'}
+                      </span>
+                      <span className="mt-2 block text-sm text-muted-foreground">
+                        Requires Postgres symbol coverage plus Silver and Gold stock surfaces.
+                      </span>
+                    </>
+                  }
+                />
               </div>
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="w-[120px] font-mono text-[10px] uppercase tracking-widest">
+                  <TableRow className="bg-muted/25 hover:bg-muted/25">
+                    <TableHead className="w-[120px] font-mono text-[10px] uppercase tracking-[0.18em]">
                       <button
                         type="button"
                         onClick={() => onToggleSort('symbol')}
@@ -237,13 +271,13 @@ export function StockExplorerPage() {
                         Symbol <ArrowUpDown className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="min-w-[240px] font-mono text-[10px] uppercase tracking-widest">
+                    <TableHead className="min-w-[240px] font-mono text-[10px] uppercase tracking-[0.18em]">
                       Name
                     </TableHead>
-                    <TableHead className="min-w-[160px] font-mono text-[10px] uppercase tracking-widest">
+                    <TableHead className="min-w-[160px] font-mono text-[10px] uppercase tracking-[0.18em]">
                       Sector
                     </TableHead>
-                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest">
+                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-[0.18em]">
                       <button
                         type="button"
                         onClick={() => onToggleSort('close')}
@@ -252,7 +286,7 @@ export function StockExplorerPage() {
                         Close <ArrowUpDown className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest">
+                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-[0.18em]">
                       <button
                         type="button"
                         onClick={() => onToggleSort('return_1d')}
@@ -261,7 +295,7 @@ export function StockExplorerPage() {
                         1D% <ArrowUpDown className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest">
+                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-[0.18em]">
                       <button
                         type="button"
                         onClick={() => onToggleSort('return_5d')}
@@ -270,7 +304,7 @@ export function StockExplorerPage() {
                         5D% <ArrowUpDown className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest">
+                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-[0.18em]">
                       <button
                         type="button"
                         onClick={() => onToggleSort('vol_20d')}
@@ -279,7 +313,7 @@ export function StockExplorerPage() {
                         Vol20 <ArrowUpDown className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest">
+                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-[0.18em]">
                       <button
                         type="button"
                         onClick={() => onToggleSort('drawdown_1y')}
@@ -288,7 +322,7 @@ export function StockExplorerPage() {
                         DD1Y <ArrowUpDown className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest">
+                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-[0.18em]">
                       <button
                         type="button"
                         onClick={() => onToggleSort('atr_14d')}
@@ -297,7 +331,7 @@ export function StockExplorerPage() {
                         ATR14 <ArrowUpDown className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest">
+                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-[0.18em]">
                       <button
                         type="button"
                         onClick={() => onToggleSort('volume')}
@@ -306,7 +340,7 @@ export function StockExplorerPage() {
                         Vol <ArrowUpDown className="h-3.5 w-3.5" />
                       </button>
                     </TableHead>
-                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest">
+                    <TableHead className="text-right font-mono text-[10px] uppercase tracking-[0.18em]">
                       <button
                         type="button"
                         onClick={() => onToggleSort('compression_score')}
@@ -330,7 +364,7 @@ export function StockExplorerPage() {
                     return (
                       <TableRow
                         key={`${symbol}:${row.name || ''}`}
-                        className="text-xs hover:bg-muted/40"
+                        className="text-xs hover:bg-muted/35"
                       >
                         <TableCell className="font-mono font-black">
                           <div className="flex items-center gap-2">
@@ -339,22 +373,22 @@ export function StockExplorerPage() {
                               onClick={() => navigate(buildStockDetailPath(symbol))}
                               className="text-primary hover:underline decoration-dotted underline-offset-4"
                             >
-                              {symbol || '—'}
+                              {symbol || '--'}
                             </button>
                             <div className="flex items-center gap-1">
                               <span
                                 className={cn(
-                                  'h-2 w-2 rounded-full border',
-                                  hasSilver ? 'bg-sky-500 border-sky-600' : 'bg-muted border-border'
+                                  'h-2.5 w-2.5 rounded-full border',
+                                  hasSilver ? 'border-sky-600 bg-sky-500' : 'border-border bg-muted'
                                 )}
                                 title={hasSilver ? 'Silver data present' : 'Missing Silver data'}
                               />
                               <span
                                 className={cn(
-                                  'h-2 w-2 rounded-full border',
+                                  'h-2.5 w-2.5 rounded-full border',
                                   hasGold
-                                    ? 'bg-amber-500 border-amber-600'
-                                    : 'bg-muted border-border'
+                                    ? 'border-amber-600 bg-amber-500'
+                                    : 'border-border bg-muted'
                                 )}
                                 title={hasGold ? 'Gold data present' : 'Missing Gold data'}
                               />
@@ -363,14 +397,14 @@ export function StockExplorerPage() {
                         </TableCell>
                         <TableCell className="min-w-[240px]">
                           <div className="truncate font-medium text-foreground">
-                            {row.name || '—'}
+                            {row.name || '--'}
                           </div>
-                          <div className="truncate font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                          <div className="truncate font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                             {row.industry || ''}
                           </div>
                         </TableCell>
                         <TableCell className="min-w-[160px] text-muted-foreground">
-                          {row.sector || '—'}
+                          {row.sector || '--'}
                         </TableCell>
                         <TableCell className="text-right font-mono font-semibold">
                           {formatPrice(row.close)}
@@ -410,7 +444,7 @@ export function StockExplorerPage() {
                         </TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">
                           {row.compressionScore === null || row.compressionScore === undefined
-                            ? '—'
+                            ? '--'
                             : `${Math.round((1 - row.compressionScore) * 100)}%`}
                         </TableCell>
                         <TableCell className="text-center">
@@ -429,52 +463,50 @@ export function StockExplorerPage() {
                     );
                   })}
 
-                  {screenerQuery.isFetching && rows.length === 0 && (
+                  {screenerQuery.isFetching && rows.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={12} className="p-0">
-                        <PageLoader text="Loading snapshot..." className="h-[60vh] border-0" />
+                        <PageLoader text="Loading snapshot..." className="h-[58vh] border-0" />
                       </TableCell>
                     </TableRow>
-                  )}
+                  ) : null}
 
-                  {!screenerQuery.isFetching && rows.length === 0 && (
+                  {!screenerQuery.isFetching && rows.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={12} className="py-16 text-center">
-                        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+                        <div className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
                           No rows found
                         </div>
                       </TableCell>
                     </TableRow>
-                  )}
+                  ) : null}
                 </TableBody>
               </Table>
             )}
           </ScrollArea>
+        </div>
 
-          <div className="flex items-center justify-between border-t px-4 py-3">
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              {resolvedAsOf ? `As-of ${resolvedAsOf}` : 'As-of —'} • {showing.toLocaleString()}{' '}
-              shown • {total.toLocaleString()} total
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 font-mono text-[11px]"
-                disabled={!screenerQuery.hasNextPage || screenerQuery.isFetchingNextPage}
-                onClick={() => void screenerQuery.fetchNextPage()}
-              >
-                {screenerQuery.isFetchingNextPage
-                  ? 'Loading…'
-                  : screenerQuery.hasNextPage
-                    ? 'Load More'
-                    : 'End'}
-              </Button>
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/40 px-5 py-3">
+          <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+            {resolvedAsOf ? `As-of ${resolvedAsOf}` : 'As-of latest'} | {showing.toLocaleString()}{' '}
+            shown | {total.toLocaleString()} total
           </div>
-        </CardContent>
-      </Card>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9"
+            disabled={!screenerQuery.hasNextPage || screenerQuery.isFetchingNextPage}
+            onClick={() => void screenerQuery.fetchNextPage()}
+          >
+            {screenerQuery.isFetchingNextPage
+              ? 'Loading...'
+              : screenerQuery.hasNextPage
+                ? 'Load More'
+                : 'End'}
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }

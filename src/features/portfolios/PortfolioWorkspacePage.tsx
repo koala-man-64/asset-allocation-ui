@@ -1,15 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Activity,
-  AlertTriangle,
-  Briefcase,
-  Play,
-  Radar,
-  ShieldCheck,
-  WandSparkles,
-  Workflow
-} from 'lucide-react';
+import { Activity, Briefcase, Clock3, Layers3, TrendingUp } from 'lucide-react';
 
 import { PageHero } from '@/app/components/common/PageHero';
 import { PageLoader } from '@/app/components/common/PageLoader';
@@ -18,71 +9,46 @@ import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from '@/app/components/ui/table';
-import { Textarea } from '@/app/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import {
   buildEmptyPortfolioDetail,
-  buildEmptyPortfolioSleeve,
   getPortfolioSearchText,
   getRemainingWeightPct,
   getTargetWeightTotal,
   serializePortfolioDetail,
   sortPortfolios
 } from '@/features/portfolios/lib/portfolioDraft';
+import { buildPortfolioBenchmarkComparison } from '@/features/portfolios/lib/portfolioBenchmark';
+import {
+  compactMetricToneClass,
+  formatDate,
+  formatPercent,
+  formatTimestamp,
+  statusBadgeVariant,
+  titleCaseWords
+} from '@/features/portfolios/lib/portfolioPresentation';
+import { deriveNextRebalanceWindow } from '@/features/portfolios/lib/portfolioRebalance';
+import { PortfolioConstructionTab } from '@/features/portfolios/components/PortfolioConstructionTab';
+import { PortfolioLibraryRail } from '@/features/portfolios/components/PortfolioLibraryRail';
+import { PortfolioOverviewTab } from '@/features/portfolios/components/PortfolioOverviewTab';
+import { PortfolioPerformanceTab } from '@/features/portfolios/components/PortfolioPerformanceTab';
+import { PortfolioTradingTab } from '@/features/portfolios/components/PortfolioTradingTab';
+import { DataService } from '@/services/DataService';
 import { portfolioApi } from '@/services/portfolioApi';
+import { regimeApi } from '@/services/regimeApi';
+import { strategyApi } from '@/services/strategyApi';
 import type {
-  PortfolioAlert,
   PortfolioDetail,
-  PortfolioHealthTone,
-  PortfolioPreviewResponse,
-  PortfolioSleeveDefinition
+  PortfolioMonitorSnapshot,
+  PortfolioPreviewResponse
 } from '@/types/portfolio';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { toast } from 'sonner';
 
-type PortfolioWorkspaceMode = 'builder' | 'monitor';
+type PortfolioWorkspaceTab = 'overview' | 'construction' | 'performance' | 'trading';
 
-function formatPercent(value?: number | null, digits: number = 1): string {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return 'n/a';
-  }
-
-  return `${Number(value).toFixed(digits)}%`;
-}
-
-function formatTimestamp(value?: string | null): string {
-  if (!value) {
-    return 'Not available';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(parsed);
-}
-
-function formatCurrency(value?: number | null, currency: string = 'USD'): string {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return 'n/a';
-  }
-
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: Math.abs(value) >= 1000 ? 0 : 2
-  }).format(value);
+function buildDefaultPreviewDate(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function syncPortfolioSummaryFields(detail: PortfolioDetail): PortfolioDetail {
@@ -96,7 +62,254 @@ function syncPortfolioSummaryFields(detail: PortfolioDetail): PortfolioDetail {
   };
 }
 
-function statusBadgeVariant(status?: string | null): 'default' | 'secondary' | 'destructive' | 'outline' {
+function ContextRail({
+  activeTab,
+  draft,
+  monitorSnapshot,
+  previewAsOfDate,
+  previewResult,
+  previewStale,
+  readinessItems,
+  currentRegimeCode,
+  nextRebalanceLabel,
+  saveDisabled,
+  savePending,
+  previewDisabled,
+  previewPending,
+  triggerBuildDisabled,
+  triggerBuildPending,
+  onPreviewAsOfDateChange,
+  onSave,
+  onPreview,
+  onTriggerBuild
+}: {
+  activeTab: PortfolioWorkspaceTab;
+  draft: PortfolioDetail;
+  monitorSnapshot: PortfolioMonitorSnapshot | null;
+  previewAsOfDate: string;
+  previewResult: PortfolioPreviewResponse | null;
+  previewStale: boolean;
+  readinessItems: Array<{ label: string; detail: string; ready: boolean }>;
+  currentRegimeCode?: string | null;
+  nextRebalanceLabel: string;
+  saveDisabled: boolean;
+  savePending: boolean;
+  previewDisabled: boolean;
+  previewPending: boolean;
+  triggerBuildDisabled: boolean;
+  triggerBuildPending: boolean;
+  onPreviewAsOfDateChange: (value: string) => void;
+  onSave: () => void;
+  onPreview: () => void;
+  onTriggerBuild: () => void;
+}) {
+  return (
+    <aside className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+      <div className="border-b border-border/40 px-5 py-4">
+        <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+          Context Rail
+        </div>
+        <h2 className="text-lg">{titleCaseWords(activeTab)}</h2>
+      </div>
+
+      <div className="flex-1 space-y-5 overflow-y-auto p-5">
+        <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-4">
+          <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Account Identity
+          </div>
+          <div className="mt-4 space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">Workspace</span>
+              <span className="font-medium">{monitorSnapshot?.accountName || draft.name || 'Unsaved draft'}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">Portfolio</span>
+              <span className="font-medium">{draft.portfolioName || draft.name || 'Unassigned'}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">Version</span>
+              <span className="font-medium">v{monitorSnapshot?.activeVersion ?? draft.version}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">Assignment date</span>
+              <span className="font-medium">
+                {formatDate(draft.activeAssignment?.effectiveFrom || draft.inceptionDate)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-4">
+          <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Desk Context
+          </div>
+          <div className="mt-4 grid gap-3">
+            <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
+              <div className="text-sm text-muted-foreground">Current regime</div>
+              <div className="mt-2 font-display text-xl">
+                {titleCaseWords(currentRegimeCode || 'unclassified')}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
+              <div className="text-sm text-muted-foreground">Next rebalance</div>
+              <div className="mt-2 font-display text-xl">{nextRebalanceLabel}</div>
+            </div>
+          </div>
+        </div>
+
+        {activeTab === 'construction' ? (
+          <>
+            <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-4">
+              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                Build Controls
+              </div>
+              <div className="mt-4 grid gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="portfolio-preview-date">Preview / Build As Of</Label>
+                  <Input
+                    id="portfolio-preview-date"
+                    type="date"
+                    value={previewAsOfDate}
+                    onChange={(event) => onPreviewAsOfDateChange(event.target.value)}
+                  />
+                </div>
+                <Button type="button" onClick={onSave} disabled={saveDisabled}>
+                  {savePending ? 'Saving...' : 'Save Workspace'}
+                </Button>
+                <Button type="button" variant="outline" onClick={onPreview} disabled={previewDisabled}>
+                  {previewPending ? 'Previewing...' : 'Preview Allocation Stack'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={onTriggerBuild}
+                  disabled={triggerBuildDisabled}
+                >
+                  {triggerBuildPending ? 'Submitting...' : 'Queue Materialization'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-4">
+              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                Readiness
+              </div>
+              <div className="mt-4 space-y-3">
+                {readinessItems.map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium">{item.label}</span>
+                      <Badge variant={item.ready ? 'default' : 'secondary'}>
+                        {item.ready ? 'Ready' : 'Review'}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">{item.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-4">
+              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                Preview Status
+              </div>
+              <div className="mt-4 space-y-3">
+                {!previewResult ? (
+                  <StatePanel
+                    tone="empty"
+                    title="No preview yet"
+                    message="Run a preview to publish projected exposures and proposed trades."
+                  />
+                ) : (
+                  <>
+                    <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium">Preview source</span>
+                        <Badge variant={previewResult.previewSource === 'live-proposal' ? 'default' : 'secondary'}>
+                          {previewResult.previewSource === 'live-proposal' ? 'Live proposal' : 'Inferred'}
+                        </Badge>
+                      </div>
+                      {previewStale ? (
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          The draft has changed since the last preview run.
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
+                      <div className="text-sm text-muted-foreground">Warnings</div>
+                      <div className="mt-2 font-display text-xl">{previewResult.warnings.length}</div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-4">
+              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                Operator Snapshot
+              </div>
+              <div className="mt-4 space-y-3">
+                <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
+                  <div className="text-sm text-muted-foreground">Build health</div>
+                  <div className="mt-2 font-display text-xl">
+                    {titleCaseWords(monitorSnapshot?.buildHealth || draft.buildStatus || draft.status)}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
+                  <div className="text-sm text-muted-foreground">Alerts</div>
+                  <div className="mt-2 font-display text-xl">{monitorSnapshot?.alerts.length ?? 0}</div>
+                </div>
+                <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
+                  <div className="text-sm text-muted-foreground">Snapshot as of</div>
+                  <div className="mt-2 font-display text-xl">
+                    {monitorSnapshot ? formatDate(monitorSnapshot.asOfDate) : 'n/a'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {monitorSnapshot?.freshness?.length ? (
+              <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                  Freshness
+                </div>
+                <div className="mt-4 space-y-3">
+                  {monitorSnapshot.freshness.map((item) => (
+                    <div
+                      key={`${item.domain}-${item.checkedAt || item.asOf || 'freshness'}`}
+                      className={`rounded-2xl border p-3 ${compactMetricToneClass(
+                        item.state === 'error'
+                          ? 'critical'
+                          : item.state === 'stale' || item.state === 'missing'
+                            ? 'warning'
+                            : 'healthy'
+                      )}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium capitalize">{item.domain}</span>
+                        <Badge variant={statusBadgeVariant(item.state)}>{item.state}</Badge>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {item.reason || 'No freshness exceptions are currently flagged.'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+    </aside>
+  );
+function statusBadgeVariant(
+  status?: string | null
+): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (status === 'failed' || status === 'critical') {
     return 'destructive';
   }
@@ -168,7 +381,7 @@ function updateSleeveField(
 
 export function PortfolioWorkspacePage() {
   const queryClient = useQueryClient();
-  const [mode, setMode] = useState<PortfolioWorkspaceMode>('builder');
+  const [activeTab, setActiveTab] = useState<PortfolioWorkspaceTab>('overview');
   const [selectedPortfolioName, setSelectedPortfolioName] = useState<string | null>(null);
   const [librarySearchText, setLibrarySearchText] = useState('');
   const [previewAsOfDate, setPreviewAsOfDate] = useState(buildDefaultPreviewDate);
@@ -225,6 +438,52 @@ export function PortfolioWorkspacePage() {
     enabled: Boolean(selectedPortfolioName)
   });
 
+  const strategiesQuery = useQuery({
+    queryKey: ['portfolios', 'strategies'],
+    queryFn: () => strategyApi.listStrategies()
+  });
+
+  const currentRegimeQuery = useQuery({
+    queryKey: ['portfolios', 'regime', 'current', draft.config.overlays.regimeModelName],
+    queryFn: () =>
+      regimeApi.getCurrent({
+        modelName: draft.config.overlays.regimeModelName || undefined
+      }),
+    retry: false
+  });
+
+  const monitorSnapshot = monitorQuery.data ?? null;
+  const historyStartDate = monitorSnapshot?.history.at(0)?.asOfDate;
+  const historyEndDate = monitorSnapshot?.history.at(-1)?.asOfDate;
+
+  const regimeHistoryQuery = useQuery({
+    queryKey: [
+      'portfolios',
+      'regime',
+      'history',
+      draft.config.overlays.regimeModelName,
+      historyStartDate,
+      historyEndDate
+    ],
+    queryFn: () =>
+      regimeApi.getHistory({
+        modelName: draft.config.overlays.regimeModelName || undefined,
+        startDate: historyStartDate,
+        endDate: historyEndDate,
+        limit: 400
+      }),
+    enabled: Boolean(historyStartDate && historyEndDate),
+    retry: false
+  });
+
+  const benchmarkSymbol = monitorSnapshot?.benchmarkSymbol || draft.config.benchmarkSymbol;
+  const benchmarkQuery = useQuery({
+    queryKey: ['portfolios', 'benchmark', selectedPortfolioName, benchmarkSymbol],
+    queryFn: ({ signal }) => DataService.getMarketData(benchmarkSymbol, 'silver', signal),
+    enabled: Boolean(monitorSnapshot && benchmarkSymbol),
+    retry: false
+  });
+
   useEffect(() => {
     if (!detailQuery.data) {
       return;
@@ -234,10 +493,21 @@ export function PortfolioWorkspacePage() {
     setDraft(nextDraft);
     setBaselineSnapshot(serializePortfolioDetail(nextDraft));
     setLastPreviewSignature(null);
+    setActiveTab('overview');
   }, [detailQuery.data]);
 
   const updateDraft = (updater: (current: PortfolioDetail) => PortfolioDetail) => {
-    setDraft((current) => syncPortfolioSummaryFields(updater(current)));
+    setDraft((current) => {
+      const nextDraft = syncPortfolioSummaryFields(updater(current));
+      const targetWeightPct = Number(
+        nextDraft.config.sleeves.reduce((total, sleeve) => total + sleeve.targetWeightPct, 0).toFixed(2)
+      );
+      nextDraft.config.targetGrossExposurePct = targetWeightPct;
+      nextDraft.config.cashReservePct = Number(Math.max(0, 100 - targetWeightPct).toFixed(2));
+      nextDraft.targetGrossExposurePct = nextDraft.config.targetGrossExposurePct;
+      nextDraft.cashReservePct = nextDraft.config.cashReservePct;
+      return nextDraft;
+    });
   };
 
   const sortedPortfolios = useMemo(() => sortPortfolios(portfolios), [portfolios]);
@@ -247,19 +517,46 @@ export function PortfolioWorkspacePage() {
       return sortedPortfolios;
     }
 
-    return sortedPortfolios.filter((portfolio) => getPortfolioSearchText(portfolio).includes(query));
+    return sortedPortfolios.filter((portfolio) =>
+      getPortfolioSearchText(portfolio).includes(query)
+    );
   }, [deferredSearchText, sortedPortfolios]);
 
   const previewSignature = serializePortfolioDetail(draft);
   const hasUnsavedChanges = previewSignature !== baselineSnapshot;
   const targetWeightTotal = getTargetWeightTotal(draft);
   const residualWeightPct = getRemainingWeightPct(draft);
-  const monitorSnapshot = monitorQuery.data ?? null;
   const buildRuns = buildRunsQuery.data?.runs ?? [];
   const listErrorMessage = formatSystemStatusText(portfoliosError);
   const detailErrorMessage = formatSystemStatusText(detailQuery.error);
   const monitorErrorMessage = formatSystemStatusText(monitorQuery.error);
   const buildRunsErrorMessage = formatSystemStatusText(buildRunsQuery.error);
+  const strategiesErrorMessage = formatSystemStatusText(strategiesQuery.error);
+  const benchmarkErrorMessage = formatSystemStatusText(benchmarkQuery.error);
+  const regimeHistoryErrorMessage = formatSystemStatusText(regimeHistoryQuery.error);
+  const currentRegimeCode = currentRegimeQuery.data?.regime_code ?? null;
+  const benchmarkComparison = useMemo(
+    () =>
+      buildPortfolioBenchmarkComparison(monitorSnapshot?.history ?? [], benchmarkQuery.data ?? []),
+    [benchmarkQuery.data, monitorSnapshot?.history]
+  );
+  const nextRebalance = useMemo(
+    () =>
+      deriveNextRebalanceWindow({
+        cadence: draft.config.rebalanceCadence,
+        rebalanceAnchor: draft.config.rebalanceAnchor,
+        lastBuiltAt: draft.lastBuiltAt,
+        effectiveFrom: draft.activeAssignment?.effectiveFrom,
+        asOfDate: monitorSnapshot?.asOfDate
+      }),
+    [
+      draft.activeAssignment?.effectiveFrom,
+      draft.config.rebalanceAnchor,
+      draft.config.rebalanceCadence,
+      draft.lastBuiltAt,
+      monitorSnapshot?.asOfDate
+    ]
+  );
 
   const confirmDiscardDraft = (): boolean => {
     if (!hasUnsavedChanges) {
@@ -276,10 +573,10 @@ export function PortfolioWorkspacePage() {
 
     const emptyDraft = buildEmptyPortfolioDetail();
     setSelectedPortfolioName(null);
-    setMode('builder');
     setDraft(emptyDraft);
     setBaselineSnapshot(serializePortfolioDetail(emptyDraft));
     setLastPreviewSignature(null);
+    setActiveTab('construction');
   };
 
   const selectPortfolio = (portfolioName: string) => {
@@ -292,6 +589,7 @@ export function PortfolioWorkspacePage() {
     }
 
     setSelectedPortfolioName(portfolioName);
+    setActiveTab('overview');
   };
 
   const saveMutation = useMutation({
@@ -304,13 +602,16 @@ export function PortfolioWorkspacePage() {
 
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
-        queryClient.invalidateQueries({ queryKey: ['portfolios', 'detail'] })
+        queryClient.invalidateQueries({ queryKey: ['portfolios', 'detail'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolios', 'monitor'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolios', 'builds'] })
       ]);
 
       setSelectedPortfolioName(result.portfolio.name);
       setDraft(savedDraft);
       setBaselineSnapshot(serializePortfolioDetail(savedDraft));
       setLastPreviewSignature(null);
+      setActiveTab('overview');
       toast.success(`Workspace ${result.portfolio.name} saved`);
     },
     onError: (error) => {
@@ -331,6 +632,7 @@ export function PortfolioWorkspacePage() {
       toast.error(`Failed to preview portfolio: ${formatSystemStatusText(error)}`);
     }
   });
+  const previewErrorMessage = formatSystemStatusText(previewMutation.error);
 
   const triggerBuildMutation = useMutation({
     mutationFn: () => {
@@ -351,13 +653,23 @@ export function PortfolioWorkspacePage() {
         queryClient.invalidateQueries({ queryKey: ['portfolios'] })
       ]);
 
-      setMode('monitor');
+      setActiveTab('trading');
       toast.success(`Materialization ${result.run.runId} queued`);
     },
     onError: (error) => {
       toast.error(`Failed to trigger portfolio build: ${formatSystemStatusText(error)}`);
     }
   });
+
+  const previewResult = previewMutation.data;
+  const previewStale = Boolean(previewResult) && lastPreviewSignature !== previewSignature;
+  const saveDisabled = saveMutation.isPending || !draft.name.trim();
+  const previewDisabled =
+    previewMutation.isPending ||
+    !draft.name.trim() ||
+    draft.config.sleeves.length === 0 ||
+    draft.config.sleeves.some((sleeve) => !sleeve.strategyName.trim());
+  const triggerBuildDisabled = triggerBuildMutation.isPending || !selectedPortfolioName;
 
   const readinessItems = [
     {
@@ -373,7 +685,10 @@ export function PortfolioWorkspacePage() {
         draft.mandate.trim() && draft.inceptionDate && (draft.openingCash ?? 0) > 0
           ? 'Mandate, inception date, and opening balance are set for the internal account shell.'
           : 'Set the mandate, inception date, and opening balance before publish.',
-      ready: Boolean(draft.mandate.trim()) && Boolean(draft.inceptionDate) && (draft.openingCash ?? 0) > 0
+      ready:
+        Boolean(draft.mandate.trim()) &&
+        Boolean(draft.inceptionDate) &&
+        (draft.openingCash ?? 0) > 0
     },
     {
       label: 'Sleeve coverage',
@@ -404,26 +719,195 @@ export function PortfolioWorkspacePage() {
     }
   ];
 
-  const previewResult = previewMutation.data;
-  const previewStale = Boolean(previewResult) && lastPreviewSignature !== previewSignature;
-  const saveDisabled = saveMutation.isPending || !draft.name.trim();
-  const previewDisabled =
-    previewMutation.isPending ||
-    !draft.name.trim() ||
-    draft.config.sleeves.length === 0 ||
-    draft.config.sleeves.some((sleeve) => !sleeve.strategyName.trim());
-  const triggerBuildDisabled = triggerBuildMutation.isPending || !selectedPortfolioName;
-
   const heroMetrics = [
     {
       label: 'Saved Portfolios',
       value: String(portfolios.length),
-      detail: 'Saved portfolio workspaces available in this control plane.'
+      detail: 'Saved portfolio workspaces available in this control plane.',
+      icon: <Briefcase className="h-4 w-4 text-mcm-teal" />
     },
     {
-      label: 'Mode',
-      value: mode === 'builder' ? 'Builder' : 'Monitor',
+      label: 'Current Tab',
+      value: titleCaseWords(activeTab),
       detail:
+        activeTab === 'overview'
+          ? 'Desk verdict, current allocation, and account identity.'
+          : activeTab === 'construction'
+            ? 'Sleeve stack, grouped controls, and rebalance preview.'
+            : activeTab === 'performance'
+              ? 'Benchmark-relative performance, attribution, and model outlook.'
+              : 'Rebalance workflow, blotter, build runs, and drift.',
+      icon: activeTab === 'trading' ? <Clock3 className="h-4 w-4 text-mcm-rust" /> : <Layers3 className="h-4 w-4 text-mcm-olive" />
+    },
+    {
+      label: 'Headline Return',
+      value: formatPercent(
+        benchmarkComparison.activeHeadlineReturnPct ?? monitorSnapshot?.sinceInceptionReturnPct ?? null
+      ),
+      detail:
+        benchmarkComparison.activeHeadlineReturnPct !== null
+          ? `Active return vs ${benchmarkSymbol}.`
+          : 'Fallback to absolute since-inception return until benchmark history aligns.',
+      icon: <TrendingUp className="h-4 w-4 text-mcm-teal" />
+    }
+  ];
+
+  const renderTabContent = () => {
+    if (selectedPortfolioName && detailQuery.isLoading && !detailQuery.data && activeTab !== 'construction') {
+      return <PageLoader text="Loading portfolio workspace..." variant="panel" className="min-h-[32rem]" />;
+    }
+
+    if (selectedPortfolioName && detailErrorMessage && !detailQuery.data && activeTab !== 'construction') {
+      return (
+        <StatePanel
+          tone="error"
+          title="Portfolio Workspace Unavailable"
+          message={detailErrorMessage}
+        />
+      );
+    }
+
+    if (activeTab === 'overview') {
+      if (selectedPortfolioName && monitorErrorMessage && !monitorSnapshot) {
+        return (
+          <StatePanel
+            tone="error"
+            title="Monitor Snapshot Unavailable"
+            message={monitorErrorMessage}
+          />
+        );
+      }
+
+      return (
+        <PortfolioOverviewTab
+          draft={draft}
+          monitorSnapshot={monitorSnapshot}
+          benchmarkComparison={benchmarkComparison}
+          currentRegimeCode={currentRegimeCode}
+          nextRebalance={nextRebalance}
+        />
+      );
+    }
+
+    if (activeTab === 'construction') {
+      return (
+        <PortfolioConstructionTab
+          draft={draft}
+          targetWeightTotal={targetWeightTotal}
+          residualWeightPct={residualWeightPct}
+          strategies={strategiesQuery.data ?? []}
+          strategiesLoading={strategiesQuery.isLoading}
+          strategiesError={strategiesErrorMessage || undefined}
+          previewResult={previewResult ?? null}
+          previewPending={previewMutation.isPending}
+          previewError={previewErrorMessage || undefined}
+          previewStale={previewStale}
+          onUpdateDraft={updateDraft}
+        />
+      );
+    }
+
+    if (activeTab === 'performance') {
+      return (
+        <PortfolioPerformanceTab
+          monitorSnapshot={monitorSnapshot}
+          benchmarkComparison={benchmarkComparison}
+          benchmarkError={benchmarkErrorMessage || undefined}
+          regimeHistory={regimeHistoryQuery.data?.rows ?? []}
+          regimeHistoryError={regimeHistoryErrorMessage || undefined}
+          currentRegimeCode={currentRegimeCode}
+        />
+      );
+    }
+
+    return (
+      <PortfolioTradingTab
+        monitorSnapshot={monitorSnapshot}
+        buildRuns={buildRuns}
+        buildRunsError={buildRunsErrorMessage || undefined}
+        nextRebalance={nextRebalance}
+        previewResult={previewResult ?? null}
+        triggerBuildPending={triggerBuildMutation.isPending}
+        triggerBuildDisabled={triggerBuildDisabled}
+        onTriggerBuild={() => triggerBuildMutation.mutate()}
+      />
+    );
+  };
+
+  return (
+    <div className="page-shell">
+      <PageHero
+        kicker="Portfolio Construction"
+        title={
+          <span className="flex items-center gap-2">
+            <Briefcase className="h-6 w-6 text-mcm-teal" />
+            Portfolio Workspace
+          </span>
+        }
+        subtitle="A professional desk workspace for combining sleeve strategies, monitoring benchmark-relative performance, validating rebalance proposals, and acting on the next rebalance window without leaving the warm-paper control plane."
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge variant="outline">
+              <Activity className="mr-1 h-3.5 w-3.5" />
+              {selectedPortfolioName ? selectedPortfolioName : 'Unsaved draft'}
+            </Badge>
+            <Button type="button" variant="outline" onClick={openNewDraft}>
+              New Portfolio
+            </Button>
+          </div>
+        }
+        metrics={heroMetrics}
+      />
+
+      <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1.08fr)_360px]">
+        <PortfolioLibraryRail
+          portfolios={portfolios}
+          filteredPortfolios={filteredPortfolios}
+          selectedPortfolioName={selectedPortfolioName}
+          draftName={draft.name}
+          loading={portfoliosLoading}
+          errorMessage={listErrorMessage || undefined}
+          librarySearchText={librarySearchText}
+          onLibrarySearchTextChange={setLibrarySearchText}
+          onSelectPortfolio={selectPortfolio}
+          onOpenNewDraft={openNewDraft}
+        />
+
+        <section className="mcm-panel min-h-[720px] overflow-hidden">
+          <div className="border-b border-border/40 px-5 py-4">
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as PortfolioWorkspaceTab)}>
+              <TabsList className="w-full justify-start">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="construction">Construction</TabsTrigger>
+                <TabsTrigger value="performance">Performance</TabsTrigger>
+                <TabsTrigger value="trading">Trading</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+          <div className="p-5">{renderTabContent()}</div>
+        </section>
+
+        <ContextRail
+          activeTab={activeTab}
+          draft={draft}
+          monitorSnapshot={monitorSnapshot}
+          previewAsOfDate={previewAsOfDate}
+          previewResult={previewResult ?? null}
+          previewStale={previewStale}
+          readinessItems={readinessItems}
+          currentRegimeCode={currentRegimeCode}
+          nextRebalanceLabel={nextRebalance.windowLabel}
+          saveDisabled={saveDisabled}
+          savePending={saveMutation.isPending}
+          previewDisabled={previewDisabled}
+          previewPending={previewMutation.isPending}
+          triggerBuildDisabled={triggerBuildDisabled}
+          triggerBuildPending={triggerBuildMutation.isPending}
+          onPreviewAsOfDateChange={setPreviewAsOfDate}
+          onSave={() => saveMutation.mutate()}
+          onPreview={() => previewMutation.mutate()}
+          onTriggerBuild={() => triggerBuildMutation.mutate()}
+        />
         mode === 'builder'
           ? 'Configure sleeves, risk limits, and execution controls.'
           : 'Track live drift, build health, and recent rebalance runs.'
@@ -476,8 +960,8 @@ export function PortfolioWorkspacePage() {
         metrics={heroMetrics}
       />
 
-      <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1.08fr)_360px]">
-        <section className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+      <div className="desk-grid-portfolio">
+        <section className="desk-pane">
           <div className="border-b border-border/40 px-5 py-4">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -499,11 +983,15 @@ export function PortfolioWorkspacePage() {
             </div>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          <div className="desk-pane-scroll space-y-3 p-4">
             {portfoliosLoading ? (
               <PageLoader text="Loading portfolios..." variant="panel" className="min-h-[12rem]" />
             ) : listErrorMessage ? (
-              <StatePanel tone="error" title="Portfolio Library Unavailable" message={listErrorMessage} />
+              <StatePanel
+                tone="error"
+                title="Portfolio Library Unavailable"
+                message={listErrorMessage}
+              />
             ) : filteredPortfolios.length === 0 ? (
               <StatePanel
                 tone="empty"
@@ -534,20 +1022,32 @@ export function PortfolioWorkspacePage() {
                           {portfolio.description || 'No desk note'}
                         </div>
                       </div>
-                      <Badge variant={statusBadgeVariant(portfolio.status)}>{portfolio.status}</Badge>
+                      <Badge variant={statusBadgeVariant(portfolio.status)}>
+                        {portfolio.status}
+                      </Badge>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                       <div>
-                        Benchmark <span className="font-medium text-foreground">{portfolio.benchmarkSymbol}</span>
+                        Benchmark{' '}
+                        <span className="font-medium text-foreground">
+                          {portfolio.benchmarkSymbol}
+                        </span>
                       </div>
                       <div>
-                        Sleeves <span className="font-medium text-foreground">{portfolio.sleeveCount}</span>
+                        Sleeves{' '}
+                        <span className="font-medium text-foreground">{portfolio.sleeveCount}</span>
                       </div>
                       <div>
-                        Gross <span className="font-medium text-foreground">{formatPercent(portfolio.targetGrossExposurePct)}</span>
+                        Gross{' '}
+                        <span className="font-medium text-foreground">
+                          {formatPercent(portfolio.targetGrossExposurePct)}
+                        </span>
                       </div>
                       <div>
-                        Last build <span className="font-medium text-foreground">{portfolio.lastBuiltAt ? formatTimestamp(portfolio.lastBuiltAt) : 'Never'}</span>
+                        Last build{' '}
+                        <span className="font-medium text-foreground">
+                          {portfolio.lastBuiltAt ? formatTimestamp(portfolio.lastBuiltAt) : 'Never'}
+                        </span>
                       </div>
                     </div>
                   </button>
@@ -558,7 +1058,7 @@ export function PortfolioWorkspacePage() {
         </section>
 
         {mode === 'builder' ? (
-          <section className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+          <section className="desk-pane">
             <div className="border-b border-border/40 px-5 py-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -576,11 +1076,15 @@ export function PortfolioWorkspacePage() {
               </div>
             </div>
 
-            <div className="flex-1 space-y-6 overflow-y-auto p-5">
+            <div className="desk-pane-scroll space-y-6 p-5">
               {detailQuery.isLoading && selectedPortfolioName ? (
                 <PageLoader text="Loading portfolio..." variant="panel" className="min-h-[18rem]" />
               ) : detailErrorMessage ? (
-                <StatePanel tone="error" title="Portfolio Detail Unavailable" message={detailErrorMessage} />
+                <StatePanel
+                  tone="error"
+                  title="Portfolio Detail Unavailable"
+                  message={detailErrorMessage}
+                />
               ) : (
                 <>
                   <div className="grid gap-4 lg:grid-cols-2">
@@ -590,12 +1094,14 @@ export function PortfolioWorkspacePage() {
                           Basics
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          Internal account identity, funding start point, and the pinned strategy mix for this workspace.
+                          Internal account identity, funding start point, and the pinned strategy
+                          mix for this workspace.
                         </p>
                       </div>
                       {draft.accountId ? (
                         <div className="rounded-2xl border border-mcm-teal/20 bg-mcm-teal/8 px-3 py-2 text-xs text-muted-foreground">
-                          Account ID <span className="font-medium text-foreground">{draft.accountId}</span>
+                          Account ID{' '}
+                          <span className="font-medium text-foreground">{draft.accountId}</span>
                         </div>
                       ) : null}
                       <div className="grid gap-4">
@@ -669,7 +1175,8 @@ export function PortfolioWorkspacePage() {
                               }
                             />
                             <p className="text-xs text-muted-foreground">
-                              Applied when the internal account is first created; later funding belongs in ledger events.
+                              Applied when the internal account is first created; later funding
+                              belongs in ledger events.
                             </p>
                           </div>
                         </div>
@@ -718,7 +1225,8 @@ export function PortfolioWorkspacePage() {
                                   ...current,
                                   config: {
                                     ...current.config,
-                                    rebalanceCadence: event.target.value as PortfolioDetail['config']['rebalanceCadence']
+                                    rebalanceCadence: event.target
+                                      .value as PortfolioDetail['config']['rebalanceCadence']
                                   }
                                 }))
                               }
@@ -913,9 +1421,13 @@ export function PortfolioWorkspacePage() {
                             className="rounded-2xl border border-mcm-walnut/15 bg-mcm-paper/60 p-4"
                           >
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                              <div className="font-display text-base">{sleeve.label || `Sleeve ${index + 1}`}</div>
+                              <div className="font-display text-base">
+                                {sleeve.label || `Sleeve ${index + 1}`}
+                              </div>
                               <div className="flex items-center gap-2">
-                                <Badge variant={statusBadgeVariant(sleeve.status)}>{sleeve.status}</Badge>
+                                <Badge variant={statusBadgeVariant(sleeve.status)}>
+                                  {sleeve.status}
+                                </Badge>
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -959,7 +1471,9 @@ export function PortfolioWorkspacePage() {
                                 />
                               </div>
                               <div className="grid gap-2">
-                                <Label htmlFor={`portfolio-sleeve-strategy-${index}`}>Strategy</Label>
+                                <Label htmlFor={`portfolio-sleeve-strategy-${index}`}>
+                                  Strategy
+                                </Label>
                                 <Input
                                   id={`portfolio-sleeve-strategy-${index}`}
                                   value={sleeve.strategyName}
@@ -997,7 +1511,8 @@ export function PortfolioWorkspacePage() {
                                           itemIndex === index
                                             ? {
                                                 ...item,
-                                                status: event.target.value as PortfolioSleeveDefinition['status']
+                                                status: event.target
+                                                  .value as PortfolioSleeveDefinition['status']
                                               }
                                             : item
                                         )
@@ -1294,7 +1809,7 @@ export function PortfolioWorkspacePage() {
             </div>
           </section>
         ) : (
-          <section className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+          <section className="desk-pane">
             <div className="border-b border-border/40 px-5 py-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1313,7 +1828,7 @@ export function PortfolioWorkspacePage() {
               </div>
             </div>
 
-            <div className="flex-1 space-y-6 overflow-y-auto p-5">
+            <div className="desk-pane-scroll space-y-6 p-5">
               {!selectedPortfolioName ? (
                 <StatePanel
                   tone="empty"
@@ -1321,9 +1836,17 @@ export function PortfolioWorkspacePage() {
                   message="Save or load a portfolio before switching into monitor mode."
                 />
               ) : monitorQuery.isLoading ? (
-                <PageLoader text="Loading portfolio monitor..." variant="panel" className="min-h-[18rem]" />
+                <PageLoader
+                  text="Loading portfolio monitor..."
+                  variant="panel"
+                  className="min-h-[18rem]"
+                />
               ) : monitorErrorMessage ? (
-                <StatePanel tone="error" title="Monitor Unavailable" message={monitorErrorMessage} />
+                <StatePanel
+                  tone="error"
+                  title="Monitor Unavailable"
+                  message={monitorErrorMessage}
+                />
               ) : monitorSnapshot ? (
                 <>
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1365,7 +1888,8 @@ export function PortfolioWorkspacePage() {
                         label: 'Drift',
                         value: formatPercent(monitorSnapshot.driftPct),
                         tone:
-                          monitorSnapshot.driftPct >= draft.config.riskLimits.driftRebalanceThresholdPct
+                          monitorSnapshot.driftPct >=
+                          draft.config.riskLimits.driftRebalanceThresholdPct
                             ? 'warning'
                             : monitorSnapshot.buildHealth
                       }
@@ -1415,18 +1939,25 @@ export function PortfolioWorkspacePage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {monitorSnapshot.history.slice(-8).reverse().map((point) => (
-                              <TableRow key={point.asOfDate}>
-                                <TableCell>{point.asOfDate}</TableCell>
-                                <TableCell>{formatCurrency(point.nav, monitorSnapshot.baseCurrency)}</TableCell>
-                                <TableCell>{formatCurrency(point.cash, monitorSnapshot.baseCurrency)}</TableCell>
-                                <TableCell>{formatPercent(point.cumulativeReturnPct)}</TableCell>
-                                <TableCell>{formatPercent(point.drawdownPct)}</TableCell>
-                                <TableCell className="text-right">
-                                  {formatPercent(point.turnoverPct)}
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {monitorSnapshot.history
+                              .slice(-8)
+                              .reverse()
+                              .map((point) => (
+                                <TableRow key={point.asOfDate}>
+                                  <TableCell>{point.asOfDate}</TableCell>
+                                  <TableCell>
+                                    {formatCurrency(point.nav, monitorSnapshot.baseCurrency)}
+                                  </TableCell>
+                                  <TableCell>
+                                    {formatCurrency(point.cash, monitorSnapshot.baseCurrency)}
+                                  </TableCell>
+                                  <TableCell>{formatPercent(point.cumulativeReturnPct)}</TableCell>
+                                  <TableCell>{formatPercent(point.drawdownPct)}</TableCell>
+                                  <TableCell className="text-right">
+                                    {formatPercent(point.turnoverPct)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
                           </TableBody>
                         </Table>
                       )}
@@ -1440,7 +1971,8 @@ export function PortfolioWorkspacePage() {
                           Current Positions
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          Live look-through positions and sleeve contributors from the last materialization.
+                          Live look-through positions and sleeve contributors from the last
+                          materialization.
                         </p>
                       </div>
                       <Badge variant="outline">{monitorSnapshot.positions.length}</Badge>
@@ -1476,7 +2008,10 @@ export function PortfolioWorkspacePage() {
                                 </TableCell>
                                 <TableCell>{formatPercent(position.weightPct)}</TableCell>
                                 <TableCell>
-                                  {formatCurrency(position.marketValue, monitorSnapshot.baseCurrency)}
+                                  {formatCurrency(
+                                    position.marketValue,
+                                    monitorSnapshot.baseCurrency
+                                  )}
                                 </TableCell>
                                 <TableCell>
                                   {formatCurrency(position.lastPrice, monitorSnapshot.baseCurrency)}
@@ -1517,9 +2052,17 @@ export function PortfolioWorkspacePage() {
 
                     <div className="mt-4">
                       {buildRunsQuery.isLoading ? (
-                        <PageLoader text="Loading build runs..." variant="panel" className="min-h-[12rem]" />
+                        <PageLoader
+                          text="Loading build runs..."
+                          variant="panel"
+                          className="min-h-[12rem]"
+                        />
                       ) : buildRunsErrorMessage ? (
-                        <StatePanel tone="error" title="Build History Unavailable" message={buildRunsErrorMessage} />
+                        <StatePanel
+                          tone="error"
+                          title="Build History Unavailable"
+                          message={buildRunsErrorMessage}
+                        />
                       ) : buildRuns.length === 0 ? (
                         <StatePanel
                           tone="empty"
@@ -1543,15 +2086,21 @@ export function PortfolioWorkspacePage() {
                               <TableRow key={run.runId}>
                                 <TableCell>
                                   <div className="font-medium">{run.runId}</div>
-                                  <div className="text-xs text-muted-foreground">{run.triggeredBy}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {run.triggeredBy}
+                                  </div>
                                 </TableCell>
                                 <TableCell className="capitalize">{run.buildScope}</TableCell>
                                 <TableCell>
-                                  <Badge variant={statusBadgeVariant(run.status)}>{run.status}</Badge>
+                                  <Badge variant={statusBadgeVariant(run.status)}>
+                                    {run.status}
+                                  </Badge>
                                 </TableCell>
                                 <TableCell>{run.asOfDate}</TableCell>
                                 <TableCell>{formatPercent(run.driftPct)}</TableCell>
-                                <TableCell className="text-right">{run.tradeCount ?? 'n/a'}</TableCell>
+                                <TableCell className="text-right">
+                                  {run.tradeCount ?? 'n/a'}
+                                </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
@@ -1571,7 +2120,7 @@ export function PortfolioWorkspacePage() {
           </section>
         )}
 
-        <aside className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+        <aside className="desk-pane">
           <div className="border-b border-border/40 px-5 py-4">
             <div className="flex items-center gap-2">
               {mode === 'builder' ? (
@@ -1590,7 +2139,7 @@ export function PortfolioWorkspacePage() {
             </div>
           </div>
 
-          <div className="flex-1 space-y-5 overflow-y-auto p-5">
+          <div className="desk-pane-scroll space-y-5 p-5">
             {mode === 'builder' ? (
               <>
                 <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-4">
@@ -1632,7 +2181,11 @@ export function PortfolioWorkspacePage() {
                         onChange={(event) => setPreviewAsOfDate(event.target.value)}
                       />
                     </div>
-                    <Button type="button" onClick={() => saveMutation.mutate()} disabled={saveDisabled}>
+                    <Button
+                      type="button"
+                      onClick={() => saveMutation.mutate()}
+                      disabled={saveDisabled}
+                    >
                       {saveMutation.isPending ? 'Saving...' : 'Save Workspace'}
                     </Button>
                     <Button
@@ -1663,7 +2216,11 @@ export function PortfolioWorkspacePage() {
                   </div>
                   <div className="mt-4">
                     {previewMutation.isPending ? (
-                      <PageLoader text="Rendering preview..." variant="panel" className="min-h-[10rem]" />
+                      <PageLoader
+                        text="Rendering preview..."
+                        variant="panel"
+                        className="min-h-[10rem]"
+                      />
                     ) : previewResult ? (
                       <BuilderPreviewSummary preview={previewResult} isStale={previewStale} />
                     ) : (
@@ -1690,7 +2247,9 @@ export function PortfolioWorkspacePage() {
                       <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
                         Build Window
                       </div>
-                      <div className="mt-2 font-display text-lg">{monitorSnapshot.buildWindowLabel}</div>
+                      <div className="mt-2 font-display text-lg">
+                        {monitorSnapshot.buildWindowLabel}
+                      </div>
                     </div>
                     <Badge variant={statusBadgeVariant(monitorSnapshot.buildHealth)}>
                       {monitorSnapshot.buildHealth}
@@ -1698,14 +2257,24 @@ export function PortfolioWorkspacePage() {
                   </div>
                   <div className="mt-4 grid gap-2 text-sm text-muted-foreground">
                     <div>
-                      Active Version <span className="font-medium text-foreground">v{monitorSnapshot.activeVersion ?? 'n/a'}</span>
+                      Active Version{' '}
+                      <span className="font-medium text-foreground">
+                        v{monitorSnapshot.activeVersion ?? 'n/a'}
+                      </span>
                     </div>
                     <div>
-                      Snapshot As Of <span className="font-medium text-foreground">{monitorSnapshot.asOfDate}</span>
+                      Snapshot As Of{' '}
+                      <span className="font-medium text-foreground">
+                        {monitorSnapshot.asOfDate}
+                      </span>
                     </div>
                   </div>
                   <div className="mt-4 grid gap-3">
-                    <Button type="button" onClick={() => triggerBuildMutation.mutate()} disabled={triggerBuildDisabled}>
+                    <Button
+                      type="button"
+                      onClick={() => triggerBuildMutation.mutate()}
+                      disabled={triggerBuildDisabled}
+                    >
                       <Play className="h-4 w-4" />
                       {triggerBuildMutation.isPending ? 'Submitting...' : 'Refresh Materialization'}
                     </Button>
@@ -1764,13 +2333,20 @@ export function PortfolioWorkspacePage() {
                       />
                     ) : (
                       monitorSnapshot.alerts.map((alert) => (
-                        <div key={`${alert.title}-${alert.observedAt}`} className={`rounded-2xl border p-3 ${alertToneClass(alert.severity)}`}>
+                        <div
+                          key={`${alert.title}-${alert.observedAt}`}
+                          className={`rounded-2xl border p-3 ${alertToneClass(alert.severity)}`}
+                        >
                           <div className="flex items-center justify-between gap-3">
                             <span className="font-medium">{alert.title}</span>
-                            <Badge variant={statusBadgeVariant(alert.severity)}>{alert.severity}</Badge>
+                            <Badge variant={statusBadgeVariant(alert.severity)}>
+                              {alert.severity}
+                            </Badge>
                           </div>
                           <p className="mt-2 text-sm text-muted-foreground">{alert.message}</p>
-                          <div className="mt-2 text-xs text-muted-foreground">{formatTimestamp(alert.observedAt)}</div>
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            {formatTimestamp(alert.observedAt)}
+                          </div>
                         </div>
                       ))
                     )}
@@ -1795,7 +2371,9 @@ export function PortfolioWorkspacePage() {
                           className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/65 p-3"
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <span className="font-medium">{event.eventType.replaceAll('_', ' ')}</span>
+                            <span className="font-medium">
+                              {event.eventType.replaceAll('_', ' ')}
+                            </span>
                             <span className="text-xs text-muted-foreground">
                               {formatTimestamp(event.effectiveAt)}
                             </span>
@@ -1825,19 +2403,30 @@ export function PortfolioWorkspacePage() {
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <div className="font-medium">{sleeve.label}</div>
-                            <div className="text-xs text-muted-foreground">{sleeve.strategyName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {sleeve.strategyName}
+                            </div>
                           </div>
                           <Badge variant={statusBadgeVariant(sleeve.status)}>{sleeve.status}</Badge>
                         </div>
                         <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
                           <div>
-                            Target <span className="font-medium text-foreground">{formatPercent(sleeve.targetWeightPct)}</span>
+                            Target{' '}
+                            <span className="font-medium text-foreground">
+                              {formatPercent(sleeve.targetWeightPct)}
+                            </span>
                           </div>
                           <div>
-                            Live <span className="font-medium text-foreground">{formatPercent(sleeve.liveWeightPct)}</span>
+                            Live{' '}
+                            <span className="font-medium text-foreground">
+                              {formatPercent(sleeve.liveWeightPct)}
+                            </span>
                           </div>
                           <div>
-                            Drift <span className="font-medium text-foreground">{formatPercent(sleeve.driftPct)}</span>
+                            Drift{' '}
+                            <span className="font-medium text-foreground">
+                              {formatPercent(sleeve.driftPct)}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -1846,7 +2435,11 @@ export function PortfolioWorkspacePage() {
                 </div>
               </>
             ) : (
-              <StatePanel tone="empty" title="Monitor Snapshot Missing" message="No live operator snapshot is available for this portfolio." />
+              <StatePanel
+                tone="empty"
+                title="Monitor Snapshot Missing"
+                message="No live operator snapshot is available for this portfolio."
+              />
             )}
           </div>
         </aside>
@@ -1869,7 +2462,9 @@ function BuilderPreviewSummary({
           <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
             Weight Stack
           </div>
-          <div className="mt-2 font-display text-2xl">{formatPercent(preview.summary.targetWeightPct)}</div>
+          <div className="mt-2 font-display text-2xl">
+            {formatPercent(preview.summary.targetWeightPct)}
+          </div>
           <div className="text-xs text-muted-foreground">
             Residual cash {formatPercent(preview.summary.residualCashPct)}
           </div>
@@ -1896,10 +2491,16 @@ function BuilderPreviewSummary({
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-muted-foreground">
           <div>
-            Gross <span className="font-medium text-foreground">{formatPercent(preview.summary.projectedGrossExposurePct)}</span>
+            Gross{' '}
+            <span className="font-medium text-foreground">
+              {formatPercent(preview.summary.projectedGrossExposurePct)}
+            </span>
           </div>
           <div>
-            Net <span className="font-medium text-foreground">{formatPercent(preview.summary.projectedNetExposurePct)}</span>
+            Net{' '}
+            <span className="font-medium text-foreground">
+              {formatPercent(preview.summary.projectedNetExposurePct)}
+            </span>
           </div>
         </div>
       </div>
@@ -1923,7 +2524,10 @@ function BuilderPreviewSummary({
         </div>
         <div className="mt-3 space-y-3">
           {preview.allocations.map((allocation) => (
-            <div key={allocation.sleeveId} className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/65 p-3">
+            <div
+              key={allocation.sleeveId}
+              className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/65 p-3"
+            >
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-medium">{allocation.label}</div>
@@ -1933,16 +2537,26 @@ function BuilderPreviewSummary({
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                 <div>
-                  Target <span className="font-medium text-foreground">{formatPercent(allocation.targetWeightPct)}</span>
+                  Target{' '}
+                  <span className="font-medium text-foreground">
+                    {formatPercent(allocation.targetWeightPct)}
+                  </span>
                 </div>
                 <div>
-                  Projected <span className="font-medium text-foreground">{formatPercent(allocation.projectedWeightPct)}</span>
+                  Projected{' '}
+                  <span className="font-medium text-foreground">
+                    {formatPercent(allocation.projectedWeightPct)}
+                  </span>
                 </div>
                 <div>
-                  Gross <span className="font-medium text-foreground">{formatPercent(allocation.projectedGrossExposurePct)}</span>
+                  Gross{' '}
+                  <span className="font-medium text-foreground">
+                    {formatPercent(allocation.projectedGrossExposurePct)}
+                  </span>
                 </div>
                 <div>
-                  Holdings <span className="font-medium text-foreground">{allocation.expectedHoldings}</span>
+                  Holdings{' '}
+                  <span className="font-medium text-foreground">{allocation.expectedHoldings}</span>
                 </div>
               </div>
             </div>

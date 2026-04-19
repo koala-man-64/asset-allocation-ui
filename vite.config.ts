@@ -1,50 +1,152 @@
-import { configDefaults, defineConfig } from 'vitest/config'
-import { loadEnv } from 'vite'
-import path from 'path'
-import tailwindcss from '@tailwindcss/vite'
-import react from '@vitejs/plugin-react'
+import { configDefaults, defineConfig } from 'vitest/config';
+import { loadEnv } from 'vite';
+import path from 'path';
+import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
 
 function normalizeProxyMountPath(raw: string): string {
-  const trimmed = (raw || '').replace(/\/+$/, '')
-  if (!trimmed || trimmed === '/') return ''
-  if (trimmed === '/api') return ''
+  const trimmed = (raw || '').replace(/\/+$/, '');
+  if (!trimmed || trimmed === '/') return '';
+  if (trimmed === '/api') return '';
   if (trimmed.endsWith('/api')) {
-    const withoutApi = trimmed.slice(0, -'/api'.length)
-    return withoutApi && withoutApi !== '/' ? withoutApi : ''
+    const withoutApi = trimmed.slice(0, -'/api'.length);
+    return withoutApi && withoutApi !== '/' ? withoutApi : '';
   }
-  return trimmed
+  return trimmed;
 }
 
 function joinPath(prefix: string, path: string): string {
-  const base = (prefix || '').replace(/\/+$/, '')
-  const suffix = (path || '').startsWith('/') ? String(path || '') : `/${String(path || '')}`
-  if (!base) return suffix || '/'
-  return `${base}${suffix || '/'}`
+  const base = (prefix || '').replace(/\/+$/, '');
+  const suffix = (path || '').startsWith('/') ? String(path || '') : `/${String(path || '')}`;
+  if (!base) return suffix || '/';
+  return `${base}${suffix || '/'}`;
 }
 
 export default defineConfig(({ mode }) => {
   // Standalone UI repo should resolve env from its own root.
-  const env = loadEnv(mode, __dirname, '')
+  const env = loadEnv(mode, __dirname, '');
 
-  const portStr = env.VITE_PORT || process.env.VITE_PORT || '5173'
-  const parsedPort = Number(portStr)
+  const portStr = env.VITE_PORT || process.env.VITE_PORT || '5173';
+  const parsedPort = Number(portStr);
   if (!Number.isFinite(parsedPort) || parsedPort <= 0) {
-    throw new Error(`VITE_PORT must be a number (received: ${portStr})`)
+    throw new Error(`VITE_PORT must be a number (received: ${portStr})`);
   }
-  const serverPort = parsedPort
+  const serverPort = parsedPort;
 
-  const apiProxyTarget = env.VITE_API_PROXY_TARGET || process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:9000'
+  const apiProxyTarget =
+    env.VITE_API_PROXY_TARGET || process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:9000';
   const parsedApiProxyTarget = (() => {
     try {
-      return new URL(apiProxyTarget)
+      return new URL(apiProxyTarget);
     } catch {
-      return null
+      return null;
     }
-  })()
-  const apiProxyOrigin = parsedApiProxyTarget ? parsedApiProxyTarget.origin : apiProxyTarget
-  const apiProxyMountPath = normalizeProxyMountPath(parsedApiProxyTarget?.pathname || '')
+  })();
+  const apiProxyOrigin = parsedApiProxyTarget ? parsedApiProxyTarget.origin : apiProxyTarget;
+  const apiProxyMountPath = normalizeProxyMountPath(parsedApiProxyTarget?.pathname || '');
 
   return {
+    build: {
+      chunkSizeWarningLimit: 550,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) {
+              return undefined;
+            }
+
+            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
+              return 'react-vendor';
+            }
+            if (id.includes('node_modules/react-router') || id.includes('node_modules/history/')) {
+              return 'router-vendor';
+            }
+            if (id.includes('node_modules/@tanstack/')) {
+              return 'query-vendor';
+            }
+            if (id.includes('node_modules/@azure/msal-browser/')) {
+              return 'auth-vendor';
+            }
+            if (id.includes('node_modules/@asset-allocation/contracts/')) {
+              return 'contracts-vendor';
+            }
+            if (
+              id.includes('node_modules/recharts/es6/chart/') ||
+              id.includes('node_modules/recharts/lib/chart/')
+            ) {
+              return 'recharts-chart-vendor';
+            }
+            if (
+              id.includes('node_modules/recharts/es6/cartesian/') ||
+              id.includes('node_modules/recharts/lib/cartesian/')
+            ) {
+              return 'recharts-cartesian-vendor';
+            }
+            if (
+              id.includes('node_modules/recharts/es6/component/') ||
+              id.includes('node_modules/recharts/lib/component/')
+            ) {
+              return 'recharts-component-vendor';
+            }
+            if (
+              id.includes('node_modules/recharts/es6/container/') ||
+              id.includes('node_modules/recharts/lib/container/') ||
+              id.includes('node_modules/recharts/es6/context/') ||
+              id.includes('node_modules/recharts/lib/context/') ||
+              id.includes('node_modules/recharts/es6/state/') ||
+              id.includes('node_modules/recharts/lib/state/') ||
+              id.includes('node_modules/recharts/es6/selectors/') ||
+              id.includes('node_modules/recharts/lib/selectors/') ||
+              id.includes('node_modules/recharts/es6/synchronisation/') ||
+              id.includes('node_modules/recharts/lib/synchronisation/') ||
+              id.includes('node_modules/recharts/es6/animation/') ||
+              id.includes('node_modules/recharts/lib/animation/') ||
+              id.includes('node_modules/recharts/es6/shape/') ||
+              id.includes('node_modules/recharts/lib/shape/') ||
+              id.includes('node_modules/recharts/es6/polar/') ||
+              id.includes('node_modules/recharts/lib/polar/') ||
+              id.includes('node_modules/recharts/es6/util/') ||
+              id.includes('node_modules/recharts/lib/util/') ||
+              id.includes('node_modules/recharts/es6/hooks') ||
+              id.includes('node_modules/recharts/lib/hooks') ||
+              id.includes('node_modules/recharts/es6/index') ||
+              id.includes('node_modules/recharts/lib/index')
+            ) {
+              return 'recharts-support-vendor';
+            }
+            if (id.includes('node_modules/d3-') || id.includes('node_modules/victory-vendor/')) {
+              return 'chart-math-vendor';
+            }
+            if (id.includes('node_modules/@radix-ui/') || id.includes('node_modules/vaul/')) {
+              return 'radix-vendor';
+            }
+            if (
+              id.includes('node_modules/cmdk/') ||
+              id.includes('node_modules/embla-carousel-react/') ||
+              id.includes('node_modules/react-day-picker/') ||
+              id.includes('node_modules/react-responsive-masonry/') ||
+              id.includes('node_modules/react-resizable-panels/') ||
+              id.includes('node_modules/react-slick/') ||
+              id.includes('node_modules/react-virtualized-auto-sizer/') ||
+              id.includes('node_modules/react-window/') ||
+              id.includes('node_modules/motion/')
+            ) {
+              return 'ui-misc-vendor';
+            }
+            if (
+              id.includes('node_modules/react-dnd/') ||
+              id.includes('node_modules/react-dnd-html5-backend/')
+            ) {
+              return 'dnd-vendor';
+            }
+            if (id.includes('node_modules/lucide-react/')) {
+              return 'icons-vendor';
+            }
+            return undefined;
+          }
+        }
+      }
+    },
     test: {
       globals: true,
       environment: 'jsdom',
@@ -53,13 +155,13 @@ export default defineConfig(({ mode }) => {
       testTimeout: 15000,
       hookTimeout: 15000,
       fileParallelism: false,
-      exclude: [...configDefaults.exclude, '**/.pnpm-store/**'],
+      exclude: [...configDefaults.exclude, '**/.pnpm-store/**', 'e2e/**']
     },
     plugins: [
       // The React and Tailwind plugins are both required for Make, even if
       // Tailwind is not being actively used – do not remove them
       react(),
-      tailwindcss(),
+      tailwindcss()
     ],
     server: {
       port: serverPort,
@@ -67,25 +169,25 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/healthz': {
           target: apiProxyOrigin,
-          changeOrigin: true,
+          changeOrigin: true
         },
         '/readyz': {
           target: apiProxyOrigin,
-          changeOrigin: true,
+          changeOrigin: true
         },
         '/api': {
           target: apiProxyOrigin,
           changeOrigin: true,
           ws: true,
-          rewrite: (path) => joinPath(apiProxyMountPath, path),
-        },
-      },
+          rewrite: (path) => joinPath(apiProxyMountPath, path)
+        }
+      }
     },
     resolve: {
       alias: {
         // Alias @ to the src directory
-        '@': path.resolve(__dirname, './src'),
-      },
-    },
-  }
-})
+        '@': path.resolve(__dirname, './src')
+      }
+    }
+  };
+});

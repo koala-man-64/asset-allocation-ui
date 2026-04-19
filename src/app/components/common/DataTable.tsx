@@ -6,6 +6,7 @@ interface DataTableProps<T> {
   emptyMessage?: string;
   columns?: { header: string; accessorKey: keyof T | string }[];
   onRowClick?: (item: T) => void;
+  getRowAriaLabel?: (item: T) => string;
   enableColumnSorting?: boolean;
 }
 
@@ -15,6 +16,7 @@ export const DataTable = <T extends Record<string, unknown>>({
   emptyMessage = 'No data available.',
   columns: propColumns,
   onRowClick,
+  getRowAriaLabel,
   enableColumnSorting = false
 }: DataTableProps<T>) => {
   const [sortState, setSortState] = useState<{
@@ -130,8 +132,27 @@ export const DataTable = <T extends Record<string, unknown>>({
           {sortedData.map((row, idx) => (
             <tr
               key={idx}
-              className={`group transition-colors hover:[&>td]:bg-mcm-cream ${onRowClick ? 'cursor-pointer' : ''}`}
+              className={`group transition-colors hover:[&>td]:bg-mcm-cream ${
+                onRowClick
+                  ? 'cursor-pointer focus-visible:outline-none focus-visible:[&>td]:bg-mcm-cream'
+                  : ''
+              }`}
               onClick={() => onRowClick?.(row)}
+              onKeyDown={(event) => {
+                if (!onRowClick) {
+                  return;
+                }
+
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onRowClick(row);
+                }
+              }}
+              tabIndex={onRowClick ? 0 : undefined}
+              role={onRowClick ? 'button' : undefined}
+              aria-label={
+                onRowClick ? (getRowAriaLabel?.(row) ?? `Open row ${idx + 1}`) : undefined
+              }
             >
               <td className="px-3 py-2 text-mcm-olive bg-mcm-cream border-y-2 border-mcm-walnut/40 border-l-2 border-mcm-walnut/40 rounded-l-2xl text-right select-none text-[11px] font-semibold">
                 {idx + 1}
@@ -153,7 +174,7 @@ export const DataTable = <T extends Record<string, unknown>>({
                 return (
                   <td
                     key={String(col.accessorKey)}
-                    className="px-3 py-2 text-mcm-walnut border-y-2 border-mcm-walnut/40 bg-mcm-paper whitespace-nowrap lowercase last:border-r-2 last:border-mcm-walnut/40 last:rounded-r-2xl"
+                    className="px-3 py-2 text-mcm-walnut border-y-2 border-mcm-walnut/40 bg-mcm-paper whitespace-nowrap last:border-r-2 last:border-mcm-walnut/40 last:rounded-r-2xl"
                   >
                     {displayVal}
                   </td>

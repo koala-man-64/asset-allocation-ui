@@ -490,7 +490,7 @@ export const PostgresExplorerPage: React.FC = () => {
         ]}
       />
 
-      <div className="grid flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_320px]">
+      <div className="desk-grid-standard flex-1">
         <PostgresQueryDeck
           schemas={schemas}
           selectedSchema={selectedSchema}

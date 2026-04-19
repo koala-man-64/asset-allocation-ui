@@ -20,23 +20,25 @@ import { Skeleton } from '@/app/components/ui/skeleton';
 import { PageLoader } from '@/app/components/common/PageLoader';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
-import type { ManagedContainerJob } from '@/app/components/pages/system-status/JobKillSwitchPanel';
-import type { JobLogStreamTarget } from '@/app/components/pages/system-status/JobLogStreamPanel';
+import type { ManagedContainerJob } from '@/features/system-status/components/JobKillSwitchPanel';
+import type { JobLogStreamTarget } from '@/features/system-status/components/JobLogStreamPanel';
 import type { ResourceSignal } from '@/types/strategy';
 
 // Lazy load components to reduce initial bundle size of the page
 const DomainLayerComparisonPanel = lazy(() =>
-  import('@/app/components/pages/system-status/DomainLayerComparisonPanel').then((m) => ({
-    default: m.DomainLayerComparisonPanel
-  }))
+  import('@/features/system-status/domain-layer-comparison/DomainLayerComparisonPanel').then(
+    (m) => ({
+      default: m.DomainLayerComparisonPanel
+    })
+  )
 );
 const ContainerAppsPanel = lazy(() =>
-  import('@/app/components/pages/system-status/ContainerAppsPanel').then((m) => ({
+  import('@/features/system-status/components/ContainerAppsPanel').then((m) => ({
     default: m.ContainerAppsPanel
   }))
 );
 const JobLogStreamPanel = lazy(() =>
-  import('@/app/components/pages/system-status/JobLogStreamPanel').then((m) => ({
+  import('@/features/system-status/components/JobLogStreamPanel').then((m) => ({
     default: m.JobLogStreamPanel
   }))
 );
@@ -48,8 +50,8 @@ import {
   getStatusConfig,
   normalizeAzureJobName,
   resolveManagedJobName
-} from '@/app/components/pages/system-status/SystemStatusHelpers';
-import { normalizeDomainKey } from '@/app/components/pages/system-status/SystemPurgeControls';
+} from '@/features/system-status/lib/SystemStatusHelpers';
+import { normalizeDomainKey } from '@/features/system-status/components/SystemPurgeControls';
 
 type JobResourceSummary = {
   name: string;
@@ -77,7 +79,9 @@ function getSummaryToneClasses(tone: SummaryTone): string {
   }
 }
 
-function getSummaryBadgeVariant(tone: SummaryTone): 'default' | 'secondary' | 'destructive' | 'outline' {
+function getSummaryBadgeVariant(
+  tone: SummaryTone
+): 'default' | 'secondary' | 'destructive' | 'outline' {
   switch (tone) {
     case 'good':
       return 'default';
@@ -377,7 +381,9 @@ export function SystemStatusPage() {
   );
   const alertCount = systemHealth.alerts?.length || 0;
   const stressedLayerCount = displayDataLayers.filter((layer) => {
-    const status = String(layer.status || '').trim().toLowerCase();
+    const status = String(layer.status || '')
+      .trim()
+      .toLowerCase();
     return status !== 'healthy' && status !== 'success';
   }).length;
   const runningJobCount = jobLogStreamJobs.filter(
@@ -452,7 +458,9 @@ export function SystemStatusPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={getSummaryBadgeVariant(overallTone)}>
-            <OverallIcon className={`h-3.5 w-3.5 ${overallStatus.animation === 'spin' ? 'animate-spin' : ''}`} />
+            <OverallIcon
+              className={`h-3.5 w-3.5 ${overallStatus.animation === 'spin' ? 'animate-spin' : ''}`}
+            />
             {overall.toUpperCase()}
           </Badge>
           <Badge variant="outline">{isFetching ? 'Receiving telemetry' : headerRefreshLabel}</Badge>
@@ -467,7 +475,7 @@ export function SystemStatusPage() {
             onClick={() => void handleRefresh()}
             disabled={isRefreshing || isFetching}
           >
-            <RefreshCw className={`h-4 w-4 ${(isRefreshing || isFetching) ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${isRefreshing || isFetching ? 'animate-spin' : ''}`} />
             Refresh View
           </Button>
         </div>
@@ -487,9 +495,7 @@ export function SystemStatusPage() {
           </div>
 
           <div className="flex-1 space-y-5 p-5">
-            <div
-              className={`rounded-[1.8rem] border p-4 ${getSummaryToneClasses(overallTone)}`}
-            >
+            <div className={`rounded-[1.8rem] border p-4 ${getSummaryToneClasses(overallTone)}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-2">
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
@@ -565,8 +571,8 @@ export function SystemStatusPage() {
                   </p>
                   <h2 className="font-display text-xl text-foreground">Session Readout</h2>
                   <p className="text-sm text-muted-foreground">
-                    Front-load the operational numbers a lead would scan before drilling into
-                    domain cells, runtime controls, or job logs.
+                    Front-load the operational numbers a lead would scan before drilling into domain
+                    cells, runtime controls, or job logs.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -638,7 +644,7 @@ export function SystemStatusPage() {
             </div>
           </section>
 
-      {/* Domain Layer Coverage Comparison */}
+          {/* Domain Layer Coverage Comparison */}
           <ErrorBoundary>
             <Suspense fallback={<Skeleton className="h-[280px] w-full rounded-xl bg-muted/20" />}>
               <DomainLayerComparisonPanel

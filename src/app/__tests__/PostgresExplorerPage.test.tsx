@@ -172,14 +172,14 @@ describe('PostgresExplorerPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /symbol/i }));
 
-    const ascRows = screen.getAllByRole('row').slice(1);
+    const ascRows = screen.getAllByRole('button', { name: /open row/i });
     expect(within(ascRows[0]).getAllByRole('cell')[1]).toHaveTextContent('AAPL');
     expect(within(ascRows[1]).getAllByRole('cell')[1]).toHaveTextContent('GOOG');
     expect(within(ascRows[2]).getAllByRole('cell')[1]).toHaveTextContent('MSFT');
 
     fireEvent.click(screen.getByRole('button', { name: /symbol/i }));
 
-    const descRows = screen.getAllByRole('row').slice(1);
+    const descRows = screen.getAllByRole('button', { name: /open row/i });
     expect(within(descRows[0]).getAllByRole('cell')[1]).toHaveTextContent('MSFT');
     expect(within(descRows[1]).getAllByRole('cell')[1]).toHaveTextContent('GOOG');
     expect(within(descRows[2]).getAllByRole('cell')[1]).toHaveTextContent('AAPL');

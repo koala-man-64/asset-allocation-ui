@@ -8,7 +8,7 @@ import {
   isSuspendedJobRunningState,
   normalizeJobStatus,
   selectAnchoredJobRun
-} from '@/app/components/pages/system-status/SystemStatusHelpers';
+} from '@/features/system-status/lib/SystemStatusHelpers';
 
 describe('SystemStatusHelpers', () => {
   it('prefers active live running state over the last completed run', () => {

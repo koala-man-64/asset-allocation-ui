@@ -12,7 +12,7 @@ import {
 import {
   JobLogStreamPanel,
   type JobLogStreamTarget
-} from '@/app/components/pages/system-status/JobLogStreamPanel';
+} from '@/features/system-status/components/JobLogStreamPanel';
 
 vi.mock('@/services/DataService', () => ({
   DataService: {

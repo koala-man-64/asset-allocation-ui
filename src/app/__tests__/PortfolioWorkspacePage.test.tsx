@@ -1,8 +1,13 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PortfolioWorkspacePage } from '@/features/portfolios/PortfolioWorkspacePage';
+import { DataService } from '@/services/DataService';
+import { backtestApi } from '@/services/backtestApi';
 import { portfolioApi } from '@/services/portfolioApi';
+import { regimeApi } from '@/services/regimeApi';
+import { strategyApi } from '@/services/strategyApi';
 import { renderWithProviders } from '@/test/utils';
 import type {
   PortfolioBuildListResponse,
@@ -25,12 +30,47 @@ vi.mock('@/services/portfolioApi', () => ({
   }
 }));
 
+vi.mock('@/services/strategyApi', () => ({
+  strategyApi: {
+    listStrategies: vi.fn(),
+    getStrategyDetail: vi.fn()
+  }
+}));
+
+vi.mock('@/services/backtestApi', () => ({
+  backtestApi: {
+    listRuns: vi.fn(),
+    getSummary: vi.fn()
+  }
+}));
+
+vi.mock('@/services/DataService', () => ({
+  DataService: {
+    getMarketData: vi.fn()
+  }
+}));
+
+vi.mock('@/services/regimeApi', () => ({
+  regimeApi: {
+    getCurrent: vi.fn(),
+    getHistory: vi.fn()
+  }
+}));
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn()
   }
 }));
+
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
 
 const summary: PortfolioSummary = {
   accountId: 'acct-core',
@@ -74,6 +114,19 @@ const detail: PortfolioDetail = {
   recentLedgerEvents: [
     {
       eventId: 'evt-1',
+      effectiveAt: '2026-04-18T14:30:00Z',
+      eventType: 'rebalance_fill',
+      currency: 'USD',
+      cashAmount: -21500,
+      symbol: 'MSFT',
+      quantity: 50,
+      price: 430,
+      commission: 18,
+      slippageCost: 9,
+      description: 'Rebalance fill'
+    },
+    {
+      eventId: 'evt-2',
       effectiveAt: '2026-01-02T14:30:00Z',
       eventType: 'opening_balance',
       currency: 'USD',
@@ -93,7 +146,7 @@ const detail: PortfolioDetail = {
     benchmarkSymbol: 'SPY',
     baseCurrency: 'USD',
     rebalanceCadence: 'weekly',
-    rebalanceAnchor: 'Strategy native cadence',
+    rebalanceAnchor: 'Monday close',
     targetGrossExposurePct: 95,
     cashReservePct: 5,
     maxNames: 60,
@@ -148,7 +201,7 @@ const detail: PortfolioDetail = {
   }
 };
 
-const preview: PortfolioPreviewResponse = {
+const livePreview: PortfolioPreviewResponse = {
   portfolioName: 'macro-core',
   asOfDate: '2026-04-18',
   summary: {
@@ -173,7 +226,29 @@ const preview: PortfolioPreviewResponse = {
       status: 'active'
     }
   ],
-  warnings: ['Residual cash is carrying the full reserve buffer.']
+  warnings: ['Residual cash is carrying the full reserve buffer.'],
+  tradeProposals: [
+    {
+      sleeveId: 'macro-trend',
+      symbol: 'MSFT',
+      side: 'buy',
+      quantity: 50,
+      estimatedPrice: 430,
+      estimatedNotional: 21500,
+      estimatedCommission: 18,
+      estimatedSlippageCost: 9
+    }
+  ],
+  previewSource: 'live-proposal',
+  blocked: false,
+  blockedReasons: []
+};
+
+const inferredPreview: PortfolioPreviewResponse = {
+  ...livePreview,
+  tradeProposals: [],
+  previewSource: 'inferred',
+  warnings: ['Synthetic preview fallback in use.']
 };
 
 const monitorSnapshot: PortfolioMonitorSnapshot = {
@@ -270,7 +345,8 @@ const monitorSnapshot: PortfolioMonitorSnapshot = {
       netExposurePct: 93.4,
       cumulativeReturnPct: 11.8,
       drawdownPct: -3.6,
-      turnoverPct: 3.1
+      turnoverPct: 3.1,
+      costDragBps: 8
     },
     {
       asOfDate: '2026-04-18',
@@ -280,7 +356,8 @@ const monitorSnapshot: PortfolioMonitorSnapshot = {
       netExposurePct: 94.1,
       cumulativeReturnPct: 12.6,
       drawdownPct: -3.2,
-      turnoverPct: 3.4
+      turnoverPct: 3.4,
+      costDragBps: 9
     }
   ],
   ledgerEvents: detail.recentLedgerEvents,
@@ -328,7 +405,7 @@ describe('PortfolioWorkspacePage', () => {
     vi.clearAllMocks();
     vi.mocked(portfolioApi.listPortfolios).mockResolvedValue([summary]);
     vi.mocked(portfolioApi.getPortfolioDetail).mockResolvedValue(detail);
-    vi.mocked(portfolioApi.previewPortfolio).mockResolvedValue(preview);
+    vi.mocked(portfolioApi.previewPortfolio).mockResolvedValue(livePreview);
     vi.mocked(portfolioApi.savePortfolio).mockResolvedValue({
       status: 'ok',
       message: 'saved',
@@ -337,24 +414,146 @@ describe('PortfolioWorkspacePage', () => {
     vi.mocked(portfolioApi.listBuildRuns).mockResolvedValue(buildRuns);
     vi.mocked(portfolioApi.getMonitorSnapshot).mockResolvedValue(monitorSnapshot);
     vi.mocked(portfolioApi.triggerBuild).mockResolvedValue(triggerResponse);
+    vi.mocked(strategyApi.listStrategies).mockResolvedValue([
+      {
+        name: 'macro-trend',
+        type: 'configured',
+        description: 'Primary trend sleeve',
+        updated_at: '2026-04-15T12:00:00Z'
+      },
+      {
+        name: 'quality-carry',
+        type: 'configured',
+        description: 'Diversifying carry sleeve',
+        updated_at: '2026-04-15T12:00:00Z'
+      },
+      {
+        name: 'quality-carry-v2',
+        type: 'configured',
+        description: 'Updated carry sleeve',
+        updated_at: '2026-04-16T12:00:00Z'
+      }
+    ]);
+    vi.mocked(strategyApi.getStrategyDetail).mockImplementation(async (name: string) => ({
+      name,
+      type: 'configured',
+      description: `${name} desk summary`,
+      updated_at: '2026-04-15T12:00:00Z',
+      output_table_name: `${name}_daily`,
+      config: {
+        universeConfigName: 'large-cap',
+        rebalance: 'weekly',
+        longOnly: true,
+        topN: 25,
+        lookbackWindow: 90,
+        holdingPeriod: 30,
+        costModel: 'default',
+        rankingSchemaName: 'quality',
+        intrabarConflictPolicy: 'stop_first',
+        regimePolicy: {
+          modelName: 'strategy-native',
+          blockOnTransition: true,
+          blockOnUnclassified: true,
+          honorHaltFlag: true,
+          onBlocked: 'skip_entries',
+          targetGrossExposureByRegime: {
+            trending_bull: 1,
+            trending_bear: 0.5,
+            choppy_mean_reversion: 0.75,
+            high_vol: 0.25,
+            unclassified: 0.25
+          }
+        },
+        exits: []
+      }
+    }));
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [
+        {
+          run_id: 'run-1',
+          status: 'completed',
+          submitted_at: '2026-04-10T12:00:00Z'
+        }
+      ],
+      limit: 1,
+      offset: 0
+    });
+    vi.mocked(backtestApi.getSummary).mockResolvedValue({
+      run_id: 'run-1',
+      total_return: 0.18,
+      sharpe_ratio: 1.4,
+      max_drawdown: -0.09,
+      cost_drag_bps: 14
+    });
+    vi.mocked(DataService.getMarketData).mockResolvedValue([
+      { date: '2026-04-17', open: 505, high: 507, low: 503, close: 506, volume: 1000 },
+      { date: '2026-04-18', open: 507, high: 510, low: 506, close: 509, volume: 1000 }
+    ]);
+    vi.mocked(regimeApi.getCurrent).mockResolvedValue({
+      model_name: 'strategy-native',
+      model_version: 1,
+      as_of_date: '2026-04-18',
+      effective_from_date: '2026-04-18',
+      regime_code: 'trending_bull',
+      regime_status: 'confirmed',
+      halt_flag: false
+    });
+    vi.mocked(regimeApi.getHistory).mockResolvedValue({
+      modelName: 'strategy-native',
+      modelVersion: 1,
+      limit: 400,
+      rows: [
+        {
+          model_name: 'strategy-native',
+          model_version: 1,
+          as_of_date: '2026-04-17',
+          effective_from_date: '2026-04-17',
+          regime_code: 'trending_bull',
+          regime_status: 'confirmed',
+          halt_flag: false
+        },
+        {
+          model_name: 'strategy-native',
+          model_version: 1,
+          as_of_date: '2026-04-18',
+          effective_from_date: '2026-04-18',
+          regime_code: 'trending_bull',
+          regime_status: 'confirmed',
+          halt_flag: false
+        }
+      ]
+    });
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
-  it('loads the saved workspace into builder mode and renders account controls', async () => {
+  it('defaults to the overview tab and renders regime, drift, and next rebalance metrics', async () => {
     renderWithProviders(<PortfolioWorkspacePage />);
 
-    expect(await screen.findByDisplayValue('macro-core')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Compound capital with controlled cash drag.')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('2026-01-02')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('macro-trend')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /builder mode/i })).toBeInTheDocument();
+    expect(await screen.findByText(/desk verdict/i)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /overview/i })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByText(/trending bull/i)).toBeInTheDocument();
+    expect(screen.getByText(/current allocation/i)).toBeInTheDocument();
   });
 
-  it('runs an allocation preview from builder mode', async () => {
+  it('switches to construction, lets the user pick a strategy, and renders a live rebalance trade list', async () => {
+    const user = userEvent.setup();
     renderWithProviders(<PortfolioWorkspacePage />);
 
-    expect(await screen.findByDisplayValue('macro-core')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /preview allocation stack/i }));
+    expect(await screen.findByText(/desk verdict/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /construction/i }));
+
+    expect(await screen.findByText(/portfolio builder/i)).toBeInTheDocument();
+    expect(screen.getByText(/allocated vs residual cash/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/95.0%/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/5.0%/i).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('combobox', { name: /select strategy for quality-carry/i }));
+    await user.click(await screen.findByText('quality-carry-v2'));
+    expect(await screen.findByRole('combobox', { name: /select strategy for quality-carry/i })).toHaveTextContent(
+      /quality-carry-v2/i
+    );
+
+    await user.click(screen.getByRole('button', { name: /preview allocation stack/i }));
 
     await waitFor(() => {
       expect(portfolioApi.previewPortfolio).toHaveBeenCalledWith(
@@ -365,21 +564,56 @@ describe('PortfolioWorkspacePage', () => {
       );
     });
 
-    expect(await screen.findByText(/preview warnings/i)).toBeInTheDocument();
-    expect(screen.getByText(/residual cash is carrying the full reserve buffer/i)).toBeInTheDocument();
+    expect(await screen.findByText(/proposed rebalance trades/i)).toBeInTheDocument();
+    expect(screen.getByText('MSFT')).toBeInTheDocument();
+    expect(screen.getAllByText(/live proposal/i).length).toBeGreaterThan(0);
   });
 
-  it('switches to monitor mode and shows performance, positions, and materialization controls', async () => {
+  it('shows inferred preview disclosure and marks the preview stale after the draft changes', async () => {
+    const user = userEvent.setup();
+    vi.mocked(portfolioApi.previewPortfolio).mockResolvedValueOnce(inferredPreview);
+
     renderWithProviders(<PortfolioWorkspacePage />);
 
-    expect(await screen.findByDisplayValue('macro-core')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /monitor mode/i }));
+    expect(await screen.findByText(/desk verdict/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /construction/i }));
+    await user.click(screen.getByRole('button', { name: /preview allocation stack/i }));
 
-    expect(await screen.findByText(/performance history/i)).toBeInTheDocument();
-    expect(screen.getByText(/current positions/i)).toBeInTheDocument();
-    expect(screen.getByText('MSFT')).toBeInTheDocument();
+    expect((await screen.findAllByText(/inferred preview/i)).length).toBeGreaterThan(0);
+    expect(screen.getByText(/synthetic preview fallback in use/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /refresh materialization/i }));
+    fireEvent.change(screen.getByLabelText(/mandate/i), {
+      target: { value: 'Updated mandate text' }
+    });
+
+    expect(await screen.findByText(/draft changed since preview/i)).toBeInTheDocument();
+  });
+
+  it('renders the performance tab with thin-sample forecast confidence', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<PortfolioWorkspacePage />);
+
+    expect(await screen.findByText(/desk verdict/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /performance/i }));
+
+    expect(await screen.findByText(/regime-conditioned forecast/i)).toBeInTheDocument();
+    expect(screen.getByText(/thin sample/i)).toBeInTheDocument();
+    expect(screen.getByText(/applied regime/i)).toBeInTheDocument();
+  });
+
+  it('renders the trading blotter and refreshes materialization from the next rebalance module', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<PortfolioWorkspacePage />);
+
+    expect(await screen.findByText(/desk verdict/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /trading/i }));
+
+    expect(await screen.findByRole('button', { name: /refresh materialization/i })).toBeInTheDocument();
+    expect(screen.getByText(/executed trade \/ ledger blotter/i)).toBeInTheDocument();
+    expect(screen.getAllByText('MSFT').length).toBeGreaterThan(0);
+    expect(screen.getByText(/rebalance fill/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /refresh materialization/i }));
 
     await waitFor(() => {
       expect(portfolioApi.triggerBuild).toHaveBeenCalledWith(
