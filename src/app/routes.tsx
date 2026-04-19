@@ -46,6 +46,11 @@ const StrategyConfigPage = lazy(() =>
     default: m.StrategyConfigPage
   }))
 );
+const PortfolioWorkspacePage = lazy(() =>
+  import('@/features/portfolios/PortfolioWorkspacePage').then((m) => ({
+    default: m.PortfolioWorkspacePage
+  }))
+);
 const UniverseConfigPage = lazy(() =>
   import('@/features/universes/UniverseConfigPage').then((m) => ({
     default: m.UniverseConfigPage
@@ -82,6 +87,7 @@ export function AppRoutes() {
         <Route path="/symbol-purge" element={<SymbolPurgeByCriteriaPage />} />
         <Route path="/stock-explorer" element={<StockExplorerPage />} />
         <Route path="/strategies" element={<StrategyConfigPage />} />
+        <Route path="/portfolios" element={<PortfolioWorkspacePage />} />
         <Route path="/universes" element={<UniverseConfigPage />} />
         <Route path="/rankings" element={<RankingConfigPage />} />
         <Route path="/strategy-exploration" element={<StrategyDataCatalogPage />} />

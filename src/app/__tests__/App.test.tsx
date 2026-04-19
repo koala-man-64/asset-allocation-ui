@@ -55,6 +55,12 @@ vi.mock('@/features/strategies/StrategyConfigPage', () => ({
   StrategyConfigPage: () => <div data-testid="mock-strategy-config">Mock Strategy Workbench</div>
 }));
 
+vi.mock('@/features/portfolios/PortfolioWorkspacePage', () => ({
+  PortfolioWorkspacePage: () => (
+    <div data-testid="mock-portfolio-workspace">Mock Portfolio Workspace</div>
+  )
+}));
+
 vi.mock('@/features/universes/UniverseConfigPage', () => ({
   UniverseConfigPage: () => <div data-testid="mock-universe-config">Mock Universe Workbench</div>
 }));
@@ -114,6 +120,13 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-ranking-config')).toBeInTheDocument();
+  });
+
+  it('renders the portfolio workspace route through the application shell', async () => {
+    window.history.pushState({}, 'Portfolios', '/portfolios');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-portfolio-workspace')).toBeInTheDocument();
   });
 
   it('renders the regime monitor route through the application shell', async () => {

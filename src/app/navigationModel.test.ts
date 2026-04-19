@@ -25,6 +25,7 @@ describe('navigationModel', () => {
       '/data-explorer',
       '/data-quality'
     ]);
+    expect(normalizedOrder['live-operations']).toContain('/portfolios');
     expect(normalizedOrder['live-operations']).toContain('/rankings');
   });
 
@@ -60,5 +61,6 @@ describe('navigationModel', () => {
     );
     expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/rankings');
     expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/strategies');
+    expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/portfolios');
   });
 });

@@ -2,6 +2,7 @@ import type { ElementType } from 'react';
 import {
   Activity,
   BarChart3,
+  Briefcase,
   Bug,
   Database,
   Filter,
@@ -114,6 +115,12 @@ export const NAV_SECTIONS: NavSection[] = [
         path: '/strategies',
         label: 'Strategies',
         icon: Target,
+        sectionKey: 'live-operations'
+      },
+      {
+        path: '/portfolios',
+        label: 'Portfolio Workspace',
+        icon: Briefcase,
         sectionKey: 'live-operations'
       },
       {
