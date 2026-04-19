@@ -46,6 +46,11 @@ const StrategyConfigPage = lazy(() =>
     default: m.StrategyConfigPage
   }))
 );
+const PortfolioWorkspacePage = lazy(() =>
+  import('@/features/portfolios/PortfolioWorkspacePage').then((m) => ({
+    default: m.PortfolioWorkspacePage
+  }))
+);
 const UniverseConfigPage = lazy(() =>
   import('@/features/universes/UniverseConfigPage').then((m) => ({
     default: m.UniverseConfigPage
@@ -66,6 +71,11 @@ const SymbolPurgeByCriteriaPage = lazy(() =>
     default: m.SymbolPurgeByCriteriaPage
   }))
 );
+const SymbolEnrichmentPage = lazy(() =>
+  import('@/features/symbol-enrichment/SymbolEnrichmentPage').then((m) => ({
+    default: m.SymbolEnrichmentPage
+  }))
+);
 
 export function AppRoutes() {
   return (
@@ -80,8 +90,10 @@ export function AppRoutes() {
         <Route path="/debug-symbols" element={<DebugSymbolsPage />} />
         <Route path="/runtime-config" element={<RuntimeConfigPage />} />
         <Route path="/symbol-purge" element={<SymbolPurgeByCriteriaPage />} />
+        <Route path="/symbol-enrichment" element={<SymbolEnrichmentPage />} />
         <Route path="/stock-explorer" element={<StockExplorerPage />} />
         <Route path="/strategies" element={<StrategyConfigPage />} />
+        <Route path="/portfolios" element={<PortfolioWorkspacePage />} />
         <Route path="/universes" element={<UniverseConfigPage />} />
         <Route path="/rankings" element={<RankingConfigPage />} />
         <Route path="/strategy-exploration" element={<StrategyDataCatalogPage />} />

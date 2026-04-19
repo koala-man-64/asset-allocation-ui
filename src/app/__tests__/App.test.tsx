@@ -55,6 +55,12 @@ vi.mock('@/features/strategies/StrategyConfigPage', () => ({
   StrategyConfigPage: () => <div data-testid="mock-strategy-config">Mock Strategy Workbench</div>
 }));
 
+vi.mock('@/features/portfolios/PortfolioWorkspacePage', () => ({
+  PortfolioWorkspacePage: () => (
+    <div data-testid="mock-portfolio-workspace">Mock Portfolio Workspace</div>
+  )
+}));
+
 vi.mock('@/features/universes/UniverseConfigPage', () => ({
   UniverseConfigPage: () => <div data-testid="mock-universe-config">Mock Universe Workbench</div>
 }));
@@ -66,6 +72,11 @@ vi.mock('@/features/rankings/RankingConfigPage', () => ({
 vi.mock('@/features/strategy-exploration/StrategyDataCatalogPage', () => ({
   StrategyDataCatalogPage: () => (
     <div data-testid="mock-strategy-data-catalog">Mock Strategy Data Catalog</div>
+  )
+}));
+vi.mock('@/features/symbol-enrichment/SymbolEnrichmentPage', () => ({
+  SymbolEnrichmentPage: () => (
+    <div data-testid="mock-symbol-enrichment">Mock Symbol Enrichment</div>
   )
 }));
 
@@ -116,11 +127,25 @@ describe('App Smoke Test', () => {
     expect(await screen.findByTestId('mock-ranking-config')).toBeInTheDocument();
   });
 
+  it('renders the portfolio workspace route through the application shell', async () => {
+    window.history.pushState({}, 'Portfolios', '/portfolios');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-portfolio-workspace')).toBeInTheDocument();
+  });
+
   it('renders the regime monitor route through the application shell', async () => {
     window.history.pushState({}, 'Regimes', '/regimes');
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-regime-monitor')).toBeInTheDocument();
+  });
+
+  it('renders the symbol enrichment route through the application shell', async () => {
+    window.history.pushState({}, 'Symbol Enrichment', '/symbol-enrichment');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-symbol-enrichment')).toBeInTheDocument();
   });
 
   it('renders the universe workbench route through the application shell', async () => {

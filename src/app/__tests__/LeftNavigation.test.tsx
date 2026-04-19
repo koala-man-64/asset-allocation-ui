@@ -10,6 +10,7 @@ import { useUIStore, UI_STORAGE_KEY } from '@/stores/useUIStore';
 
 vi.mock('lucide-react', () => ({
   Activity: () => <div data-testid="icon-activity" />,
+  Briefcase: () => <div data-testid="icon-briefcase" />,
   Database: () => <div data-testid="icon-database" />,
   Layers3: () => <div data-testid="icon-layers-3" />,
   Target: () => <div data-testid="icon-target" />,
@@ -18,6 +19,7 @@ vi.mock('lucide-react', () => ({
   Orbit: () => <div data-testid="icon-orbit" />,
   Bug: () => <div data-testid="icon-bug" />,
   Filter: () => <div data-testid="icon-filter" />,
+  Sparkles: () => <div data-testid="icon-sparkles" />,
   SlidersHorizontal: () => <div data-testid="icon-sliders" />,
   ScanSearch: () => <div data-testid="icon-scan" />,
   BarChart3: () => <div data-testid="icon-bar-chart" />,
@@ -145,9 +147,11 @@ describe('LeftNavigation', () => {
             '/system-status',
             '/debug-symbols',
             '/symbol-purge',
+            '/symbol-enrichment',
             '/runtime-config',
             '/strategy-exploration',
             '/strategies',
+            '/portfolios',
             '/universes',
             '/rankings'
           ]
@@ -171,8 +175,10 @@ describe('LeftNavigation', () => {
         '/regimes',
         '/debug-symbols',
         '/symbol-purge',
+        '/symbol-enrichment',
         '/runtime-config',
         '/strategy-exploration',
+        '/portfolios',
         '/universes',
         '/rankings'
       ])

@@ -2,6 +2,7 @@ import type { ElementType } from 'react';
 import {
   Activity,
   BarChart3,
+  Briefcase,
   Bug,
   Database,
   Filter,
@@ -11,6 +12,7 @@ import {
   Orbit,
   ScanSearch,
   SlidersHorizontal,
+  Sparkles,
   Target
 } from 'lucide-react';
 import { STOCK_DETAIL_BASE_PATH } from '@/features/stocks/stockRoutes';
@@ -99,6 +101,12 @@ export const NAV_SECTIONS: NavSection[] = [
         sectionKey: 'live-operations'
       },
       {
+        path: '/symbol-enrichment',
+        label: 'Symbol Enrichment',
+        icon: Sparkles,
+        sectionKey: 'live-operations'
+      },
+      {
         path: '/runtime-config',
         label: 'Runtime Config',
         icon: SlidersHorizontal,
@@ -114,6 +122,12 @@ export const NAV_SECTIONS: NavSection[] = [
         path: '/strategies',
         label: 'Strategies',
         icon: Target,
+        sectionKey: 'live-operations'
+      },
+      {
+        path: '/portfolios',
+        label: 'Portfolio Workspace',
+        icon: Briefcase,
         sectionKey: 'live-operations'
       },
       {
