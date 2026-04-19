@@ -1,8 +1,15 @@
-import { useEffect, useState, type DragEvent } from 'react';
+import { useState, type DragEvent } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, GripVertical, Pin, PinOff } from 'lucide-react';
-import Cookies from 'js-cookie';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  GripVertical,
+  Pin,
+  PinOff
+} from 'lucide-react';
 
 import { Button } from '@/app/components/ui/button';
 import {
@@ -19,18 +26,11 @@ import {
 } from '@/app/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { cn } from '@/app/components/ui/utils';
-import { getCentralClockParts } from '@/app/components/pages/system-status/systemStatusClock';
-import {
-  normalizePinnedNavPaths,
-  resolveVisibleNavSections,
-  type NavItem,
-  type NavZoneKey
-} from '@/app/navigationModel';
-import { queryKeys } from '@/hooks/useDataQueries';
-import { DataService } from '@/services/DataService';
-import { UI_STORAGE_KEY, useUIStore } from '@/stores/useUIStore';
-
-const LEGACY_PINNED_TABS_COOKIE = 'ag_pinned_tabs';
+import { resolveVisibleNavSections, type NavItem, type NavZoneKey } from '@/app/navigationModel';
+import { useUIStore } from '@/stores/useUIStore';
+import { prefetchNavigationData } from '@/app/components/layout/prefetchNavigationData';
+import { useLegacyPinnedNavMigration } from '@/app/components/layout/useLegacyPinnedNavMigration';
+import { useNavigationClock } from '@/app/components/layout/useNavigationClock';
 
 interface DragState {
   index: number;
@@ -38,57 +38,8 @@ interface DragState {
   zoneKey: NavZoneKey;
 }
 
-function hasPersistedNavCustomizationSnapshot(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  const rawPersistedState = window.localStorage.getItem(UI_STORAGE_KEY);
-  if (!rawPersistedState) {
-    return false;
-  }
-
-  try {
-    const parsedState = JSON.parse(rawPersistedState) as {
-      state?: Record<string, unknown>;
-    };
-
-    return Boolean(
-      parsedState.state &&
-      ('pinnedNavPaths' in parsedState.state || 'navOrderBySection' in parsedState.state)
-    );
-  } catch {
-    return false;
-  }
-}
-
-function prefetchNavigationData(
-  queryClient: ReturnType<typeof useQueryClient>,
-  path: string
-): void {
-  if (path === '/data-quality') {
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.systemHealth(),
-      queryFn: async () => {
-        const response = await DataService.getSystemHealthWithMeta();
-        return response.data;
-      },
-      staleTime: 30000
-    });
-  }
-
-  if (path === '/system-status') {
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.systemStatusView(),
-      queryFn: async () => DataService.getSystemStatusView(),
-      staleTime: 30000
-    });
-  }
-}
-
 export function LeftNavigation() {
   const { isMobile, setOpen, setOpenMobile, state } = useSidebar();
-  const [clockNow, setClockNow] = useState(() => new Date());
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -99,33 +50,9 @@ export function LeftNavigation() {
   const movePinnedNavItem = useUIStore((store) => store.movePinnedNavItem);
 
   const collapsed = !isMobile && state === 'collapsed';
+  const centralClock = useNavigationClock();
 
-  useEffect(() => {
-    if (hasPersistedNavCustomizationSnapshot()) {
-      return;
-    }
-
-    const savedPinnedTabs = Cookies.get(LEGACY_PINNED_TABS_COOKIE);
-    if (!savedPinnedTabs) {
-      return;
-    }
-
-    try {
-      useUIStore.setState({
-        pinnedNavPaths: normalizePinnedNavPaths(JSON.parse(savedPinnedTabs))
-      });
-      Cookies.remove(LEGACY_PINNED_TABS_COOKIE);
-    } catch (error) {
-      console.error('Failed to parse pinned tabs cookie', error);
-    }
-  }, []);
-
-  useEffect(() => {
-    const handle = window.setInterval(() => setClockNow(new Date()), 1000);
-    return () => window.clearInterval(handle);
-  }, []);
-
-  const centralClock = getCentralClockParts(clockNow);
+  useLegacyPinnedNavMigration();
   const { pinnedItems, visibleSections } = resolveVisibleNavSections(
     pinnedPaths,
     navOrderBySection
@@ -183,10 +110,34 @@ export function LeftNavigation() {
     clearDragState();
   };
 
-  const renderNavItem = (item: NavItem, zoneKey: NavZoneKey, index: number) => {
+  const renderNavItem = (item: NavItem, zoneKey: NavZoneKey, index: number, itemCount: number) => {
     const isPinned = pinnedPaths.includes(item.path);
     const isDragSource = dragState?.path === item.path;
     const isDropTarget = dropTargetPath === item.path && dragState?.path !== item.path;
+    const canMoveUp = index > 0;
+    const canMoveDown = index < itemCount - 1;
+
+    const moveItemUp = () => {
+      if (!canMoveUp) {
+        return;
+      }
+      if (zoneKey === 'pinned') {
+        movePinnedNavItem(index, index - 1);
+        return;
+      }
+      moveNavItemWithinSection(zoneKey, index, index - 1);
+    };
+
+    const moveItemDown = () => {
+      if (!canMoveDown) {
+        return;
+      }
+      if (zoneKey === 'pinned') {
+        movePinnedNavItem(index, index + 1);
+        return;
+      }
+      moveNavItemWithinSection(zoneKey, index, index + 1);
+    };
 
     return (
       <SidebarMenuItem
@@ -213,8 +164,8 @@ export function LeftNavigation() {
               }}
               className={({ isActive }) =>
                 cn(
-                  'peer/menu-button flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/75 outline-hidden ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2',
-                  isActive && 'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
+                  'peer/menu-button flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-mcm-walnut outline-hidden ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-mcm-walnut focus-visible:ring-2',
+                  isActive && 'bg-sidebar-accent font-medium text-mcm-walnut',
                   !collapsed && 'pr-16',
                   collapsed && 'justify-center px-2'
                 )
@@ -262,25 +213,55 @@ export function LeftNavigation() {
             </button>
 
             {!isMobile && (
-              <button
-                type="button"
-                draggable
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
-                onDragStart={(event) => {
-                  event.dataTransfer.effectAllowed = 'move';
-                  event.dataTransfer.setData('text/plain', item.path);
-                  handleDragStart(item, zoneKey, index);
-                }}
-                onDragEnd={clearDragState}
-                className="cursor-grab rounded-sm p-1 text-sidebar-foreground/60 transition-colors hover:bg-sidebar hover:text-sidebar-foreground active:cursor-grabbing"
-                title={`Drag to reorder ${item.label}`}
-                aria-label={`Reorder ${item.label}`}
-              >
-                <GripVertical className="h-3.5 w-3.5" />
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    moveItemUp();
+                  }}
+                  disabled={!canMoveUp}
+                  className="rounded-sm p-1 text-sidebar-foreground/60 transition-colors hover:bg-sidebar hover:text-sidebar-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  title={`Move ${item.label} up`}
+                  aria-label={`Move ${item.label} up`}
+                >
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    moveItemDown();
+                  }}
+                  disabled={!canMoveDown}
+                  className="rounded-sm p-1 text-sidebar-foreground/60 transition-colors hover:bg-sidebar hover:text-sidebar-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  title={`Move ${item.label} down`}
+                  aria-label={`Move ${item.label} down`}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  draggable
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', item.path);
+                    handleDragStart(item, zoneKey, index);
+                  }}
+                  onDragEnd={clearDragState}
+                  className="cursor-grab rounded-sm p-1 text-sidebar-foreground/60 transition-colors hover:bg-sidebar hover:text-sidebar-foreground active:cursor-grabbing"
+                  title={`Drag to reorder ${item.label}`}
+                  aria-label={`Reorder ${item.label}`}
+                >
+                  <GripVertical className="h-3.5 w-3.5" />
+                </button>
+              </>
             )}
           </div>
         )}
@@ -299,12 +280,10 @@ export function LeftNavigation() {
         >
           {!collapsed && (
             <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-sidebar-foreground/55">
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/65">
                 Asset Allocation
               </div>
-              <div className="truncate font-display text-lg text-sidebar-foreground">
-                Operations Desk
-              </div>
+              <div className="truncate font-display text-lg text-mcm-walnut">Operations Desk</div>
             </div>
           )}
 
@@ -330,13 +309,15 @@ export function LeftNavigation() {
       <SidebarContent className="gap-4 py-4">
         {pinnedItems.length > 0 && (
           <SidebarGroup className="px-3">
-            <SidebarGroupLabel className="gap-2 px-2 text-[11px] font-semibold tracking-[0.18em] text-sidebar-foreground/60">
+            <SidebarGroupLabel className="gap-2 px-2 text-[11px] font-semibold tracking-[0.18em] text-mcm-walnut/65">
               <Pin className="h-3 w-3" />
               <span>PINNED</span>
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {pinnedItems.map((item, index) => renderNavItem(item, 'pinned', index))}
+                {pinnedItems.map((item, index) =>
+                  renderNavItem(item, 'pinned', index, pinnedItems.length)
+                )}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -344,12 +325,14 @@ export function LeftNavigation() {
 
         {visibleSections.map((section) => (
           <SidebarGroup key={section.title} className="px-3">
-            <SidebarGroupLabel className="px-2 text-[11px] font-semibold tracking-[0.18em] text-sidebar-foreground/60">
+            <SidebarGroupLabel className="px-2 text-[11px] font-semibold tracking-[0.18em] text-mcm-walnut/65">
               {section.title}
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {section.items.map((item, index) => renderNavItem(item, section.key, index))}
+                {section.items.map((item, index) =>
+                  renderNavItem(item, section.key, index, section.items.length)
+                )}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -362,12 +345,12 @@ export function LeftNavigation() {
             role="status"
             aria-live="polite"
             aria-atomic="true"
-            className="flex flex-col gap-1 text-left text-sidebar-foreground/80"
+            className="flex flex-col gap-1 text-left text-mcm-walnut/65"
           >
             <span className="text-[10px] font-semibold uppercase tracking-[0.16em]">
               UPTIME CLOCK
             </span>
-            <span className="font-mono text-xs text-sidebar-foreground">
+            <span className="font-mono text-xs text-mcm-walnut">
               {centralClock.time} {centralClock.tz}
             </span>
           </div>

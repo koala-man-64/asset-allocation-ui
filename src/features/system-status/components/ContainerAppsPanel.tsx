@@ -37,9 +37,9 @@ import {
   TableRow
 } from '@/app/components/ui/table';
 import { cn } from '@/app/components/ui/utils';
-import { formatTimeAgo, getAzurePortalUrl } from './SystemStatusHelpers';
-import { getLogStreamFeedback } from './logStreamFeedback';
-import { formatSystemStatusText } from './systemStatusText';
+import { formatTimeAgo, getAzurePortalUrl } from '@/features/system-status/lib/SystemStatusHelpers';
+import { getLogStreamFeedback } from '@/features/system-status/lib/logStreamFeedback';
+import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { sanitizeOperatorUrl } from '@/utils/urlSecurity';
 
 const QUERY_KEY = ['system', 'container-apps'] as const;
@@ -141,10 +141,7 @@ export function ContainerAppsPanel() {
     () => apps.filter((app) => getAppHealthStatus(app) === 'healthy').length,
     [apps]
   );
-  const probeCount = useMemo(
-    () => apps.filter((app) => Boolean(app.health?.url)).length,
-    [apps]
-  );
+  const probeCount = useMemo(() => apps.filter((app) => Boolean(app.health?.url)).length, [apps]);
 
   const setPending = (name: string, pending: boolean) => {
     setPendingByName((prev) => {

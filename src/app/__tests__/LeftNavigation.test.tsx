@@ -25,8 +25,10 @@ vi.mock('lucide-react', () => ({
   BarChart3: () => <div data-testid="icon-bar-chart" />,
   PanelLeftIcon: () => <span>icon-panel-left</span>,
   XIcon: () => <span>icon-x</span>,
+  ChevronDown: () => <span>icon-down</span>,
   ChevronLeft: () => <span>icon-left</span>,
   ChevronRight: () => <span>icon-right</span>,
+  ChevronUp: () => <span>icon-up</span>,
   Pin: () => <div data-testid="icon-pin" />,
   PinOff: () => <div data-testid="icon-pinoff" />,
   GripVertical: () => <div data-testid="icon-grip" />
@@ -203,6 +205,24 @@ describe('LeftNavigation', () => {
     expect(getRenderedLinks().slice(0, 3)).toEqual(
       navSnapshot(['/strategies', '/stock-explorer', '/stock-detail'])
     );
+  });
+
+  it('supports visible non-drag reorder buttons on desktop navigation', async () => {
+    renderNavigation();
+
+    const liveOperationsBefore = useUIStore.getState().navOrderBySection['live-operations'];
+    const qualityIndex = liveOperationsBefore.indexOf('/data-quality');
+    const previousPath = liveOperationsBefore[qualityIndex - 1];
+
+    expect(qualityIndex).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move Data Quality up' }));
+
+    await waitFor(() => {
+      const liveOperationsAfter = useUIStore.getState().navOrderBySection['live-operations'];
+      expect(liveOperationsAfter.indexOf('/data-quality')).toBe(qualityIndex - 1);
+      expect(liveOperationsAfter.indexOf(previousPath)).toBe(qualityIndex);
+    });
   });
 
   it('migrates legacy pinned tabs from the cookie when no nav customization is persisted', async () => {

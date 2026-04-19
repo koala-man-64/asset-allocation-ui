@@ -9,9 +9,9 @@ import {
   normalizeAzurePortalUrl,
   resolveManagedJobName,
   toJobStatusLabel
-} from './SystemStatusHelpers';
-import { StatusTypos } from './StatusTokens';
-import { getDomainOrderEntries } from './domainOrdering';
+} from '@/features/system-status/lib/SystemStatusHelpers';
+import { StatusTypos } from '@/features/system-status/lib/StatusTokens';
+import { getDomainOrderEntries } from '@/features/system-status/lib/domainOrdering';
 import {
   DropdownMenu,
   DropdownMenuContent,

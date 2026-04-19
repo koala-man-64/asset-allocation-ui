@@ -7,7 +7,7 @@ import {
   normalizeDomainName,
   normalizeLayerName,
   type DomainRow
-} from '@/app/components/pages/data-quality/dataQualityUtils';
+} from '@/features/data-quality/lib/dataQualityUtils';
 import {
   AlertCircle,
   CheckCircle,

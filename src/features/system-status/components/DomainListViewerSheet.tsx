@@ -15,8 +15,8 @@ import { ScrollArea } from '@/app/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { DataService } from '@/services/DataService';
 import type { DomainListFilePreview } from '@/services/apiService';
-import { StatusTypos } from './StatusTokens';
-import { formatSystemStatusText } from './systemStatusText';
+import { StatusTypos } from '@/features/system-status/lib/StatusTokens';
+import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 type LayerKey = 'bronze' | 'silver' | 'gold' | 'platinum';
 

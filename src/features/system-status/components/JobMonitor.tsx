@@ -29,7 +29,7 @@ import {
   normalizeJobStatus,
   normalizeAzureJobName,
   normalizeAzurePortalUrl
-} from './SystemStatusHelpers';
+} from '@/features/system-status/lib/SystemStatusHelpers';
 import { useJobTrigger } from '@/hooks/useJobTrigger';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
 import { JobRun } from '@/types/strategy';

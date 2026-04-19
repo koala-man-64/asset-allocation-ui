@@ -96,7 +96,9 @@ function syncPortfolioSummaryFields(detail: PortfolioDetail): PortfolioDetail {
   };
 }
 
-function statusBadgeVariant(status?: string | null): 'default' | 'secondary' | 'destructive' | 'outline' {
+function statusBadgeVariant(
+  status?: string | null
+): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (status === 'failed' || status === 'critical') {
     return 'destructive';
   }
@@ -247,7 +249,9 @@ export function PortfolioWorkspacePage() {
       return sortedPortfolios;
     }
 
-    return sortedPortfolios.filter((portfolio) => getPortfolioSearchText(portfolio).includes(query));
+    return sortedPortfolios.filter((portfolio) =>
+      getPortfolioSearchText(portfolio).includes(query)
+    );
   }, [deferredSearchText, sortedPortfolios]);
 
   const previewSignature = serializePortfolioDetail(draft);
@@ -373,7 +377,10 @@ export function PortfolioWorkspacePage() {
         draft.mandate.trim() && draft.inceptionDate && (draft.openingCash ?? 0) > 0
           ? 'Mandate, inception date, and opening balance are set for the internal account shell.'
           : 'Set the mandate, inception date, and opening balance before publish.',
-      ready: Boolean(draft.mandate.trim()) && Boolean(draft.inceptionDate) && (draft.openingCash ?? 0) > 0
+      ready:
+        Boolean(draft.mandate.trim()) &&
+        Boolean(draft.inceptionDate) &&
+        (draft.openingCash ?? 0) > 0
     },
     {
       label: 'Sleeve coverage',
@@ -476,8 +483,8 @@ export function PortfolioWorkspacePage() {
         metrics={heroMetrics}
       />
 
-      <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1.08fr)_360px]">
-        <section className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+      <div className="desk-grid-portfolio">
+        <section className="desk-pane">
           <div className="border-b border-border/40 px-5 py-4">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -499,11 +506,15 @@ export function PortfolioWorkspacePage() {
             </div>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          <div className="desk-pane-scroll space-y-3 p-4">
             {portfoliosLoading ? (
               <PageLoader text="Loading portfolios..." variant="panel" className="min-h-[12rem]" />
             ) : listErrorMessage ? (
-              <StatePanel tone="error" title="Portfolio Library Unavailable" message={listErrorMessage} />
+              <StatePanel
+                tone="error"
+                title="Portfolio Library Unavailable"
+                message={listErrorMessage}
+              />
             ) : filteredPortfolios.length === 0 ? (
               <StatePanel
                 tone="empty"
@@ -534,20 +545,32 @@ export function PortfolioWorkspacePage() {
                           {portfolio.description || 'No desk note'}
                         </div>
                       </div>
-                      <Badge variant={statusBadgeVariant(portfolio.status)}>{portfolio.status}</Badge>
+                      <Badge variant={statusBadgeVariant(portfolio.status)}>
+                        {portfolio.status}
+                      </Badge>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                       <div>
-                        Benchmark <span className="font-medium text-foreground">{portfolio.benchmarkSymbol}</span>
+                        Benchmark{' '}
+                        <span className="font-medium text-foreground">
+                          {portfolio.benchmarkSymbol}
+                        </span>
                       </div>
                       <div>
-                        Sleeves <span className="font-medium text-foreground">{portfolio.sleeveCount}</span>
+                        Sleeves{' '}
+                        <span className="font-medium text-foreground">{portfolio.sleeveCount}</span>
                       </div>
                       <div>
-                        Gross <span className="font-medium text-foreground">{formatPercent(portfolio.targetGrossExposurePct)}</span>
+                        Gross{' '}
+                        <span className="font-medium text-foreground">
+                          {formatPercent(portfolio.targetGrossExposurePct)}
+                        </span>
                       </div>
                       <div>
-                        Last build <span className="font-medium text-foreground">{portfolio.lastBuiltAt ? formatTimestamp(portfolio.lastBuiltAt) : 'Never'}</span>
+                        Last build{' '}
+                        <span className="font-medium text-foreground">
+                          {portfolio.lastBuiltAt ? formatTimestamp(portfolio.lastBuiltAt) : 'Never'}
+                        </span>
                       </div>
                     </div>
                   </button>
@@ -558,7 +581,7 @@ export function PortfolioWorkspacePage() {
         </section>
 
         {mode === 'builder' ? (
-          <section className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+          <section className="desk-pane">
             <div className="border-b border-border/40 px-5 py-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -576,11 +599,15 @@ export function PortfolioWorkspacePage() {
               </div>
             </div>
 
-            <div className="flex-1 space-y-6 overflow-y-auto p-5">
+            <div className="desk-pane-scroll space-y-6 p-5">
               {detailQuery.isLoading && selectedPortfolioName ? (
                 <PageLoader text="Loading portfolio..." variant="panel" className="min-h-[18rem]" />
               ) : detailErrorMessage ? (
-                <StatePanel tone="error" title="Portfolio Detail Unavailable" message={detailErrorMessage} />
+                <StatePanel
+                  tone="error"
+                  title="Portfolio Detail Unavailable"
+                  message={detailErrorMessage}
+                />
               ) : (
                 <>
                   <div className="grid gap-4 lg:grid-cols-2">
@@ -590,12 +617,14 @@ export function PortfolioWorkspacePage() {
                           Basics
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          Internal account identity, funding start point, and the pinned strategy mix for this workspace.
+                          Internal account identity, funding start point, and the pinned strategy
+                          mix for this workspace.
                         </p>
                       </div>
                       {draft.accountId ? (
                         <div className="rounded-2xl border border-mcm-teal/20 bg-mcm-teal/8 px-3 py-2 text-xs text-muted-foreground">
-                          Account ID <span className="font-medium text-foreground">{draft.accountId}</span>
+                          Account ID{' '}
+                          <span className="font-medium text-foreground">{draft.accountId}</span>
                         </div>
                       ) : null}
                       <div className="grid gap-4">
@@ -669,7 +698,8 @@ export function PortfolioWorkspacePage() {
                               }
                             />
                             <p className="text-xs text-muted-foreground">
-                              Applied when the internal account is first created; later funding belongs in ledger events.
+                              Applied when the internal account is first created; later funding
+                              belongs in ledger events.
                             </p>
                           </div>
                         </div>
@@ -718,7 +748,8 @@ export function PortfolioWorkspacePage() {
                                   ...current,
                                   config: {
                                     ...current.config,
-                                    rebalanceCadence: event.target.value as PortfolioDetail['config']['rebalanceCadence']
+                                    rebalanceCadence: event.target
+                                      .value as PortfolioDetail['config']['rebalanceCadence']
                                   }
                                 }))
                               }
@@ -913,9 +944,13 @@ export function PortfolioWorkspacePage() {
                             className="rounded-2xl border border-mcm-walnut/15 bg-mcm-paper/60 p-4"
                           >
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                              <div className="font-display text-base">{sleeve.label || `Sleeve ${index + 1}`}</div>
+                              <div className="font-display text-base">
+                                {sleeve.label || `Sleeve ${index + 1}`}
+                              </div>
                               <div className="flex items-center gap-2">
-                                <Badge variant={statusBadgeVariant(sleeve.status)}>{sleeve.status}</Badge>
+                                <Badge variant={statusBadgeVariant(sleeve.status)}>
+                                  {sleeve.status}
+                                </Badge>
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -959,7 +994,9 @@ export function PortfolioWorkspacePage() {
                                 />
                               </div>
                               <div className="grid gap-2">
-                                <Label htmlFor={`portfolio-sleeve-strategy-${index}`}>Strategy</Label>
+                                <Label htmlFor={`portfolio-sleeve-strategy-${index}`}>
+                                  Strategy
+                                </Label>
                                 <Input
                                   id={`portfolio-sleeve-strategy-${index}`}
                                   value={sleeve.strategyName}
@@ -997,7 +1034,8 @@ export function PortfolioWorkspacePage() {
                                           itemIndex === index
                                             ? {
                                                 ...item,
-                                                status: event.target.value as PortfolioSleeveDefinition['status']
+                                                status: event.target
+                                                  .value as PortfolioSleeveDefinition['status']
                                               }
                                             : item
                                         )
@@ -1294,7 +1332,7 @@ export function PortfolioWorkspacePage() {
             </div>
           </section>
         ) : (
-          <section className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+          <section className="desk-pane">
             <div className="border-b border-border/40 px-5 py-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1313,7 +1351,7 @@ export function PortfolioWorkspacePage() {
               </div>
             </div>
 
-            <div className="flex-1 space-y-6 overflow-y-auto p-5">
+            <div className="desk-pane-scroll space-y-6 p-5">
               {!selectedPortfolioName ? (
                 <StatePanel
                   tone="empty"
@@ -1321,9 +1359,17 @@ export function PortfolioWorkspacePage() {
                   message="Save or load a portfolio before switching into monitor mode."
                 />
               ) : monitorQuery.isLoading ? (
-                <PageLoader text="Loading portfolio monitor..." variant="panel" className="min-h-[18rem]" />
+                <PageLoader
+                  text="Loading portfolio monitor..."
+                  variant="panel"
+                  className="min-h-[18rem]"
+                />
               ) : monitorErrorMessage ? (
-                <StatePanel tone="error" title="Monitor Unavailable" message={monitorErrorMessage} />
+                <StatePanel
+                  tone="error"
+                  title="Monitor Unavailable"
+                  message={monitorErrorMessage}
+                />
               ) : monitorSnapshot ? (
                 <>
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1365,7 +1411,8 @@ export function PortfolioWorkspacePage() {
                         label: 'Drift',
                         value: formatPercent(monitorSnapshot.driftPct),
                         tone:
-                          monitorSnapshot.driftPct >= draft.config.riskLimits.driftRebalanceThresholdPct
+                          monitorSnapshot.driftPct >=
+                          draft.config.riskLimits.driftRebalanceThresholdPct
                             ? 'warning'
                             : monitorSnapshot.buildHealth
                       }
@@ -1415,18 +1462,25 @@ export function PortfolioWorkspacePage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {monitorSnapshot.history.slice(-8).reverse().map((point) => (
-                              <TableRow key={point.asOfDate}>
-                                <TableCell>{point.asOfDate}</TableCell>
-                                <TableCell>{formatCurrency(point.nav, monitorSnapshot.baseCurrency)}</TableCell>
-                                <TableCell>{formatCurrency(point.cash, monitorSnapshot.baseCurrency)}</TableCell>
-                                <TableCell>{formatPercent(point.cumulativeReturnPct)}</TableCell>
-                                <TableCell>{formatPercent(point.drawdownPct)}</TableCell>
-                                <TableCell className="text-right">
-                                  {formatPercent(point.turnoverPct)}
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {monitorSnapshot.history
+                              .slice(-8)
+                              .reverse()
+                              .map((point) => (
+                                <TableRow key={point.asOfDate}>
+                                  <TableCell>{point.asOfDate}</TableCell>
+                                  <TableCell>
+                                    {formatCurrency(point.nav, monitorSnapshot.baseCurrency)}
+                                  </TableCell>
+                                  <TableCell>
+                                    {formatCurrency(point.cash, monitorSnapshot.baseCurrency)}
+                                  </TableCell>
+                                  <TableCell>{formatPercent(point.cumulativeReturnPct)}</TableCell>
+                                  <TableCell>{formatPercent(point.drawdownPct)}</TableCell>
+                                  <TableCell className="text-right">
+                                    {formatPercent(point.turnoverPct)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
                           </TableBody>
                         </Table>
                       )}
@@ -1440,7 +1494,8 @@ export function PortfolioWorkspacePage() {
                           Current Positions
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          Live look-through positions and sleeve contributors from the last materialization.
+                          Live look-through positions and sleeve contributors from the last
+                          materialization.
                         </p>
                       </div>
                       <Badge variant="outline">{monitorSnapshot.positions.length}</Badge>
@@ -1476,7 +1531,10 @@ export function PortfolioWorkspacePage() {
                                 </TableCell>
                                 <TableCell>{formatPercent(position.weightPct)}</TableCell>
                                 <TableCell>
-                                  {formatCurrency(position.marketValue, monitorSnapshot.baseCurrency)}
+                                  {formatCurrency(
+                                    position.marketValue,
+                                    monitorSnapshot.baseCurrency
+                                  )}
                                 </TableCell>
                                 <TableCell>
                                   {formatCurrency(position.lastPrice, monitorSnapshot.baseCurrency)}
@@ -1517,9 +1575,17 @@ export function PortfolioWorkspacePage() {
 
                     <div className="mt-4">
                       {buildRunsQuery.isLoading ? (
-                        <PageLoader text="Loading build runs..." variant="panel" className="min-h-[12rem]" />
+                        <PageLoader
+                          text="Loading build runs..."
+                          variant="panel"
+                          className="min-h-[12rem]"
+                        />
                       ) : buildRunsErrorMessage ? (
-                        <StatePanel tone="error" title="Build History Unavailable" message={buildRunsErrorMessage} />
+                        <StatePanel
+                          tone="error"
+                          title="Build History Unavailable"
+                          message={buildRunsErrorMessage}
+                        />
                       ) : buildRuns.length === 0 ? (
                         <StatePanel
                           tone="empty"
@@ -1543,15 +1609,21 @@ export function PortfolioWorkspacePage() {
                               <TableRow key={run.runId}>
                                 <TableCell>
                                   <div className="font-medium">{run.runId}</div>
-                                  <div className="text-xs text-muted-foreground">{run.triggeredBy}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {run.triggeredBy}
+                                  </div>
                                 </TableCell>
                                 <TableCell className="capitalize">{run.buildScope}</TableCell>
                                 <TableCell>
-                                  <Badge variant={statusBadgeVariant(run.status)}>{run.status}</Badge>
+                                  <Badge variant={statusBadgeVariant(run.status)}>
+                                    {run.status}
+                                  </Badge>
                                 </TableCell>
                                 <TableCell>{run.asOfDate}</TableCell>
                                 <TableCell>{formatPercent(run.driftPct)}</TableCell>
-                                <TableCell className="text-right">{run.tradeCount ?? 'n/a'}</TableCell>
+                                <TableCell className="text-right">
+                                  {run.tradeCount ?? 'n/a'}
+                                </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
@@ -1571,7 +1643,7 @@ export function PortfolioWorkspacePage() {
           </section>
         )}
 
-        <aside className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+        <aside className="desk-pane">
           <div className="border-b border-border/40 px-5 py-4">
             <div className="flex items-center gap-2">
               {mode === 'builder' ? (
@@ -1590,7 +1662,7 @@ export function PortfolioWorkspacePage() {
             </div>
           </div>
 
-          <div className="flex-1 space-y-5 overflow-y-auto p-5">
+          <div className="desk-pane-scroll space-y-5 p-5">
             {mode === 'builder' ? (
               <>
                 <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-4">
@@ -1632,7 +1704,11 @@ export function PortfolioWorkspacePage() {
                         onChange={(event) => setPreviewAsOfDate(event.target.value)}
                       />
                     </div>
-                    <Button type="button" onClick={() => saveMutation.mutate()} disabled={saveDisabled}>
+                    <Button
+                      type="button"
+                      onClick={() => saveMutation.mutate()}
+                      disabled={saveDisabled}
+                    >
                       {saveMutation.isPending ? 'Saving...' : 'Save Workspace'}
                     </Button>
                     <Button
@@ -1663,7 +1739,11 @@ export function PortfolioWorkspacePage() {
                   </div>
                   <div className="mt-4">
                     {previewMutation.isPending ? (
-                      <PageLoader text="Rendering preview..." variant="panel" className="min-h-[10rem]" />
+                      <PageLoader
+                        text="Rendering preview..."
+                        variant="panel"
+                        className="min-h-[10rem]"
+                      />
                     ) : previewResult ? (
                       <BuilderPreviewSummary preview={previewResult} isStale={previewStale} />
                     ) : (
@@ -1690,7 +1770,9 @@ export function PortfolioWorkspacePage() {
                       <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
                         Build Window
                       </div>
-                      <div className="mt-2 font-display text-lg">{monitorSnapshot.buildWindowLabel}</div>
+                      <div className="mt-2 font-display text-lg">
+                        {monitorSnapshot.buildWindowLabel}
+                      </div>
                     </div>
                     <Badge variant={statusBadgeVariant(monitorSnapshot.buildHealth)}>
                       {monitorSnapshot.buildHealth}
@@ -1698,14 +1780,24 @@ export function PortfolioWorkspacePage() {
                   </div>
                   <div className="mt-4 grid gap-2 text-sm text-muted-foreground">
                     <div>
-                      Active Version <span className="font-medium text-foreground">v{monitorSnapshot.activeVersion ?? 'n/a'}</span>
+                      Active Version{' '}
+                      <span className="font-medium text-foreground">
+                        v{monitorSnapshot.activeVersion ?? 'n/a'}
+                      </span>
                     </div>
                     <div>
-                      Snapshot As Of <span className="font-medium text-foreground">{monitorSnapshot.asOfDate}</span>
+                      Snapshot As Of{' '}
+                      <span className="font-medium text-foreground">
+                        {monitorSnapshot.asOfDate}
+                      </span>
                     </div>
                   </div>
                   <div className="mt-4 grid gap-3">
-                    <Button type="button" onClick={() => triggerBuildMutation.mutate()} disabled={triggerBuildDisabled}>
+                    <Button
+                      type="button"
+                      onClick={() => triggerBuildMutation.mutate()}
+                      disabled={triggerBuildDisabled}
+                    >
                       <Play className="h-4 w-4" />
                       {triggerBuildMutation.isPending ? 'Submitting...' : 'Refresh Materialization'}
                     </Button>
@@ -1764,13 +1856,20 @@ export function PortfolioWorkspacePage() {
                       />
                     ) : (
                       monitorSnapshot.alerts.map((alert) => (
-                        <div key={`${alert.title}-${alert.observedAt}`} className={`rounded-2xl border p-3 ${alertToneClass(alert.severity)}`}>
+                        <div
+                          key={`${alert.title}-${alert.observedAt}`}
+                          className={`rounded-2xl border p-3 ${alertToneClass(alert.severity)}`}
+                        >
                           <div className="flex items-center justify-between gap-3">
                             <span className="font-medium">{alert.title}</span>
-                            <Badge variant={statusBadgeVariant(alert.severity)}>{alert.severity}</Badge>
+                            <Badge variant={statusBadgeVariant(alert.severity)}>
+                              {alert.severity}
+                            </Badge>
                           </div>
                           <p className="mt-2 text-sm text-muted-foreground">{alert.message}</p>
-                          <div className="mt-2 text-xs text-muted-foreground">{formatTimestamp(alert.observedAt)}</div>
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            {formatTimestamp(alert.observedAt)}
+                          </div>
                         </div>
                       ))
                     )}
@@ -1795,7 +1894,9 @@ export function PortfolioWorkspacePage() {
                           className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/65 p-3"
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <span className="font-medium">{event.eventType.replaceAll('_', ' ')}</span>
+                            <span className="font-medium">
+                              {event.eventType.replaceAll('_', ' ')}
+                            </span>
                             <span className="text-xs text-muted-foreground">
                               {formatTimestamp(event.effectiveAt)}
                             </span>
@@ -1825,19 +1926,30 @@ export function PortfolioWorkspacePage() {
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <div className="font-medium">{sleeve.label}</div>
-                            <div className="text-xs text-muted-foreground">{sleeve.strategyName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {sleeve.strategyName}
+                            </div>
                           </div>
                           <Badge variant={statusBadgeVariant(sleeve.status)}>{sleeve.status}</Badge>
                         </div>
                         <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
                           <div>
-                            Target <span className="font-medium text-foreground">{formatPercent(sleeve.targetWeightPct)}</span>
+                            Target{' '}
+                            <span className="font-medium text-foreground">
+                              {formatPercent(sleeve.targetWeightPct)}
+                            </span>
                           </div>
                           <div>
-                            Live <span className="font-medium text-foreground">{formatPercent(sleeve.liveWeightPct)}</span>
+                            Live{' '}
+                            <span className="font-medium text-foreground">
+                              {formatPercent(sleeve.liveWeightPct)}
+                            </span>
                           </div>
                           <div>
-                            Drift <span className="font-medium text-foreground">{formatPercent(sleeve.driftPct)}</span>
+                            Drift{' '}
+                            <span className="font-medium text-foreground">
+                              {formatPercent(sleeve.driftPct)}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -1846,7 +1958,11 @@ export function PortfolioWorkspacePage() {
                 </div>
               </>
             ) : (
-              <StatePanel tone="empty" title="Monitor Snapshot Missing" message="No live operator snapshot is available for this portfolio." />
+              <StatePanel
+                tone="empty"
+                title="Monitor Snapshot Missing"
+                message="No live operator snapshot is available for this portfolio."
+              />
             )}
           </div>
         </aside>
@@ -1869,7 +1985,9 @@ function BuilderPreviewSummary({
           <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
             Weight Stack
           </div>
-          <div className="mt-2 font-display text-2xl">{formatPercent(preview.summary.targetWeightPct)}</div>
+          <div className="mt-2 font-display text-2xl">
+            {formatPercent(preview.summary.targetWeightPct)}
+          </div>
           <div className="text-xs text-muted-foreground">
             Residual cash {formatPercent(preview.summary.residualCashPct)}
           </div>
@@ -1896,10 +2014,16 @@ function BuilderPreviewSummary({
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-muted-foreground">
           <div>
-            Gross <span className="font-medium text-foreground">{formatPercent(preview.summary.projectedGrossExposurePct)}</span>
+            Gross{' '}
+            <span className="font-medium text-foreground">
+              {formatPercent(preview.summary.projectedGrossExposurePct)}
+            </span>
           </div>
           <div>
-            Net <span className="font-medium text-foreground">{formatPercent(preview.summary.projectedNetExposurePct)}</span>
+            Net{' '}
+            <span className="font-medium text-foreground">
+              {formatPercent(preview.summary.projectedNetExposurePct)}
+            </span>
           </div>
         </div>
       </div>
@@ -1923,7 +2047,10 @@ function BuilderPreviewSummary({
         </div>
         <div className="mt-3 space-y-3">
           {preview.allocations.map((allocation) => (
-            <div key={allocation.sleeveId} className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/65 p-3">
+            <div
+              key={allocation.sleeveId}
+              className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/65 p-3"
+            >
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-medium">{allocation.label}</div>
@@ -1933,16 +2060,26 @@ function BuilderPreviewSummary({
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                 <div>
-                  Target <span className="font-medium text-foreground">{formatPercent(allocation.targetWeightPct)}</span>
+                  Target{' '}
+                  <span className="font-medium text-foreground">
+                    {formatPercent(allocation.targetWeightPct)}
+                  </span>
                 </div>
                 <div>
-                  Projected <span className="font-medium text-foreground">{formatPercent(allocation.projectedWeightPct)}</span>
+                  Projected{' '}
+                  <span className="font-medium text-foreground">
+                    {formatPercent(allocation.projectedWeightPct)}
+                  </span>
                 </div>
                 <div>
-                  Gross <span className="font-medium text-foreground">{formatPercent(allocation.projectedGrossExposurePct)}</span>
+                  Gross{' '}
+                  <span className="font-medium text-foreground">
+                    {formatPercent(allocation.projectedGrossExposurePct)}
+                  </span>
                 </div>
                 <div>
-                  Holdings <span className="font-medium text-foreground">{allocation.expectedHoldings}</span>
+                  Holdings{' '}
+                  <span className="font-medium text-foreground">{allocation.expectedHoldings}</span>
                 </div>
               </div>
             </div>

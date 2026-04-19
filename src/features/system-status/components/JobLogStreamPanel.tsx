@@ -44,9 +44,9 @@ import {
   normalizeAzureJobName,
   normalizeAzurePortalUrl,
   selectAnchoredJobRun
-} from './SystemStatusHelpers';
-import { getLogStreamFeedback } from './logStreamFeedback';
-import { formatSystemStatusText } from './systemStatusText';
+} from '@/features/system-status/lib/SystemStatusHelpers';
+import { getLogStreamFeedback } from '@/features/system-status/lib/logStreamFeedback';
+import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 const LOG_LINE_LIMIT = 200;
 const LOG_AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 16;

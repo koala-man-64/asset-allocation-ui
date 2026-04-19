@@ -9,9 +9,9 @@ import {
 } from '@/app/components/ui/sheet';
 import { Alert, AlertDescription, AlertTitle } from '@/app/components/ui/alert';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
-import { StatusTypos } from './StatusTokens';
+import { StatusTypos } from '@/features/system-status/lib/StatusTokens';
 import { useDomainMetadataQuery } from '@/hooks/useDataQueries';
-import { formatSystemStatusText } from './systemStatusText';
+import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 type LayerKey = 'bronze' | 'silver' | 'gold' | 'platinum';
 

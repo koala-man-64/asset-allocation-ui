@@ -37,9 +37,9 @@ import {
   normalizeAzurePortalUrl,
   resolveManagedJobName,
   selectAnchoredJobRun
-} from './SystemStatusHelpers';
-import { getDomainOrderIndex } from './domainOrdering';
-import { getLogStreamFeedback } from './logStreamFeedback';
+} from '@/features/system-status/lib/SystemStatusHelpers';
+import { getDomainOrderIndex } from '@/features/system-status/lib/domainOrdering';
+import { getLogStreamFeedback } from '@/features/system-status/lib/logStreamFeedback';
 import { apiService } from '@/services/apiService';
 import {
   addConsoleLogStreamListener,
@@ -48,7 +48,7 @@ import {
   requestRealtimeUnsubscription
 } from '@/services/realtimeBus';
 import { normalizeDomainKey } from './SystemPurgeControls';
-import { formatSystemStatusText } from './systemStatusText';
+import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 import {
   CalendarDays,

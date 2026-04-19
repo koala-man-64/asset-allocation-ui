@@ -34,7 +34,7 @@ export function PostgresActionRail({
   const actionDisabled = !selectedTable || tablesLoading || tableMetadataLoading;
 
   return (
-    <aside className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+    <aside className="desk-pane">
       <div className="border-b border-border/40 px-5 py-5">
         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
           Action Rail
@@ -45,7 +45,7 @@ export function PostgresActionRail({
         </p>
       </div>
 
-      <div className="flex-1 space-y-5 p-5">
+      <div className="desk-pane-scroll space-y-5 p-5">
         <div className="space-y-3 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -76,15 +76,23 @@ export function PostgresActionRail({
                 Selected scope
               </p>
               <p className="mt-1 font-display text-lg text-foreground">
-                {selectedSchema && selectedTable ? `${selectedSchema}.${selectedTable}` : 'No table in focus'}
+                {selectedSchema && selectedTable
+                  ? `${selectedSchema}.${selectedTable}`
+                  : 'No table in focus'}
               </p>
             </div>
             <Badge variant="outline">{dataCount} rows</Badge>
           </div>
 
           <div className="space-y-2 text-sm text-muted-foreground">
-            <p>{queryFiltersCount} filter{queryFiltersCount === 1 ? '' : 's'} configured.</p>
-            <p>{editingEnabled ? 'Row editing is enabled for the current table.' : editCapabilityLabel}</p>
+            <p>
+              {queryFiltersCount} filter{queryFiltersCount === 1 ? '' : 's'} configured.
+            </p>
+            <p>
+              {editingEnabled
+                ? 'Row editing is enabled for the current table.'
+                : editCapabilityLabel}
+            </p>
           </div>
         </div>
 
@@ -107,8 +115,8 @@ export function PostgresActionRail({
               Workflow note
             </div>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              Query first, then edit from the result pane. That keeps table mutations anchored to
-              an explicit result set instead of guesswork.
+              Query first, then edit from the result pane. That keeps table mutations anchored to an
+              explicit result set instead of guesswork.
             </p>
           </div>
         </div>

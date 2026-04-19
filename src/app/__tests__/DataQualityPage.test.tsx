@@ -124,7 +124,7 @@ describe('DataQualityPage', () => {
     });
   });
 
-  vi.mock('@/app/components/pages/data-quality/DataPipelinePanel', () => ({
+  vi.mock('@/features/data-quality/components/DataPipelinePanel', () => ({
     DataPipelinePanel: () => <div data-testid="mock-data-pipeline-panel">Mock Pipeline Panel</div>
   }));
 

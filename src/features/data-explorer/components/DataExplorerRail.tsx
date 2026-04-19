@@ -36,15 +36,7 @@ interface DataExplorerRailProps {
   onRefresh: () => void;
 }
 
-function RailMetric({
-  label,
-  value,
-  detail
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function RailMetric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
       <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
@@ -86,7 +78,7 @@ export function DataExplorerRail({
   const selectedAsset = selectedFilePath?.split('/').pop() || 'No file selected';
 
   return (
-    <aside className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+    <aside className="desk-pane">
       <div className="border-b border-border/40 px-5 py-5">
         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
           Explorer Rail
@@ -98,7 +90,7 @@ export function DataExplorerRail({
         </p>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-auto p-5">
+      <div className="desk-pane-scroll space-y-5 p-5">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
           <RailMetric
             label="Folders"

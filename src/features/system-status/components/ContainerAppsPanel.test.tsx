@@ -72,9 +72,7 @@ describe('ContainerAppsPanel', () => {
 
     expect(await screen.findByText('api-app')).toBeInTheDocument();
     expect(screen.getByText('https://evil.example.com/healthz')).toBeInTheDocument();
-    expect(
-      screen.queryByRole('link', { name: 'https://evil.example.com/healthz' })
-    ).toBeNull();
+    expect(screen.queryByRole('link', { name: 'https://evil.example.com/healthz' })).toBeNull();
 
     const sameOriginProbeLink = screen.getByRole('link', { name: '/healthz' });
     expect(sameOriginProbeLink).toHaveAttribute('href', `${window.location.origin}/healthz`);

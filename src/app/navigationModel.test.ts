@@ -17,13 +17,15 @@ describe('navigationModel', () => {
       'market-intelligence': ['/stock-detail', '/missing', '/stock-detail'],
       'live-operations': ['/postgres-explorer', '/unknown', '/system-status']
     });
+    const defaultLiveOperations = createDefaultNavOrderBySection()['live-operations'].filter(
+      (path) => !['/postgres-explorer', '/system-status'].includes(path)
+    );
 
     expect(normalizedOrder['market-intelligence']).toEqual(['/stock-detail', '/stock-explorer']);
     expect(normalizedOrder['live-operations'].slice(0, 4)).toEqual([
       '/postgres-explorer',
       '/system-status',
-      '/data-explorer',
-      '/data-quality'
+      ...defaultLiveOperations.slice(0, 2)
     ]);
     expect(normalizedOrder['live-operations']).toContain('/symbol-enrichment');
     expect(normalizedOrder['live-operations']).toContain('/portfolios');
@@ -52,10 +54,7 @@ describe('navigationModel', () => {
       createDefaultNavOrderBySection()
     );
 
-    expect(pinnedItems.map((item) => item.label)).toEqual([
-      'Ranking Configurations',
-      'Strategies'
-    ]);
+    expect(pinnedItems.map((item) => item.label)).toEqual(['Ranking Configurations', 'Strategies']);
 
     const liveOperationsSection = visibleSections.find(
       (section) => section.key === 'live-operations'

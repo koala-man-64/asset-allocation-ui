@@ -33,7 +33,7 @@ import {
   isMultiValueOperator,
   isNullOperator,
   isUniverseGroup
-} from './universeUtils';
+} from '@/features/universes/lib/universeUtils';
 
 type NodePath = number[];
 
@@ -360,9 +360,7 @@ export function UniverseRuleBuilder({ value, onChange }: UniverseRuleBuilderProp
                 Condition
               </div>
               <div className="text-sm text-muted-foreground">
-                {node.field
-                  ? node.field
-                  : 'Select a field and operator to define this rule.'}
+                {node.field ? node.field : 'Select a field and operator to define this rule.'}
               </div>
               {selectedField ? (
                 <div className="text-xs text-muted-foreground">

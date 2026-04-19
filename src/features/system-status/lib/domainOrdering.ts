@@ -1,6 +1,6 @@
 import type { DataLayer } from '@/types/strategy';
 
-import { normalizeDomainKey } from './SystemPurgeControls';
+import { normalizeDomainKey } from '@/features/system-status/components/SystemPurgeControls';
 
 export type DomainOrderEntry = {
   key: string;

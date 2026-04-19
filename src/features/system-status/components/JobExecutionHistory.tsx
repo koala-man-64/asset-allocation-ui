@@ -23,7 +23,7 @@ import {
   formatDuration,
   formatTimestamp,
   formatRecordCount
-} from './SystemStatusHelpers';
+} from '@/features/system-status/lib/SystemStatusHelpers';
 import { useJobTrigger } from '@/hooks/useJobTrigger';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
 

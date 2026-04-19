@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { queryKeys } from '@/hooks/useDataQueries';
 import { backtestApi } from '@/services/backtestApi';
 import type { ResourceSignal } from '@/types/strategy';
-import { formatSystemStatusText } from './systemStatusText';
+import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 export interface ManagedContainerJob {
   name: string;

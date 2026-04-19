@@ -115,7 +115,7 @@ export function DataExplorerHierarchyNavigator({
   };
 
   return (
-    <section className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+    <section className="desk-pane">
       <div className="border-b border-border/40 px-6 py-5">
         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
           Hierarchy Navigator
@@ -138,7 +138,7 @@ export function DataExplorerHierarchyNavigator({
         ) : null}
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
+      <div className="desk-pane-scroll p-4">
         {error ? (
           <div className="rounded-[1.5rem] border border-destructive/30 bg-destructive/10 p-4 font-mono text-sm text-destructive">
             <strong>Error:</strong> {error}

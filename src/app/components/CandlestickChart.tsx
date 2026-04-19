@@ -1,14 +1,3 @@
-import {
-  ResponsiveContainer,
-  ComposedChart,
-  Area,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid
-} from 'recharts';
-
 interface PricePoint {
   date: string;
   open: number;
@@ -23,131 +12,266 @@ interface CandlestickChartProps {
   height?: number;
 }
 
-export function CandlestickChart({ data, height = 300 }: CandlestickChartProps) {
-  if (!data || data.length === 0) return null;
+interface ChartPoint extends PricePoint {
+  x: number;
+  wickTop: number;
+  wickBottom: number;
+  openY: number;
+  closeY: number;
+  volumeTop: number;
+  rising: boolean;
+}
 
-  const minPrice = Math.min(...data.map((d) => d.low));
-  const maxPrice = Math.max(...data.map((d) => d.high));
-  const pricePadding = (maxPrice - minPrice) * 0.1;
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
 
-  const maxVol = Math.max(...data.map((d) => d.volume));
+function formatCurrency(value: number): string {
+  return `$${value.toFixed(2)}`;
+}
 
-  const isPositive = data[0].close < data[data.length - 1].close;
-  const color = isPositive ? '#10b981' : '#f43f5e'; // emerald-500 : rose-500
+function formatCompactVolume(value: number): string {
+  if (value >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toFixed(1)}B`;
+  }
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(1)}K`;
+  }
+  return String(Math.round(value));
+}
+
+function formatDateLabel(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric'
+  });
+}
+
+function createTickIndices(length: number): number[] {
+  if (length <= 1) {
+    return [0];
+  }
+
+  const desiredTicks = Math.min(5, length);
+  const next = new Set<number>([0, length - 1]);
+
+  for (let index = 1; index < desiredTicks - 1; index += 1) {
+    next.add(Math.round((index * (length - 1)) / (desiredTicks - 1)));
+  }
+
+  return Array.from(next).sort((left, right) => left - right);
+}
+
+export function CandlestickChart({ data, height = 320 }: CandlestickChartProps) {
+  if (!data.length) {
+    return null;
+  }
+
+  const chartWidth = 960;
+  const chartHeight = Math.max(height, 260);
+  const marginTop = 20;
+  const marginRight = 60;
+  const marginBottom = 52;
+  const marginLeft = 18;
+  const volumeBandHeight = 78;
+  const priceBottom = chartHeight - volumeBandHeight - marginBottom;
+  const volumeTop = priceBottom + 16;
+  const volumeBottom = chartHeight - marginBottom;
+
+  const minPrice = Math.min(...data.map((point) => point.low));
+  const maxPrice = Math.max(...data.map((point) => point.high));
+  const priceRange = Math.max(maxPrice - minPrice, 1);
+  const paddedMinPrice = minPrice - priceRange * 0.08;
+  const paddedMaxPrice = maxPrice + priceRange * 0.08;
+  const paddedRange = Math.max(paddedMaxPrice - paddedMinPrice, 1);
+  const maxVolume = Math.max(...data.map((point) => point.volume), 1);
+  const plotWidth = chartWidth - marginLeft - marginRight;
+  const priceHeight = priceBottom - marginTop;
+  const xStep = data.length === 1 ? 0 : plotWidth / (data.length - 1);
+  const candleWidth = clamp(plotWidth / Math.max(data.length * 2.8, 1), 5, 16);
+
+  const priceToY = (value: number): number =>
+    marginTop + ((paddedMaxPrice - value) / paddedRange) * priceHeight;
+  const volumeToY = (value: number): number =>
+    volumeBottom - (value / maxVolume) * (volumeBottom - volumeTop);
+
+  const chartPoints: ChartPoint[] = data.map((point, index) => ({
+    ...point,
+    x: marginLeft + xStep * index,
+    wickTop: priceToY(point.high),
+    wickBottom: priceToY(point.low),
+    openY: priceToY(point.open),
+    closeY: priceToY(point.close),
+    volumeTop: volumeToY(point.volume),
+    rising: point.close >= point.open
+  }));
+
+  const priceTicks = [paddedMaxPrice, paddedMinPrice + paddedRange / 2, paddedMinPrice];
+  const xTickIndices = createTickIndices(data.length);
+  const firstClose = data[0]?.close ?? 0;
+  const lastPoint = data[data.length - 1];
+  const priceDelta = lastPoint.close - firstClose;
+  const percentDelta = firstClose ? (priceDelta / firstClose) * 100 : 0;
+  const chartTitleId = `candlestick-chart-title-${data.length}-${lastPoint.date}`;
+  const chartDescriptionId = `candlestick-chart-description-${data.length}-${lastPoint.date}`;
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-        <defs>
-          <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={color} stopOpacity={0.2} />
-            <stop offset="95%" stopColor={color} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid
-          strokeDasharray="3 3"
-          vertical={false}
-          stroke="var(--border)"
-          opacity={0.4}
-        />
+    <figure className="flex h-full min-w-0 flex-col rounded-[1.5rem] border border-border/35 bg-background/80 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/35 pb-3">
+        <div>
+          <div className="page-kicker">Market Tape</div>
+          <div className="text-sm text-muted-foreground">
+            Daily price candles with relative volume bars.
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full border border-border/35 bg-mcm-cream/65 px-3 py-1 font-mono text-foreground">
+            Last {formatCurrency(lastPoint.close)}
+          </span>
+          <span
+            className={`rounded-full border px-3 py-1 font-mono ${
+              priceDelta >= 0
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700'
+                : 'border-rose-500/30 bg-rose-500/10 text-rose-700'
+            }`}
+          >
+            {priceDelta >= 0 ? '+' : ''}
+            {formatCurrency(priceDelta)} ({priceDelta >= 0 ? '+' : ''}
+            {percentDelta.toFixed(2)}%)
+          </span>
+          <span className="rounded-full border border-border/35 bg-mcm-cream/65 px-3 py-1 font-mono text-foreground">
+            Vol {formatCompactVolume(lastPoint.volume)}
+          </span>
+        </div>
+      </div>
 
-        <XAxis
-          dataKey="date"
-          tickFormatter={(val) =>
-            new Date(val).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-          }
-          minTickGap={50}
-          tick={{ fontSize: 10, fill: '#94a3b8' }} // slate-400
-          axisLine={false}
-          tickLine={false}
-          dy={10}
-        />
+      <div className="mt-4 flex-1">
+        <svg
+          viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+          className="h-full w-full"
+          role="img"
+          aria-labelledby={chartTitleId}
+          aria-describedby={chartDescriptionId}
+        >
+          <title id={chartTitleId}>Daily price and volume chart</title>
+          <desc id={chartDescriptionId}>
+            Candlestick chart showing open, high, low, close, and relative volume for the selected
+            symbol.
+          </desc>
 
-        {/* Price Axis (Left) */}
-        <YAxis
-          yAxisId="price"
-          domain={[minPrice - pricePadding, maxPrice + pricePadding]}
-          tickFormatter={(val) => val.toFixed(0)}
-          tick={{ fontSize: 10, fill: '#94a3b8' }}
-          width={40}
-          axisLine={false}
-          tickLine={false}
-          orientation="right"
-        />
+          {priceTicks.map((tick) => {
+            const y = priceToY(tick);
+            return (
+              <g key={tick}>
+                <line
+                  x1={marginLeft}
+                  x2={chartWidth - marginRight}
+                  y1={y}
+                  y2={y}
+                  stroke="color-mix(in srgb, var(--mcm-walnut) 18%, transparent)"
+                  strokeDasharray="6 6"
+                />
+                <text
+                  x={chartWidth - marginRight + 8}
+                  y={y + 4}
+                  fill="var(--muted-foreground)"
+                  fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+                  fontSize="11"
+                >
+                  {formatCurrency(tick)}
+                </text>
+              </g>
+            );
+          })}
 
-        {/* Volume Axis (Right/Hidden, scaled down) */}
-        <YAxis
-          yAxisId="volume"
-          domain={[0, maxVol * 4]} // Scale so volume bars only take bottom 1/4
-          hide={true}
-        />
+          <line
+            x1={marginLeft}
+            x2={chartWidth - marginRight}
+            y1={priceBottom}
+            y2={priceBottom}
+            stroke="color-mix(in srgb, var(--mcm-walnut) 28%, transparent)"
+          />
 
-        <Tooltip
-          content={({ active, payload, label }) => {
-            if (active && payload && payload.length) {
-              const d = payload[0].payload as PricePoint;
-              const isUp = d.close > d.open;
-              const labelValue = label ?? d.date;
-              return (
-                <div className="bg-white/95 border border-slate-200 p-3 rounded-lg shadow-xl text-xs font-mono backdrop-blur-sm ring-1 ring-slate-200">
-                  <div className="font-bold mb-2 text-slate-700 border-b border-slate-100 pb-1">
-                    {new Date(labelValue).toLocaleDateString(undefined, {
-                      weekday: 'short',
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric'
-                    })}
-                  </div>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-slate-500">
-                    <span>Open</span>{' '}
-                    <span className="text-right font-medium text-slate-900">
-                      {d.open.toFixed(2)}
-                    </span>
-                    <span>High</span>{' '}
-                    <span className="text-right font-medium text-slate-900">
-                      {d.high.toFixed(2)}
-                    </span>
-                    <span>Low</span>{' '}
-                    <span className="text-right font-medium text-slate-900">
-                      {d.low.toFixed(2)}
-                    </span>
-                    <span>Close</span>{' '}
-                    <span
-                      className={`text-right font-bold ${isUp ? 'text-emerald-600' : 'text-rose-600'}`}
-                    >
-                      {d.close.toFixed(2)}
-                    </span>
-                    <span>Vol</span>{' '}
-                    <span className="text-right font-medium text-slate-700">
-                      {(d.volume / 1000000).toFixed(2)}M
-                    </span>
-                  </div>
-                </div>
-              );
+          <line
+            x1={marginLeft}
+            x2={chartWidth - marginRight}
+            y1={volumeTop}
+            y2={volumeTop}
+            stroke="color-mix(in srgb, var(--mcm-walnut) 18%, transparent)"
+            strokeDasharray="4 6"
+          />
+
+          {chartPoints.map((point) => {
+            const bodyTop = Math.min(point.openY, point.closeY);
+            const bodyHeight = Math.max(Math.abs(point.openY - point.closeY), 2);
+            const candleColor = point.rising ? 'var(--mcm-teal)' : '#c25d2d';
+            const candleFill = point.rising
+              ? 'color-mix(in srgb, var(--mcm-teal) 26%, transparent)'
+              : 'color-mix(in srgb, #c25d2d 26%, transparent)';
+
+            return (
+              <g key={`${point.date}-${point.x}`}>
+                <rect
+                  x={point.x - candleWidth / 2}
+                  y={point.volumeTop}
+                  width={candleWidth}
+                  height={Math.max(volumeBottom - point.volumeTop, 2)}
+                  rx={Math.min(candleWidth / 3, 4)}
+                  fill="color-mix(in srgb, var(--mcm-mustard) 52%, transparent)"
+                />
+                <line
+                  x1={point.x}
+                  x2={point.x}
+                  y1={point.wickTop}
+                  y2={point.wickBottom}
+                  stroke={candleColor}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+                <rect
+                  x={point.x - candleWidth / 2}
+                  y={bodyTop}
+                  width={candleWidth}
+                  height={bodyHeight}
+                  rx={Math.min(candleWidth / 3, 4)}
+                  fill={candleFill}
+                  stroke={candleColor}
+                  strokeWidth="1.5"
+                />
+              </g>
+            );
+          })}
+
+          {xTickIndices.map((index) => {
+            const point = chartPoints[index];
+            if (!point) {
+              return null;
             }
-            return null;
-          }}
-        />
 
-        <Bar
-          yAxisId="volume"
-          dataKey="volume"
-          fill="#e2e8f0"
-          radius={[2, 2, 0, 0]}
-          barSize={data.length > 100 ? 2 : 5}
-        />
-
-        <Area
-          yAxisId="price"
-          type="monotone"
-          dataKey="close"
-          stroke={color}
-          fillOpacity={1}
-          fill="url(#colorPrice)"
-          strokeWidth={2}
-          activeDot={{ r: 4, strokeWidth: 0 }}
-        />
-      </ComposedChart>
-    </ResponsiveContainer>
+            return (
+              <text
+                key={`${point.date}-${index}`}
+                x={point.x}
+                y={chartHeight - 20}
+                textAnchor="middle"
+                fill="var(--muted-foreground)"
+                fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+                fontSize="11"
+              >
+                {formatDateLabel(point.date)}
+              </text>
+            );
+          })}
+        </svg>
+      </div>
+    </figure>
   );
 }
