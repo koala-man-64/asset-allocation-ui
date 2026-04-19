@@ -89,6 +89,12 @@ export const NAV_SECTIONS: NavSection[] = [
         sectionKey: 'live-operations'
       },
       {
+        path: '/intraday-monitor',
+        label: 'Intraday Monitor',
+        icon: Activity,
+        sectionKey: 'live-operations'
+      },
+      {
         path: '/debug-symbols',
         label: 'Debug Symbols',
         icon: Bug,

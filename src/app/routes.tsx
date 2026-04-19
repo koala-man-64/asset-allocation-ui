@@ -76,6 +76,11 @@ const SymbolEnrichmentPage = lazy(() =>
     default: m.SymbolEnrichmentPage
   }))
 );
+const IntradayMonitorPage = lazy(() =>
+  import('@/features/intraday-monitor/IntradayMonitorPage').then((m) => ({
+    default: m.IntradayMonitorPage
+  }))
+);
 
 export function AppRoutes() {
   return (
@@ -87,6 +92,7 @@ export function AppRoutes() {
         <Route path="/data-quality" element={<DataQualityPage />} />
         <Route path="/data-profiling" element={<DataProfilingPage />} />
         <Route path="/system-status" element={<SystemStatusPage />} />
+        <Route path="/intraday-monitor" element={<IntradayMonitorPage />} />
         <Route path="/debug-symbols" element={<DebugSymbolsPage />} />
         <Route path="/runtime-config" element={<RuntimeConfigPage />} />
         <Route path="/symbol-purge" element={<SymbolPurgeByCriteriaPage />} />
