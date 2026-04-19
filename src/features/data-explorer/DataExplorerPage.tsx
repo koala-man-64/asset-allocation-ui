@@ -240,7 +240,7 @@ export const DataExplorerPage: React.FC = () => {
         ]}
       />
 
-      <div className="grid flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_380px]">
+      <div className="desk-grid-explorer flex-1">
         <DataExplorerRail
           layer={layer}
           domain={domain}

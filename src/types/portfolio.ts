@@ -146,12 +146,27 @@ export interface PortfolioPreviewSummary {
   projectedPositionCount: number;
 }
 
+export interface PortfolioPreviewTradeProposal {
+  sleeveId: string;
+  symbol: string;
+  side: 'buy' | 'sell';
+  quantity: number;
+  estimatedPrice: number;
+  estimatedNotional: number;
+  estimatedCommission: number;
+  estimatedSlippageCost: number;
+}
+
 export interface PortfolioPreviewResponse {
   portfolioName: string;
   asOfDate: string;
   summary: PortfolioPreviewSummary;
   allocations: PortfolioPreviewAllocation[];
   warnings: string[];
+  tradeProposals: PortfolioPreviewTradeProposal[];
+  previewSource: 'live-proposal' | 'inferred';
+  blocked: boolean;
+  blockedReasons: string[];
 }
 
 export interface PortfolioAlert {

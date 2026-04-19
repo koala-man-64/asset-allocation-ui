@@ -10,7 +10,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-mcm-mustard text-mcm-walnut border-mcm-walnut shadow-[3px_3px_0px_0px_rgba(119,63,26,0.2)] hover:bg-mcm-mustard/90',
+          'bg-mcm-mustard text-[#42210d] border-mcm-walnut shadow-[3px_3px_0px_0px_rgba(119,63,26,0.2)] hover:bg-mcm-mustard/90',
         destructive:
           'bg-destructive text-destructive-foreground border-mcm-walnut/70 hover:bg-destructive/90',
         outline: 'border-mcm-walnut bg-transparent text-mcm-walnut hover:bg-mcm-paper',

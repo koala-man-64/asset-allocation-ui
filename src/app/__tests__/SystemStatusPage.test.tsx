@@ -5,7 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 
 import { renderWithProviders } from '@/test/utils';
 import { SystemStatusPage } from '@/features/system-status/SystemStatusPage';
-import { getDomainOrderEntries } from '@/app/components/pages/system-status/domainOrdering';
+import { getDomainOrderEntries } from '@/features/system-status/lib/domainOrdering';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { upsertRunningJobOverride } from '@/hooks/useSystemHealthJobOverrides';
 import { DataService } from '@/services/DataService';
@@ -27,7 +27,7 @@ vi.mock('@/services/DataService', () => ({
   }
 }));
 
-vi.mock('@/app/components/pages/system-status/DomainLayerComparisonPanel', () => ({
+vi.mock('@/features/system-status/domain-layer-comparison/DomainLayerComparisonPanel', () => ({
   DomainLayerComparisonPanel: (props: unknown) => {
     domainLayerCoverageSpy(props);
     return (
@@ -36,13 +36,13 @@ vi.mock('@/app/components/pages/system-status/DomainLayerComparisonPanel', () =>
   }
 }));
 
-vi.mock('@/app/components/pages/system-status/ContainerAppsPanel', () => ({
+vi.mock('@/features/system-status/components/ContainerAppsPanel', () => ({
   ContainerAppsPanel: () => (
     <div data-testid="mock-container-apps-panel">Mock Container Apps Panel</div>
   )
 }));
 
-vi.mock('@/app/components/pages/system-status/JobLogStreamPanel', () => ({
+vi.mock('@/features/system-status/components/JobLogStreamPanel', () => ({
   JobLogStreamPanel: (props: unknown) => {
     jobLogStreamSpy(props);
     return <div data-testid="mock-job-log-stream-panel">Mock Job Log Stream Panel</div>;

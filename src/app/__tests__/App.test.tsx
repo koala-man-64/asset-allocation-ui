@@ -79,6 +79,11 @@ vi.mock('@/features/symbol-enrichment/SymbolEnrichmentPage', () => ({
     <div data-testid="mock-symbol-enrichment">Mock Symbol Enrichment</div>
   )
 }));
+vi.mock('@/features/intraday-monitor/IntradayMonitorPage', () => ({
+  IntradayMonitorPage: () => (
+    <div data-testid="mock-intraday-monitor">Mock Intraday Monitor</div>
+  )
+}));
 
 describe('App Smoke Test', () => {
   it('renders without crashing', async () => {
@@ -146,6 +151,13 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-symbol-enrichment')).toBeInTheDocument();
+  });
+
+  it('renders the intraday monitor route through the application shell', async () => {
+    window.history.pushState({}, 'Intraday Monitor', '/intraday-monitor');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-intraday-monitor')).toBeInTheDocument();
   });
 
   it('renders the universe workbench route through the application shell', async () => {

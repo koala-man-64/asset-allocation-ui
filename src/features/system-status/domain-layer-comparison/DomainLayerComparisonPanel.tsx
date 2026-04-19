@@ -45,14 +45,14 @@ import type {
   JobRun,
   ResourceSignal
 } from '@/types/strategy';
-import { StatusTypos } from '@/app/components/pages/system-status/StatusTokens';
+import { StatusTypos } from '@/features/system-status/lib/StatusTokens';
 import {
   normalizeDomainKey,
   normalizeLayerKey
-} from '@/app/components/pages/system-status/SystemPurgeControls';
-import { getDomainOrderEntries } from '@/app/components/pages/system-status/domainOrdering';
+} from '@/features/system-status/components/SystemPurgeControls';
+import { getDomainOrderEntries } from '@/features/system-status/lib/domainOrdering';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
-import { formatSystemStatusText } from '@/app/components/pages/system-status/systemStatusText';
+import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,8 +67,8 @@ import { toast } from 'sonner';
 import {
   DomainListViewerSheet,
   type DomainListViewerTarget
-} from '@/app/components/pages/system-status/DomainListViewerSheet';
-import type { ManagedContainerJob } from '@/app/components/pages/system-status/JobKillSwitchPanel';
+} from '@/features/system-status/components/DomainListViewerSheet';
+import type { ManagedContainerJob } from '@/features/system-status/components/JobKillSwitchPanel';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
 import { useJobTrigger } from '@/hooks/useJobTrigger';
 import {
@@ -85,8 +85,8 @@ import {
   resolveManagedJobName,
   isSuspendedJobRunningState,
   toJobStatusLabel
-} from '@/app/components/pages/system-status/SystemStatusHelpers';
-import { formatMetadataTimestamp } from '@/app/components/pages/system-status/systemStatusClock';
+} from '@/features/system-status/lib/SystemStatusHelpers';
+import { formatMetadataTimestamp } from '@/features/system-status/lib/systemStatusClock';
 
 const LAYER_ORDER = ['bronze', 'silver', 'gold', 'platinum'] as const;
 type LayerKey = (typeof LAYER_ORDER)[number];

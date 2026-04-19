@@ -7,7 +7,7 @@ import { DataLayer } from '@/types/strategy';
 import {
   normalizeAzureJobName,
   resolveManagedJobName
-} from '@/app/components/pages/system-status/SystemStatusHelpers';
+} from '@/features/system-status/lib/SystemStatusHelpers';
 
 type LayerAction = 'stop' | 'resume' | 'trigger';
 

@@ -114,4 +114,200 @@ describe('apiService cold start handling', () => {
       'https://api.example.com/asset-allocation/api/system/health'
     );
   });
+
+  it('builds runtime config, debug symbol, and system status requests with the expected paths', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ scope: 'workspace', items: [] }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          scope: 'workspace',
+          key: 'feature.alpha',
+          value: 'true'
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          scope: 'workspace',
+          key: 'feature.alpha',
+          deleted: true
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ symbols: 'AAPL' }))
+      .mockResolvedValueOnce(jsonResponse({ symbols: 'AAPL' }))
+      .mockResolvedValueOnce(jsonResponse({ deleted: true }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          version: 1,
+          generatedAt: '2026-04-18T14:30:00Z',
+          systemHealth: { overall: 'healthy', dataLayers: [] },
+          metadataSnapshot: {
+            version: 1,
+            updatedAt: '2026-04-18T14:30:00Z',
+            entries: {},
+            warnings: []
+          },
+          sources: {
+            systemHealth: 'live-refresh',
+            metadataSnapshot: 'persisted-snapshot'
+          }
+        })
+      );
+
+    const { apiService } = await importApiService();
+
+    await apiService.getRuntimeConfig('workspace');
+    await apiService.setRuntimeConfig({
+      key: 'feature.alpha',
+      scope: 'workspace',
+      value: 'true',
+      description: 'Enable feature alpha'
+    });
+    await apiService.deleteRuntimeConfig('feature.alpha', 'workspace');
+    await apiService.getDebugSymbols();
+    await apiService.setDebugSymbols({ symbols: 'AAPL' });
+    await apiService.deleteDebugSymbols();
+    await apiService.getSystemStatusView({ refresh: true });
+
+    expect(fetchMock.mock.calls[1]?.[0]).toContain('/api/system/runtime-config?scope=workspace');
+    expect(fetchMock.mock.calls[2]?.[0]).toContain('/api/system/runtime-config');
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit)?.method).toBe('POST');
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit)?.body).toBe(
+      JSON.stringify({
+        key: 'feature.alpha',
+        scope: 'workspace',
+        value: 'true',
+        description: 'Enable feature alpha'
+      })
+    );
+    expect(fetchMock.mock.calls[3]?.[0]).toContain(
+      '/api/system/runtime-config/feature.alpha?scope=workspace'
+    );
+    expect((fetchMock.mock.calls[3]?.[1] as RequestInit)?.method).toBe('DELETE');
+    expect(fetchMock.mock.calls[4]?.[0]).toContain('/api/system/debug-symbols');
+    expect(fetchMock.mock.calls[5]?.[0]).toContain('/api/system/debug-symbols');
+    expect((fetchMock.mock.calls[5]?.[1] as RequestInit)?.method).toBe('PUT');
+    expect((fetchMock.mock.calls[5]?.[1] as RequestInit)?.body).toBe(
+      JSON.stringify({ symbols: 'AAPL' })
+    );
+    expect(fetchMock.mock.calls[6]?.[0]).toContain('/api/system/debug-symbols');
+    expect((fetchMock.mock.calls[6]?.[1] as RequestInit)?.method).toBe('DELETE');
+    expect(fetchMock.mock.calls[7]?.[0]).toContain('/api/system/status-view?refresh=true');
+  });
+
+  it('builds ADLS tree and file preview requests with the expected query params', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          layer: 'gold',
+          container: 'gold',
+          path: 'market/AAPL',
+          truncated: false,
+          scanLimit: 25,
+          entries: []
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          layer: 'gold',
+          path: 'market/AAPL/_delta_log/000000.json',
+          isPlainText: true,
+          truncated: false,
+          maxBytes: 4096,
+          contentPreview: '{}'
+        })
+      );
+
+    const { apiService } = await importApiService();
+
+    await apiService.getAdlsTree({
+      layer: 'gold',
+      path: 'market/AAPL',
+      maxEntries: 25
+    });
+    await apiService.getAdlsFilePreview({
+      layer: 'gold',
+      path: 'market/AAPL/_delta_log/000000.json',
+      maxBytes: 4096,
+      maxDeltaFiles: 7
+    });
+
+    expect(fetchMock.mock.calls[1]?.[0]).toContain(
+      '/api/data/adls/tree?layer=gold&path=market%2FAAPL&max_entries=25'
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toContain(
+      '/api/data/adls/file-preview?layer=gold&path=market%2FAAPL%2F_delta_log%2F000000.json&max_bytes=4096&max_delta_files=7'
+    );
+  });
+
+  it('builds data profiling and stock screener requests with the correct endpoints', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          layer: 'gold',
+          domain: 'market',
+          column: 'close',
+          kind: 'numeric',
+          totalRows: 100,
+          nonNullCount: 100,
+          nullCount: 0,
+          sampleRows: 100,
+          bins: []
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          layer: 'gold',
+          domain: 'regime/latest',
+          column: 'score',
+          kind: 'numeric',
+          totalRows: 100,
+          nonNullCount: 100,
+          nullCount: 0,
+          sampleRows: 100,
+          bins: []
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          asOf: '2026-04-18',
+          total: 1,
+          limit: 25,
+          offset: 50,
+          rows: []
+        })
+      );
+
+    const { apiService } = await importApiService();
+
+    await apiService.getDataProfile('gold', 'market', 'close', {
+      ticker: 'AAPL',
+      bins: 10,
+      sampleRows: 100,
+      topValues: 5
+    });
+    await apiService.getDataProfile('gold', 'regime/latest', 'score', {
+      bins: 12
+    });
+    await apiService.getStockScreener({
+      q: 'AAPL',
+      limit: 25,
+      offset: 50,
+      asOf: '2026-04-18',
+      sort: 'close',
+      direction: 'asc'
+    });
+
+    expect(fetchMock.mock.calls[1]?.[0]).toContain(
+      '/api/data/gold/profile?domain=market&column=close&ticker=AAPL&bins=10&sampleRows=100&topValues=5'
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toContain(
+      '/api/data/gold/regime/latest/profile?column=score&bins=12'
+    );
+    expect(fetchMock.mock.calls[3]?.[0]).toContain(
+      '/api/data/screener?q=AAPL&limit=25&offset=50&asOf=2026-04-18&sort=close&direction=asc'
+    );
+  });
 });

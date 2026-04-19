@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { BarChart3, Database, RefreshCw } from 'lucide-react';
 
 import { PageHero } from '@/app/components/common/PageHero';
@@ -52,6 +51,56 @@ function formatNumber(value: number): string {
 function toInputSafeNumber(raw: string): number {
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function ProfileHistogram({
+  bins,
+  kind
+}: {
+  bins: Array<{ label: string; count: number }>;
+  kind: DataProfilingResponse['kind'];
+}) {
+  const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
+
+  return (
+    <div className="mt-5 rounded-xl border border-border/40 bg-background/80 p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm font-mono">
+        <Database className="h-4 w-4" />
+        {kind === 'date' ? 'Monthly buckets' : 'Numeric histogram'}
+      </div>
+      <div
+        className="overflow-x-auto"
+        tabIndex={0}
+        role="group"
+        aria-label={`${kind === 'date' ? 'Monthly bucket' : 'Numeric'} histogram`}
+      >
+        <div className="flex min-w-[32rem] items-end gap-3 rounded-xl border border-border/35 bg-mcm-cream/45 px-4 pb-4 pt-6">
+          {bins.map((bin) => {
+            const heightPercent = Math.max(12, Math.round((bin.count / maxCount) * 100));
+
+            return (
+              <div key={`${bin.label}-${bin.count}`} className="flex min-w-0 flex-1 flex-col gap-3">
+                <div className="flex min-h-[13rem] items-end">
+                  <div
+                    role="img"
+                    className="w-full rounded-t-lg border border-mcm-walnut/15 bg-gradient-to-t from-mcm-olive to-mcm-teal/70 shadow-sm"
+                    style={{ height: `${heightPercent}%` }}
+                    aria-label={`${bin.label}: ${formatNumber(bin.count)} rows`}
+                  />
+                </div>
+                <div className="text-center">
+                  <div className="font-mono text-xs text-foreground">{formatNumber(bin.count)}</div>
+                  <div className="truncate text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                    {bin.label}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function DataProfilingPage() {
@@ -367,33 +416,7 @@ export function DataProfilingPage() {
                 />
               </div>
 
-              {showChart && (
-                <div className="mt-5 rounded-xl border border-border/40 bg-background/80 p-3">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-mono">
-                    <Database className="h-4 w-4" />
-                    {profile.kind === 'date' ? 'Monthly buckets' : 'Numeric histogram'}
-                  </div>
-                  <div className="h-[340px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} margin={{ left: 8, right: 8, bottom: 54 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis
-                          dataKey="label"
-                          tickLine={false}
-                          axisLine={false}
-                          angle={-30}
-                          textAnchor="end"
-                          height={60}
-                          interval={0}
-                        />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="count" fill="var(--mcm-olive)" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              )}
+              {showChart ? <ProfileHistogram bins={chartData} kind={profile.kind} /> : null}
 
               {isStringProfile && (
                 <div className="mt-5 rounded-xl border border-border/40 bg-background/80 p-3">
