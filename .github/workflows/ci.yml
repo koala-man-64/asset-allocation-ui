@@ -58,7 +58,7 @@ jobs:
           path: asset-allocation-ui
 
       - name: Set up Node.js
-        uses: actions/setup-node@0f5d5dd1c5d67b7f3f95ec0107a649e8e94d7d0d # v4.4.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
 
@@ -104,7 +104,7 @@ jobs:
           path: asset-allocation-ui
 
       - name: Set up Node.js
-        uses: actions/setup-node@0f5d5dd1c5d67b7f3f95ec0107a649e8e94d7d0d # v4.4.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
 
