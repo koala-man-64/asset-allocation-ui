@@ -25,6 +25,7 @@ describe('navigationModel', () => {
       '/data-explorer',
       '/data-quality'
     ]);
+    expect(normalizedOrder['live-operations']).toContain('/symbol-enrichment');
     expect(normalizedOrder['live-operations']).toContain('/portfolios');
     expect(normalizedOrder['live-operations']).toContain('/rankings');
   });

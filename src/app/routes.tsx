@@ -71,6 +71,11 @@ const SymbolPurgeByCriteriaPage = lazy(() =>
     default: m.SymbolPurgeByCriteriaPage
   }))
 );
+const SymbolEnrichmentPage = lazy(() =>
+  import('@/features/symbol-enrichment/SymbolEnrichmentPage').then((m) => ({
+    default: m.SymbolEnrichmentPage
+  }))
+);
 
 export function AppRoutes() {
   return (
@@ -85,6 +90,7 @@ export function AppRoutes() {
         <Route path="/debug-symbols" element={<DebugSymbolsPage />} />
         <Route path="/runtime-config" element={<RuntimeConfigPage />} />
         <Route path="/symbol-purge" element={<SymbolPurgeByCriteriaPage />} />
+        <Route path="/symbol-enrichment" element={<SymbolEnrichmentPage />} />
         <Route path="/stock-explorer" element={<StockExplorerPage />} />
         <Route path="/strategies" element={<StrategyConfigPage />} />
         <Route path="/portfolios" element={<PortfolioWorkspacePage />} />
