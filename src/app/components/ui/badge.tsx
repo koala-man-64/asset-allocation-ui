@@ -9,7 +9,7 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-mcm-walnut bg-mcm-mustard text-mcm-walnut hover:bg-mcm-mustard/90',
+        default: 'border-mcm-walnut bg-mcm-mustard text-[#42210d] hover:bg-mcm-mustard/90',
         secondary: 'border-mcm-walnut bg-mcm-cream text-mcm-walnut hover:bg-mcm-paper',
         destructive:
           'border-mcm-walnut bg-destructive text-destructive-foreground hover:bg-destructive/90',

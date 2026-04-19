@@ -2,8 +2,8 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 
-import { UniverseRuleBuilder } from '@/app/components/pages/strategy-editor/UniverseRuleBuilder';
-import { buildEmptyUniverse } from '@/app/components/pages/strategy-editor/universeUtils';
+import { UniverseRuleBuilder } from '@/features/universes/components/UniverseRuleBuilder';
+import { buildEmptyUniverse } from '@/features/universes/lib/universeUtils';
 import { strategyApi } from '@/services/strategyApi';
 import { renderWithProviders } from '@/test/utils';
 import type { UniverseDefinition } from '@/types/strategy';

@@ -20,6 +20,7 @@ import {
   setInteractiveAuthHandler
 } from '@/services/authTransport';
 import { queryKeys } from '@/hooks/useDataQueries';
+import { intradayMonitorKeys } from '@/services/intradayMonitorApi';
 import { REALTIME_SUBSCRIBE_EVENT, addConsoleLogStreamListener } from '@/services/realtimeBus';
 
 class MockWebSocket {
@@ -285,6 +286,45 @@ describe('useRealtime', () => {
           JSON.stringify(queryKeys.domainMetadataSnapshot('all', 'all'))
         ])
       );
+    });
+  });
+
+  it('invalidates intraday queries when intraday topics publish updates', async () => {
+    const queryClient = createQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+    const ws = MockWebSocket.instances[0];
+
+    act(() => {
+      ws.open();
+    });
+
+    act(() => {
+      ws.emitJson({
+        topic: 'intraday-monitor',
+        data: {
+          type: 'run.completed',
+          payload: {
+            runId: 'run-123'
+          }
+        }
+      });
+    });
+
+    await waitFor(() => {
+      const invalidatedKeys = invalidateSpy.mock.calls.map(([options]) =>
+        JSON.stringify(options?.queryKey)
+      );
+      expect(invalidatedKeys).toContain(JSON.stringify(intradayMonitorKeys.all()));
     });
   });
 

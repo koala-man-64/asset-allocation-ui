@@ -18,15 +18,7 @@ interface PostgresResultDossierProps {
   onRowClick?: (row: RowData) => void;
 }
 
-function SummaryTile({
-  label,
-  value,
-  detail
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function SummaryTile({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
       <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
@@ -52,7 +44,7 @@ export function PostgresResultDossier({
   onRowClick
 }: PostgresResultDossierProps) {
   return (
-    <section className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+    <section className="desk-pane">
       <div className="border-b border-border/40 px-6 py-5">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
@@ -77,7 +69,7 @@ export function PostgresResultDossier({
         </div>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-hidden p-6">
+      <div className="desk-pane-scroll space-y-5 p-6">
         <div className="grid gap-4 md:grid-cols-3">
           <SummaryTile
             label="Rows Visible"

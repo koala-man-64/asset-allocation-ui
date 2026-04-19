@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle
@@ -26,7 +27,7 @@ import {
   TableRow
 } from '@/app/components/ui/table';
 import { Textarea } from '@/app/components/ui/textarea';
-import { formatTimeAgo } from '@/app/components/pages/system-status/SystemStatusHelpers';
+import { formatTimeAgo } from '@/features/system-status/lib/SystemStatusHelpers';
 import {
   queryKeys,
   useRuntimeConfigCatalogQuery,
@@ -316,6 +317,10 @@ export function RuntimeConfigPage() {
         <DialogContent className="max-w-[720px]">
           <DialogHeader>
             <DialogTitle>Update Runtime Config</DialogTitle>
+            <DialogDescription>
+              Review the selected override, update the persisted value, and adjust the operator note
+              that explains why this scope differs from the environment default.
+            </DialogDescription>
           </DialogHeader>
 
           {editing && (

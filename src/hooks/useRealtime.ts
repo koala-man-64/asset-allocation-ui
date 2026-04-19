@@ -12,6 +12,7 @@ import {
 } from '@/services/authTransport';
 import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
 import { backtestKeys } from '@/services/backtestHooks';
+import { intradayMonitorKeys } from '@/services/intradayMonitorApi';
 import {
   CONSOLE_LOG_STREAM_EVENT_TYPE,
   REALTIME_SUBSCRIBE_EVENT,
@@ -308,6 +309,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
       if (!eventType && typeof envelope.type === 'string') {
         eventType = envelope.type;
       }
+      const normalizedEventType = eventType || '';
 
       if (eventType === CONSOLE_LOG_STREAM_EVENT_TYPE && topic && isRecord(payload)) {
         const resourceType =
@@ -353,10 +355,10 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
         topic === 'system-health' ||
         topic === 'jobs' ||
         topic === 'container-apps' ||
-        eventType === 'SYSTEM_HEALTH_UPDATE' ||
-        eventType === 'JOB_STATE_CHANGED' ||
-        eventType === 'CONTAINER_APP_STATE_CHANGED' ||
-        eventType === 'DOMAIN_METADATA_SNAPSHOT_CHANGED';
+        normalizedEventType === 'SYSTEM_HEALTH_UPDATE' ||
+        normalizedEventType === 'JOB_STATE_CHANGED' ||
+        normalizedEventType === 'CONTAINER_APP_STATE_CHANGED' ||
+        normalizedEventType === 'DOMAIN_METADATA_SNAPSHOT_CHANGED';
 
       if (shouldRefreshSystem) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() });
@@ -364,19 +366,29 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
         void queryClient.invalidateQueries({ queryKey: CONTAINER_APPS_QUERY_KEY });
       }
 
-      if (topic === 'system-health' || eventType === 'DOMAIN_METADATA_SNAPSHOT_CHANGED') {
+      if (topic === 'system-health' || normalizedEventType === 'DOMAIN_METADATA_SNAPSHOT_CHANGED') {
         void queryClient.invalidateQueries({
           queryKey: queryKeys.domainMetadataSnapshot('all', 'all')
         });
       }
 
-      if (topic === 'runtime-config' || eventType === 'RUNTIME_CONFIG_CHANGED') {
+      if (topic === 'runtime-config' || normalizedEventType === 'RUNTIME_CONFIG_CHANGED') {
         void queryClient.invalidateQueries({ queryKey: queryKeys.runtimeConfigCatalog() });
         void queryClient.invalidateQueries({ queryKey: ['runtimeConfig'] });
       }
 
-      if (topic === 'debug-symbols' || eventType === 'DEBUG_SYMBOLS_CHANGED') {
+      if (topic === 'debug-symbols' || normalizedEventType === 'DEBUG_SYMBOLS_CHANGED') {
         void queryClient.invalidateQueries({ queryKey: queryKeys.debugSymbols() });
+      }
+
+      if (
+        topic === 'intraday-monitor' ||
+        topic === 'intraday-refresh' ||
+        normalizedEventType.startsWith('watchlist.') ||
+        normalizedEventType.startsWith('run.') ||
+        normalizedEventType.startsWith('refresh.')
+      ) {
+        void queryClient.invalidateQueries({ queryKey: intradayMonitorKeys.all() });
       }
     }
 

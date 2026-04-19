@@ -33,15 +33,7 @@ interface PostgresQueryDeckProps {
   onUpdateFilterValue: (filterId: string, value: string) => void;
 }
 
-function DeckMetric({
-  label,
-  value,
-  detail
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function DeckMetric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
       <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
@@ -78,7 +70,7 @@ export function PostgresQueryDeck({
   const columns = tableMetadata?.columns || [];
 
   return (
-    <aside className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+    <aside className="desk-pane">
       <div className="border-b border-border/40 px-5 py-5">
         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
           Query Deck
@@ -89,7 +81,7 @@ export function PostgresQueryDeck({
         </p>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-auto p-5">
+      <div className="desk-pane-scroll space-y-5 p-5">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
           <DeckMetric
             label="Schemas"
@@ -254,7 +246,8 @@ export function PostgresQueryDeck({
           ) : (
             <div className="space-y-3">
               {queryFilters.map((filter, index) => {
-                const column = columns.find((item) => item.name === filter.columnName) || columns[0];
+                const column =
+                  columns.find((item) => item.name === filter.columnName) || columns[0];
                 const operatorOptions = getFilterOperatorOptions(column?.data_type || '');
                 const valueRequired = queryFilterOperatorNeedsValue(filter.operator);
                 const columnId = `postgres-filter-column-${filter.id}`;
@@ -314,7 +307,10 @@ export function PostgresQueryDeck({
                         id={operatorId}
                         value={filter.operator}
                         onChange={(event) =>
-                          onUpdateFilterOperator(filter.id, event.target.value as QueryFilterOperator)
+                          onUpdateFilterOperator(
+                            filter.id,
+                            event.target.value as QueryFilterOperator
+                          )
                         }
                         className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring/40"
                       >

@@ -10,7 +10,7 @@ import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Textarea } from '@/app/components/ui/textarea';
-import { formatTimeAgo } from '@/app/components/pages/system-status/SystemStatusHelpers';
+import { formatTimeAgo } from '@/features/system-status/lib/SystemStatusHelpers';
 import { queryKeys, useDebugSymbolsQuery } from '@/hooks/useDataQueries';
 import { DataService } from '@/services/DataService';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';

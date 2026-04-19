@@ -6,13 +6,13 @@ import { toast } from 'sonner';
 import { PageHero } from '@/app/components/common/PageHero';
 import { PageLoader } from '@/app/components/common/PageLoader';
 import { StatePanel } from '@/app/components/common/StatePanel';
-import { UniverseRuleBuilder } from '@/app/components/pages/strategy-editor/UniverseRuleBuilder';
+import { UniverseRuleBuilder } from '@/features/universes/components/UniverseRuleBuilder';
 import {
   buildEmptyUniverse,
   collectUniverseFields,
   countUniverseConditions,
   summarizeUniverse
-} from '@/app/components/pages/strategy-editor/universeUtils';
+} from '@/features/universes/lib/universeUtils';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import {

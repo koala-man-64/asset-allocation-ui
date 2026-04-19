@@ -36,7 +36,7 @@ export function DataExplorerPreviewDossier({
   const displayedPreviewRows = Math.min(previewRowCount, previewRowLimit);
 
   return (
-    <section className="mcm-panel flex min-h-[720px] flex-col overflow-hidden">
+    <section className="desk-pane">
       <div className="border-b border-border/40 px-6 py-5">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
@@ -71,7 +71,7 @@ export function DataExplorerPreviewDossier({
         </p>
       </div>
 
-      <div className="flex-1 overflow-auto p-5">
+      <div className="desk-pane-scroll p-5">
         {!selectedFilePath ? (
           <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/60 p-4 font-mono text-sm text-muted-foreground">
             Choose a file to preview plaintext content.

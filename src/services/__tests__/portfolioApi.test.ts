@@ -431,6 +431,61 @@ describe('portfolioApi', () => {
     expect(fetchMock).toHaveBeenCalledTimes(0);
     expect(result.summary.targetWeightPct).toBe(95);
     expect(result.summary.residualCashPct).toBe(5);
+    expect(result.previewSource).toBe('inferred');
+    expect(result.tradeProposals).toEqual([]);
+  });
+
+  it('maps live preview trade proposals into the local preview model', async () => {
+    mockWarmup();
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          proposalId: 'proposal-1',
+          accountId: 'acct-core',
+          asOf: '2026-04-18',
+          portfolioName: 'macro-core',
+          portfolioVersion: 4,
+          blocked: false,
+          warnings: ['Desk warning'],
+          blockedReasons: [],
+          estimatedCashImpact: -21500,
+          estimatedTurnover: 0.042,
+          trades: [
+            {
+              sleeveId: 'macro-trend',
+              symbol: 'MSFT',
+              side: 'buy',
+              quantity: 50,
+              estimatedPrice: 430,
+              estimatedNotional: 21500,
+              estimatedCommission: 18,
+              estimatedSlippageCost: 9
+            }
+          ]
+        })
+      );
+
+    const { portfolioApi } = await importPortfolioApi();
+    const result = await portfolioApi.previewPortfolio({
+      portfolio: savedDetail,
+      asOfDate: '2026-04-18'
+    });
+
+    const previewUrl = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+    expect(previewUrl.pathname).toBe('/api/portfolio-accounts/acct-core/rebalances/preview');
+    expect(result.previewSource).toBe('live-proposal');
+    expect(result.tradeProposals).toEqual([
+      {
+        sleeveId: 'macro-trend',
+        symbol: 'MSFT',
+        side: 'buy',
+        quantity: 50,
+        estimatedPrice: 430,
+        estimatedNotional: 21500,
+        estimatedCommission: 18,
+        estimatedSlippageCost: 9
+      }
+    ]);
   });
 
   it('reads materialization state through the internal rebuild status surface', async () => {
