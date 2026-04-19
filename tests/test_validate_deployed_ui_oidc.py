@@ -10,14 +10,18 @@ import pytest
 
 def repo_root() -> Path:
     for candidate in Path(__file__).resolve().parents:
-        if (candidate / "package.json").exists() and (candidate / ".github" / "workflows").is_dir():
+        if (candidate / "package.json").exists() and (
+            candidate / ".github" / "workflows"
+        ).is_dir():
             return candidate
     raise AssertionError("Could not resolve repository root from test path")
 
 
 def load_validator_module():
     module_path = repo_root() / "scripts" / "validate_deployed_ui_oidc.py"
-    spec = importlib.util.spec_from_file_location("validate_deployed_ui_oidc", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "validate_deployed_ui_oidc", module_path
+    )
     if spec is None or spec.loader is None:
         raise AssertionError(f"Could not load module spec for {module_path}")
     module = importlib.util.module_from_spec(spec)

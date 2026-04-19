@@ -19,6 +19,8 @@ Local verification:
 ```powershell
 $env:NPM_CONFIG_USERCONFIG = "C:\path\to\ui.npmrc"
 corepack pnpm install --frozen-lockfile
+python -m pip install --upgrade pip pytest ruff
+python -m pytest tests -q
 corepack pnpm build
 corepack pnpm vitest run src\app\__tests__\App.auth.test.tsx src\contexts\__tests__\AuthContext.test.tsx
 ```

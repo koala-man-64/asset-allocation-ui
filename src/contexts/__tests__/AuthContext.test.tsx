@@ -253,6 +253,28 @@ describe('AuthProvider', () => {
     });
   });
 
+  it('restores the callback session silently when the redirect result does not include an account', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'Callback', '/auth/callback');
+    mockMsal.handleRedirectPromise.mockResolvedValueOnce(null);
+    mockMsal.ssoSilent.mockResolvedValueOnce({ account });
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
+        scopes: ['api://asset-allocation-api/user_impersonation']
+      });
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+    });
+  });
+
   it('switches into session-expired when background reauth is requested', async () => {
     const account = { username: 'analyst@example.com', name: 'Analyst' };
     mockConfig.authRequired = true;

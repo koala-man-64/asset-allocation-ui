@@ -50,11 +50,15 @@ def resolve_default_repo() -> str:
     normalized = remote.removesuffix(".git")
     marker = "github.com"
     if marker not in normalized:
-        raise ValidationError(f"Unsupported remote origin for GitHub repo inference: {remote}")
+        raise ValidationError(
+            f"Unsupported remote origin for GitHub repo inference: {remote}"
+        )
 
     repo_slug = normalized.split(marker, maxsplit=1)[1].lstrip(":/")
     if repo_slug.count("/") != 1:
-        raise ValidationError(f"Could not infer owner/repo from remote origin: {remote}")
+        raise ValidationError(
+            f"Could not infer owner/repo from remote origin: {remote}"
+        )
     return repo_slug
 
 
@@ -96,11 +100,15 @@ def load_repo_variable_map(repo: str) -> dict[str, str]:
 
 def missing_prod_runtime_vars(variable_map: Mapping[str, str]) -> list[str]:
     missing = [
-        name for name in PROD_RUNTIME_ALWAYS_REQUIRED if not normalize_text(variable_map.get(name, ""))
+        name
+        for name in PROD_RUNTIME_ALWAYS_REQUIRED
+        if not normalize_text(variable_map.get(name, ""))
     ]
     if parse_bool(variable_map.get("UI_AUTH_ENABLED")):
         missing.extend(
-            name for name in PROD_RUNTIME_AUTH_REQUIRED if not normalize_text(variable_map.get(name, ""))
+            name
+            for name in PROD_RUNTIME_AUTH_REQUIRED
+            if not normalize_text(variable_map.get(name, ""))
         )
     return missing
 
@@ -146,7 +154,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         repo = args.repo or resolve_default_repo()
-        variable_map = parse_variable_map_json(args.vars_json) if args.vars_json else load_repo_variable_map(repo)
+        variable_map = (
+            parse_variable_map_json(args.vars_json)
+            if args.vars_json
+            else load_repo_variable_map(repo)
+        )
         validate_repo_variables(variable_map, args.mode)
     except ValidationError as exc:
         print(str(exc), file=sys.stderr)
@@ -161,7 +173,9 @@ def main(argv: list[str] | None = None) -> int:
     if parse_bool(variable_map.get("UI_AUTH_ENABLED")):
         print("UI auth enabled: verified required OIDC repo vars are present.")
     else:
-        print("UI auth disabled: OIDC repo vars not required by prod-runtime preflight.")
+        print(
+            "UI auth disabled: OIDC repo vars not required by prod-runtime preflight."
+        )
     return 0
 
 

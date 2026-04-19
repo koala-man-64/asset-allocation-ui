@@ -40,7 +40,9 @@ def normalize_ui_origin(ui_origin: str) -> str:
 
     parsed = urlsplit(candidate)
     if not parsed.scheme or not parsed.netloc:
-        raise ValidationError("--ui-origin must be an absolute URL such as https://asset-allocation-ui.example.com.")
+        raise ValidationError(
+            "--ui-origin must be an absolute URL such as https://asset-allocation-ui.example.com."
+        )
 
     return f"{parsed.scheme}://{parsed.netloc}"
 
@@ -58,20 +60,30 @@ def fetch_text(url: str, timeout_seconds: float) -> str:
 def parse_runtime_config(script_text: str, source_label: str) -> dict[str, Any]:
     match = CONFIG_ASSIGNMENT_PATTERN.search(script_text)
     if not match:
-        raise ValidationError(f"Could not parse {source_label} window.__API_UI_CONFIG__ payload.")
+        raise ValidationError(
+            f"Could not parse {source_label} window.__API_UI_CONFIG__ payload."
+        )
 
     try:
         payload = json.loads(match.group(1))
     except json.JSONDecodeError as exc:
-        raise ValidationError(f"{source_label} does not contain valid JSON for window.__API_UI_CONFIG__.") from exc
+        raise ValidationError(
+            f"{source_label} does not contain valid JSON for window.__API_UI_CONFIG__."
+        ) from exc
 
     if not isinstance(payload, dict):
-        raise ValidationError(f"{source_label} window.__API_UI_CONFIG__ payload must be a JSON object.")
+        raise ValidationError(
+            f"{source_label} window.__API_UI_CONFIG__ payload must be a JSON object."
+        )
     return payload
 
 
 def validate_ui_config_override(script_text: str) -> None:
-    missing = [fragment for fragment in REQUIRED_UI_CONFIG_FRAGMENTS if fragment not in script_text]
+    missing = [
+        fragment
+        for fragment in REQUIRED_UI_CONFIG_FRAGMENTS
+        if fragment not in script_text
+    ]
     if missing:
         raise ValidationError(
             "ui-config.js is missing the runtime same-origin OIDC override fragments: "
@@ -128,9 +140,13 @@ def validate_deployed_ui_oidc(
         validate_required_string(config, "oidcClientId")
         validate_required_string(config, "oidcScopes")
         if not advertised_oidc_enabled:
-            raise ValidationError("ui-config.js must advertise oidcEnabled=true when UI auth is enabled.")
+            raise ValidationError(
+                "ui-config.js must advertise oidcEnabled=true when UI auth is enabled."
+            )
     elif advertised_oidc_enabled:
-        raise ValidationError("ui-config.js must advertise oidcEnabled=false when UI auth is disabled.")
+        raise ValidationError(
+            "ui-config.js must advertise oidcEnabled=false when UI auth is disabled."
+        )
 
     return {
         "ui_origin": origin,
@@ -186,9 +202,13 @@ def main(argv: list[str] | None = None) -> int:
     config = result["config"]
     print(f"Validated deployed UI OIDC for {result['ui_origin']}")
     print(f"apiBaseUrl={config.get('apiBaseUrl')}")
-    print(f"authRequired={config.get('authRequired')} oidcEnabled={config.get('oidcEnabled')}")
+    print(
+        f"authRequired={config.get('authRequired')} oidcEnabled={config.get('oidcEnabled')}"
+    )
     print(f"expectedOidcRedirectUri={result['expected_redirect_uri']}")
-    print(f"expectedOidcPostLogoutRedirectUri={result['expected_post_logout_redirect_uri']}")
+    print(
+        f"expectedOidcPostLogoutRedirectUri={result['expected_post_logout_redirect_uri']}"
+    )
     return 0
 
 

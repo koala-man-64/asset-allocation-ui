@@ -6,13 +6,17 @@ from pathlib import Path
 
 def repo_root() -> Path:
     for candidate in Path(__file__).resolve().parents:
-        if (candidate / "package.json").exists() and (candidate / ".github" / "workflows").is_dir():
+        if (candidate / "package.json").exists() and (
+            candidate / ".github" / "workflows"
+        ).is_dir():
             return candidate
     raise AssertionError("Could not resolve repository root from test path")
 
 
 def contracts_version() -> str:
-    package_json = json.loads((repo_root() / "package.json").read_text(encoding="utf-8"))
+    package_json = json.loads(
+        (repo_root() / "package.json").read_text(encoding="utf-8")
+    )
     return package_json["dependencies"]["@asset-allocation/contracts"]
 
 
@@ -80,4 +84,6 @@ def test_contracts_compat_workflow_is_the_only_checkout_exception() -> None:
     assert "DISPATCH_CONTRACTS_VERSION" in text
     assert "pnpm install --lockfile-only --no-frozen-lockfile" in text
     assert "git push origin HEAD:${{ steps.contracts.outputs.ui_ref }}" in text
-    assert text.index("Pin released contracts version") < text.index("Run compatibility suite")
+    assert text.index("Pin released contracts version") < text.index(
+        "Run compatibility suite"
+    )

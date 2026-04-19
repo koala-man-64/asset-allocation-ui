@@ -150,7 +150,7 @@ export function getMsalSession(config: MsalSessionConfig): MsalSessionHandle | n
           };
         }
 
-        if (!request.authRequired || request.onCallbackPath || request.onLogoutCompletePath) {
+        if (!request.authRequired || request.onLogoutCompletePath) {
           return {
             redirectResult,
             account: null,

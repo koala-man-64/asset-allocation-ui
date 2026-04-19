@@ -36,7 +36,9 @@ IGNORED_DIRS = {
 
 def _run(cmd: List[str], cwd: Path) -> Optional[str]:
     try:
-        out = subprocess.check_output(cmd, cwd=str(cwd), stderr=subprocess.STDOUT, text=True)
+        out = subprocess.check_output(
+            cmd, cwd=str(cwd), stderr=subprocess.STDOUT, text=True
+        )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
     return out.strip()
@@ -78,7 +80,9 @@ def _workflow_signals(text: str) -> Dict[str, Any]:
 
     return {
         "has_permissions": bool(re.search(r"(?m)^\\s*permissions\\s*:", text)),
-        "has_write_all": bool(re.search(r"(?m)^\\s*permissions\\s*:\\s*write-all\\s*$", text)),
+        "has_write_all": bool(
+            re.search(r"(?m)^\\s*permissions\\s*:\\s*write-all\\s*$", text)
+        ),
         "has_pull_request_target": "pull_request_target" in text,
         "has_curl_pipe_shell": bool(re.search(r"curl[^\\n]*\\|\\s*(bash|sh)\\b", text)),
         "has_wget_pipe_shell": bool(re.search(r"wget[^\\n]*\\|\\s*(bash|sh)\\b", text)),
@@ -150,7 +154,8 @@ def build_snapshot(repo: Path) -> Dict[str, Any]:
     workflows_dir = repo / ".github" / "workflows"
     if workflows_dir.exists() and workflows_dir.is_dir():
         workflow_files = sorted(
-            [p for p in workflows_dir.glob("*.yml")] + [p for p in workflows_dir.glob("*.yaml")]
+            [p for p in workflows_dir.glob("*.yml")]
+            + [p for p in workflows_dir.glob("*.yaml")]
         )
         snapshot["workflows"]["path"] = str(workflows_dir.relative_to(repo))
         for wf in workflow_files:
@@ -169,9 +174,13 @@ def build_snapshot(repo: Path) -> Dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate a repo audit snapshot (sanitized).")
+    parser = argparse.ArgumentParser(
+        description="Generate a repo audit snapshot (sanitized)."
+    )
     parser.add_argument("--repo", default=".", help="Path to repo root (default: .)")
-    parser.add_argument("--out", default=None, help="Write JSON output to this path (default: stdout)")
+    parser.add_argument(
+        "--out", default=None, help="Write JSON output to this path (default: stdout)"
+    )
     args = parser.parse_args()
 
     snapshot = build_snapshot(Path(args.repo))
