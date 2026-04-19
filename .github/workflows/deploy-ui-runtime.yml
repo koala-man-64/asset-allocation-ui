@@ -199,9 +199,11 @@ jobs:
             --ui-origin "https://${UI_PUBLIC_HOSTNAME}" \
             --ui-auth-enabled "${UI_AUTH_ENABLED}"
 
-          echo "bound_hostname=${UI_PUBLIC_HOSTNAME}" >> "$GITHUB_OUTPUT"
-          echo "cname_target=${fqdn}" >> "$GITHUB_OUTPUT"
-          echo "verification_id=${verification_id}" >> "$GITHUB_OUTPUT"
+          {
+            echo "bound_hostname=${UI_PUBLIC_HOSTNAME}"
+            echo "cname_target=${fqdn}"
+            echo "verification_id=${verification_id}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Write deployment summary
         shell: bash
