@@ -4,10 +4,6 @@ import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 function normalizeProxyMountPath(raw: string): string {
   const trimmed = (raw || '').replace(/\/+$/, '')
   if (!trimmed || trimmed === '/') return ''
@@ -24,10 +20,6 @@ function joinPath(prefix: string, path: string): string {
   const suffix = (path || '').startsWith('/') ? String(path || '') : `/${String(path || '')}`
   if (!base) return suffix || '/'
   return `${base}${suffix || '/'}`
-}
-
-function isTruthy(value: unknown): boolean {
-  return ['1', 'true', 't', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase())
 }
 
 export default defineConfig(({ mode }) => {
@@ -52,16 +44,6 @@ export default defineConfig(({ mode }) => {
   const apiProxyOrigin = parsedApiProxyTarget ? parsedApiProxyTarget.origin : apiProxyTarget
   const apiProxyMountPath = normalizeProxyMountPath(parsedApiProxyTarget?.pathname || '')
 
-  const apiRootPrefixRaw = env.API_ROOT_PREFIX || process.env.API_ROOT_PREFIX || ''
-  const apiRootPrefix = (() => {
-    const value = String(apiRootPrefixRaw || '').trim()
-    if (!value || value === '/') return ''
-    const trimmed = value.replace(/^\/+/, '').replace(/\/+$/, '')
-    return trimmed ? `/${trimmed}` : ''
-  })()
-  const apiRootPrefixRe = apiRootPrefix ? new RegExp(`^${escapeRegExp(apiRootPrefix)}`) : null
-  const proxyConfigJs = isTruthy(env.VITE_PROXY_CONFIG_JS || process.env.VITE_PROXY_CONFIG_JS)
-
   return {
     test: {
       globals: true,
@@ -83,8 +65,6 @@ export default defineConfig(({ mode }) => {
       port: serverPort,
       strictPort: true,
       proxy: {
-        // Health and readiness stay root-scoped on the upstream origin even when
-        // API requests are mounted under a prefixed /<root>/api path.
         '/healthz': {
           target: apiProxyOrigin,
           changeOrigin: true,
@@ -99,38 +79,6 @@ export default defineConfig(({ mode }) => {
           ws: true,
           rewrite: (path) => joinPath(apiProxyMountPath, path),
         },
-        ...(proxyConfigJs
-          ? {
-              '/config.js': {
-                target: apiProxyOrigin,
-                changeOrigin: true,
-              },
-            }
-          : {}),
-        ...(apiRootPrefix
-          ? {
-              // Prefixed API traffic keeps the configured API mount. Health endpoints
-              // stay rooted at /healthz and /readyz rather than using the prefix.
-              [`${apiRootPrefix}/api`]: {
-                target: apiProxyOrigin,
-                changeOrigin: true,
-                ws: true,
-                rewrite: (path) => {
-                  const stripped = apiRootPrefixRe ? path.replace(apiRootPrefixRe, '') : path
-                  return joinPath(apiProxyMountPath, stripped)
-                },
-              },
-              ...(proxyConfigJs
-                ? {
-                    [`${apiRootPrefix}/config.js`]: {
-                      target: apiProxyOrigin,
-                      changeOrigin: true,
-                      rewrite: (path) => (apiRootPrefixRe ? path.replace(apiRootPrefixRe, '') : path),
-                    },
-                  }
-                : {}),
-            }
-          : {}),
       },
     },
     resolve: {

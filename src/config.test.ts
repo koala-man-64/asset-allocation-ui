@@ -59,4 +59,32 @@ describe('config auth overrides', () => {
       'https://asset-allocation.example.com/auth/logout-complete'
     );
   });
+
+  it('uses the UI auth toggle as the authRequired fallback when the bootstrap omits authRequired', async () => {
+    vi.stubEnv('VITE_UI_AUTH_ENABLED', 'true');
+    window.__API_UI_CONFIG__ = {
+      apiBaseUrl: '/api',
+      oidcAuthority: 'https://login.microsoftonline.com/example',
+      oidcClientId: 'spa-client-id',
+      oidcRedirectUri: 'https://asset-allocation.example.com/auth/callback',
+      oidcScopes: ['api://asset-allocation-api/user_impersonation']
+    };
+
+    const { config } = await import('./config');
+
+    expect(config.uiAuthEnabled).toBe(true);
+    expect(config.authRequired).toBe(true);
+    expect(config.oidcEnabled).toBe(true);
+  });
+
+  it('reads oidcAudience from the Vite env fallback when the bootstrap omits it', async () => {
+    vi.stubEnv('VITE_OIDC_AUDIENCE', 'api://asset-allocation-api');
+    window.__API_UI_CONFIG__ = {
+      apiBaseUrl: '/api'
+    };
+
+    const { config } = await import('./config');
+
+    expect(config.oidcAudience).toEqual(['api://asset-allocation-api']);
+  });
 });

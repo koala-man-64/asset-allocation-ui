@@ -22,12 +22,17 @@ jobs:
       API_UPSTREAM: ${{ vars.API_UPSTREAM }}
       API_UPSTREAM_SCHEME: ${{ vars.API_UPSTREAM_SCHEME || 'https' }}
       UI_AUTH_ENABLED: ${{ vars.UI_AUTH_ENABLED || 'true' }}
+      UI_OIDC_AUTHORITY: ${{ vars.UI_OIDC_AUTHORITY }}
+      UI_OIDC_CLIENT_ID: ${{ vars.UI_OIDC_CLIENT_ID }}
+      UI_OIDC_SCOPES: ${{ vars.UI_OIDC_SCOPES }}
+      UI_OIDC_AUDIENCE: ${{ vars.UI_OIDC_AUDIENCE }}
       RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
       ACR_NAME: ${{ vars.ACR_NAME }}
       ACR_PULL_IDENTITY_NAME: ${{ vars.ACR_PULL_IDENTITY_NAME || 'asset-allocation-acr-pull-mi' }}
       CONTAINER_APPS_ENVIRONMENT_NAME: ${{ vars.CONTAINER_APPS_ENVIRONMENT_NAME || 'asset-allocation-env' }}
       SERVICE_ACCOUNT_NAME: ${{ vars.SERVICE_ACCOUNT_NAME || 'asset-allocation-sa' }}
       UI_APP_NAME: ${{ vars.UI_APP_NAME || 'asset-allocation-ui' }}
+      UI_PUBLIC_HOSTNAME: ${{ vars.UI_PUBLIC_HOSTNAME }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -40,6 +45,7 @@ jobs:
           image_digest="${{ inputs.image_digest }}"
           api_upstream="${API_UPSTREAM}"
           api_upstream_scheme="$(printf '%s' "${API_UPSTREAM_SCHEME}" | tr '[:upper:]' '[:lower:]')"
+          ui_auth_enabled="$(printf '%s' "${UI_AUTH_ENABLED}" | tr '[:upper:]' '[:lower:]')"
           : "${image_digest:?image_digest is required}"
           : "${api_upstream:?vars.API_UPSTREAM is required}"
           case "${api_upstream_scheme}" in
@@ -49,41 +55,18 @@ jobs:
               exit 1
               ;;
           esac
+          case "${ui_auth_enabled}" in
+            1|true|yes|y|on|t)
+              : "${UI_OIDC_AUTHORITY:?vars.UI_OIDC_AUTHORITY is required when UI_AUTH_ENABLED=true}"
+              : "${UI_OIDC_CLIENT_ID:?vars.UI_OIDC_CLIENT_ID is required when UI_AUTH_ENABLED=true}"
+              : "${UI_OIDC_SCOPES:?vars.UI_OIDC_SCOPES is required when UI_AUTH_ENABLED=true}"
+              ;;
+          esac
           {
             echo "image_digest=${image_digest}"
             echo "api_upstream=${api_upstream}"
             echo "api_upstream_scheme=${api_upstream_scheme}"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Validate upstream auth contract
-        env:
-          API_UPSTREAM: ${{ steps.rollout.outputs.api_upstream }}
-          API_UPSTREAM_SCHEME: ${{ steps.rollout.outputs.api_upstream_scheme }}
-          UI_AUTH_ENABLED: ${{ env.UI_AUTH_ENABLED }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          config_url="${API_UPSTREAM_SCHEME}://${API_UPSTREAM}/config.js"
-          config_js="$(curl --silent --show-error --retry 12 --retry-delay 10 --retry-connrefused "${config_url}")"
-          CONFIG_JS="${config_js}" python - "${UI_AUTH_ENABLED}" <<'PY'
-          import json
-          import os
-          import re
-          import sys
-
-          text = os.environ["CONFIG_JS"]
-          match = re.search(r"window\.__API_UI_CONFIG__\s*=\s*(\{.*\})\s*;", text, re.S)
-          if not match:
-              raise SystemExit("Could not parse upstream /config.js payload.")
-
-          cfg = json.loads(match.group(1))
-          ui_auth_enabled = sys.argv[1].strip().lower() in {"1", "true", "yes", "y", "on"}
-          if cfg.get("authRequired") and not ui_auth_enabled:
-              raise SystemExit(
-                  "UI_AUTH_ENABLED=false is invalid because the proxied control-plane config reports authRequired=true."
-              )
-          print(f"upstream_auth_required={cfg.get('authRequired')}")
-          PY
 
       - name: Azure login
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
@@ -115,6 +98,10 @@ jobs:
           API_UPSTREAM: ${{ steps.rollout.outputs.api_upstream }}
           API_UPSTREAM_SCHEME: ${{ steps.rollout.outputs.api_upstream_scheme }}
           UI_AUTH_ENABLED: ${{ env.UI_AUTH_ENABLED }}
+          UI_OIDC_AUTHORITY: ${{ env.UI_OIDC_AUTHORITY }}
+          UI_OIDC_CLIENT_ID: ${{ env.UI_OIDC_CLIENT_ID }}
+          UI_OIDC_SCOPES: ${{ env.UI_OIDC_SCOPES }}
+          UI_OIDC_AUDIENCE: ${{ env.UI_OIDC_AUDIENCE }}
           ACR_LOGIN_SERVER: ${{ steps.azure.outputs.acr_login_server }}
           ACR_PULL_IDENTITY_RESOURCE_ID: ${{ steps.azure.outputs.identity_id }}
           CONTAINER_APPS_ENVIRONMENT_ID: ${{ steps.azure.outputs.environment_id }}
@@ -170,12 +157,51 @@ jobs:
           actual_image="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.template.containers[0].image' -o tsv)"
           test "${actual_image}" = "${{ steps.rollout.outputs.image_digest }}"
           expect_one_of GET "https://${fqdn}/" 200
+          expect_one_of GET "https://${fqdn}/ui-config.js" 200
           python scripts/validate_deployed_ui_oidc.py \
             --ui-origin "https://${fqdn}" \
             --ui-auth-enabled "${UI_AUTH_ENABLED}"
           expect_one_of GET "https://${fqdn}/api/system/status-view" 200 401 403 405
           expect_one_of POST "https://${fqdn}/api/realtime/ticket" 200 401 403 405
           echo "fqdn=${fqdn}" >> "$GITHUB_OUTPUT"
+
+      - name: Bind stable UI custom domain
+        id: custom-domain
+        if: env.UI_PUBLIC_HOSTNAME != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          fqdn="${{ steps.verify.outputs.fqdn }}"
+          verification_id="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.customDomainVerificationId' -o tsv)"
+
+          echo "Preparing custom-domain bind for ${UI_PUBLIC_HOSTNAME}"
+          echo "Expected DNS records:"
+          echo "  CNAME ${UI_PUBLIC_HOSTNAME} -> ${fqdn}"
+          echo "  TXT verification value -> ${verification_id}"
+
+          az containerapp hostname add \
+            --name "${UI_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --hostname "${UI_PUBLIC_HOSTNAME}" \
+            --only-show-errors >/dev/null 2>&1 || echo "Hostname add skipped; the hostname may already be present."
+
+          az containerapp hostname bind \
+            --name "${UI_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --hostname "${UI_PUBLIC_HOSTNAME}" \
+            --environment "${CONTAINER_APPS_ENVIRONMENT_NAME}" \
+            --validation-method CNAME \
+            --only-show-errors
+
+          curl --fail --retry 18 --retry-delay 10 --retry-connrefused "https://${UI_PUBLIC_HOSTNAME}/" > /dev/null
+          curl --fail --retry 18 --retry-delay 10 --retry-connrefused "https://${UI_PUBLIC_HOSTNAME}/ui-config.js" > /dev/null
+          python scripts/validate_deployed_ui_oidc.py \
+            --ui-origin "https://${UI_PUBLIC_HOSTNAME}" \
+            --ui-auth-enabled "${UI_AUTH_ENABLED}"
+
+          echo "bound_hostname=${UI_PUBLIC_HOSTNAME}" >> "$GITHUB_OUTPUT"
+          echo "cname_target=${fqdn}" >> "$GITHUB_OUTPUT"
+          echo "verification_id=${verification_id}" >> "$GITHUB_OUTPUT"
 
       - name: Write deployment summary
         shell: bash
@@ -188,7 +214,12 @@ jobs:
             echo "- API upstream scheme: \`${{ steps.rollout.outputs.api_upstream_scheme }}\`"
             echo "- API upstream: \`${{ steps.rollout.outputs.api_upstream }}\`"
             echo "- UI auth enabled: \`${UI_AUTH_ENABLED}\`"
+            echo "- UI bootstrap: \`/ui-config.js\`"
             echo "- FQDN: https://${{ steps.verify.outputs.fqdn }}"
+            if [ -n "${{ steps.custom-domain.outputs.bound_hostname }}" ]; then
+              echo "- Stable hostname: https://${{ steps.custom-domain.outputs.bound_hostname }}"
+              echo "- CNAME target: \`${{ steps.custom-domain.outputs.cname_target }}\`"
+            fi
             echo "- Previous image: \`${{ steps.azure.outputs.previous_image || 'none' }}\`"
             echo "- Rollback: run \`rollback-prod.yml\` with the previous image digest"
           } >> "${GITHUB_STEP_SUMMARY}"

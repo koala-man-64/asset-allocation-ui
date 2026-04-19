@@ -8,9 +8,14 @@ ACR_PULL_IDENTITY_NAME,deploy_var,var,deploy_config,true,User-assigned identity 
 CONTAINER_APPS_ENVIRONMENT_NAME,deploy_var,var,deploy_config,true,Shared Container Apps environment name.
 SERVICE_ACCOUNT_NAME,deploy_var,var,deploy_config,true,Shared workload identity or service account name.
 UI_APP_NAME,deploy_var,var,deploy_config,true,Standalone UI Container App name.
+UI_PUBLIC_HOSTNAME,deploy_var,var,deploy_config,true,Stable public UI hostname bound directly to the external UI Container App with an ACA-managed certificate after DNS validation succeeds.
 CONTRACTS_REPOSITORY,deploy_var,var,deploy_config,true,Sibling contracts repo slug used by workflows.
 CONTRACTS_REF,deploy_var,var,deploy_config,true,Contracts ref to validate against by default.
-API_UPSTREAM,deploy_var,var,deploy_config,true,Reachable control-plane host used by the UI proxy for /config.js and /api. Store host or host:port only.
+API_UPSTREAM,deploy_var,var,deploy_config,true,Reachable control-plane host used by the UI proxy for /api plus root-scoped /healthz and /readyz. Store host or host:port only.
 API_UPSTREAM_SCHEME,deploy_var,var,deploy_config,true,Scheme used by the UI proxy when connecting to API_UPSTREAM. Use https for the public ACA FQDN and http only for trusted internal upstreams.
-UI_AUTH_ENABLED,deploy_var,var,deploy_config,true,Boolean runtime toggle for browser authentication and login in the UI container. Production must be true whenever the proxied control-plane config reports authRequired=true.
+UI_AUTH_ENABLED,deploy_var,var,deploy_config,true,Boolean runtime toggle for browser authentication and login in the UI container.
+UI_OIDC_AUTHORITY,deploy_var,var,deploy_config,true,OIDC authority published by the UI-owned /ui-config.js bootstrap when browser auth is enabled.
+UI_OIDC_CLIENT_ID,deploy_var,var,deploy_config,true,OIDC client id published by the UI-owned /ui-config.js bootstrap when browser auth is enabled.
+UI_OIDC_SCOPES,deploy_var,var,deploy_config,true,Space- or comma-delimited OIDC scopes published by the UI-owned /ui-config.js bootstrap when browser auth is enabled.
+UI_OIDC_AUDIENCE,deploy_var,var,deploy_config,true,Optional OIDC audience or audiences published by the UI-owned /ui-config.js bootstrap.
 NPMRC,deploy_secret,secret,deploy_config,true,Complete .npmrc content with read access to @asset-allocation/contracts. Store multiline content in .env.web as escaped \n and sync it as the GitHub secret NPMRC.

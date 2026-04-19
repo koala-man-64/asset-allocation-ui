@@ -41,7 +41,7 @@ Canonical workflows live under `.github/workflows/`.
 - `release.yml` builds the UI image, writes `release-manifest.json`, and is the release artifact producer for prod deploys.
 - `deploy-prod.yml` auto-deploys successful `UI Release` runs on `main` and can manually redeploy the latest successful main release.
 - `rollback-prod.yml` deploys a specific prior UI image digest to prod.
-- `deploy-ui-runtime.yml` is the reusable prod apply-and-verify workflow used by deploy and rollback entry points.
+- `deploy-ui-runtime.yml` is the reusable prod apply-and-verify workflow used by deploy and rollback entry points; it validates the UI-owned `/ui-config.js` bootstrap and the same-origin `/api/*` proxy contract after rollout.
 - `contracts-compat.yml` validates the UI against a candidate or released contracts ref.
 - `scripts/setup-env.ps1` builds repo-local `.env.web` and `.env.local` using Azure and git discovery where possible, and can ingest `NPMRC` from a file path.
 - `scripts/sync-all-to-github.ps1` syncs the `.env.web` surface into repo vars and secrets.

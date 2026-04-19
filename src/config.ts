@@ -97,7 +97,7 @@ const oidcPostLogoutRedirectUri = derivePostLogoutRedirectUri(
   oidcRedirectUri
 );
 const oidcScopes = resolveScopes(runtimeConfig.oidcScopes ?? import.meta.env.VITE_OIDC_SCOPES);
-const oidcAudience = resolveScopes(runtimeConfig.oidcAudience);
+const oidcAudience = resolveScopes(runtimeConfig.oidcAudience ?? import.meta.env.VITE_OIDC_AUDIENCE);
 const uiAuthEnabled = resolveBoolean(
   runtimeConfig.uiAuthEnabled,
   import.meta.env.VITE_UI_AUTH_ENABLED,
@@ -107,7 +107,12 @@ const oidcEnabled = uiAuthEnabled && resolveBoolean(
   runtimeConfig.oidcEnabled,
   Boolean(oidcAuthority && oidcClientId && oidcRedirectUri)
 );
-const authRequired = uiAuthEnabled && resolveBoolean(runtimeConfig.authRequired);
+const authRequired = uiAuthEnabled && resolveBoolean(
+  runtimeConfig.authRequired,
+  runtimeConfig.uiAuthEnabled,
+  import.meta.env.VITE_UI_AUTH_ENABLED,
+  true
+);
 
 if (typeof window !== 'undefined') {
   const nextRuntimeConfig: RuntimeUiConfigSource = {

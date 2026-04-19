@@ -68,11 +68,16 @@ SYNTHETIC_ENV_VALUES = {
     "CONTAINER_APPS_ENVIRONMENT_NAME": "test-container-apps-env",
     "SERVICE_ACCOUNT_NAME": "test-service-account",
     "UI_APP_NAME": "test-ui-app",
+    "UI_PUBLIC_HOSTNAME": "asset-allocation.example.com",
     "CONTRACTS_REPOSITORY": "example/asset-allocation-contracts",
     "CONTRACTS_REF": "main",
     "API_UPSTREAM": "example.internal.test",
     "API_UPSTREAM_SCHEME": "https",
     "UI_AUTH_ENABLED": "true",
+    "UI_OIDC_AUTHORITY": "https://login.microsoftonline.com/example-tenant",
+    "UI_OIDC_CLIENT_ID": "example-client-id",
+    "UI_OIDC_SCOPES": "openid profile api://asset-allocation-api/user_impersonation",
+    "UI_OIDC_AUDIENCE": "api://asset-allocation-api",
     "NPMRC": "//npm.pkg.github.com/:_authToken=fake\\n@asset-allocation:registry=https://npm.pkg.github.com",
 }
 
@@ -134,6 +139,10 @@ def test_ui_runtime_deploy_workflow_uses_repo_var_only() -> None:
     assert "vars.API_UPSTREAM" in text
     assert "vars.API_UPSTREAM_SCHEME" in text
     assert "vars.UI_AUTH_ENABLED" in text
+    assert "vars.UI_OIDC_AUTHORITY" in text
+    assert "vars.UI_OIDC_CLIENT_ID" in text
+    assert "vars.UI_OIDC_SCOPES" in text
+    assert "vars.UI_PUBLIC_HOSTNAME" in text
     assert "contracts_version" not in text
 
 
@@ -154,12 +163,16 @@ def test_setup_env_discovers_api_upstream_host_and_scheme() -> None:
     assert 'return (New-Resolution -Value "https" -Source "azure")' in text
 
 
-def test_ui_manifest_carries_upstream_host_and_scheme() -> None:
+def test_ui_manifest_carries_upstream_and_oidc_runtime_env() -> None:
     text = (repo_root() / "deploy" / "app_ui.yaml").read_text(encoding="utf-8")
     assert '- name: API_UPSTREAM' in text
     assert 'value: "${API_UPSTREAM}"' in text
     assert '- name: API_UPSTREAM_SCHEME' in text
     assert 'value: "${API_UPSTREAM_SCHEME}"' in text
+    assert '- name: UI_OIDC_AUTHORITY' in text
+    assert 'value: "${UI_OIDC_AUTHORITY}"' in text
+    assert '- name: UI_OIDC_CLIENT_ID' in text
+    assert '- name: UI_OIDC_SCOPES' in text
 
 
 def test_nginx_https_proxying_enables_sni() -> None:
@@ -168,22 +181,45 @@ def test_nginx_https_proxying_enables_sni() -> None:
     assert "proxy_ssl_name $proxy_host;" in text
 
 
-def test_ui_runtime_deploy_workflow_verifies_proxied_api_contract() -> None:
+def test_browser_bootstrap_loads_only_ui_config() -> None:
+    text = (repo_root() / "index.html").read_text(encoding="utf-8")
+    assert '<script src="/ui-config.js"></script>' in text
+    assert '<script src="/config.js"></script>' not in text
+
+
+def test_ui_proxy_surface_is_limited_to_api_and_health_routes() -> None:
+    nginx_text = (repo_root() / "nginx.conf").read_text(encoding="utf-8")
+    vite_text = (repo_root() / "vite.config.ts").read_text(encoding="utf-8")
+    assert "location = /config.js" not in nginx_text
+    assert "location /asset-allocation/api/" not in nginx_text
+    assert "'/config.js'" not in vite_text
+    assert "API_ROOT_PREFIX" not in vite_text
+
+
+def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None:
     text = workflow_text("deploy-ui-runtime.yml")
     validator_text = (repo_root() / "scripts" / "validate_deployed_ui_oidc.py").read_text(encoding="utf-8")
-    assert 'UI_AUTH_ENABLED=false is invalid because the proxied /config.js reports authRequired=true.' in validator_text
     assert 'vars.API_UPSTREAM_SCHEME || \'https\'' in text
     assert 'vars.UI_AUTH_ENABLED || \'true\'' in text
+    assert 'vars.UI_OIDC_AUTHORITY' in text
+    assert 'vars.UI_OIDC_CLIENT_ID' in text
+    assert 'vars.UI_OIDC_SCOPES' in text
     assert 'python scripts/validate_deployed_ui_oidc.py \\' in text
     assert '--ui-origin "https://${fqdn}"' in text
     assert '--ui-auth-enabled "${UI_AUTH_ENABLED}"' in text
+    assert 'https://${fqdn}/ui-config.js' in text
     assert 'https://${fqdn}/api/system/status-view' in text
     assert 'https://${fqdn}/api/realtime/ticket' in text
+    assert "az containerapp hostname bind \\" in text
+    assert '--validation-method CNAME \\' in text
+    assert 'https://${UI_PUBLIC_HOSTNAME}/ui-config.js' in text
+    assert 'ui-config.js advertises apiBaseUrl=' in validator_text
     assert 'Allowed: $*' in text
 
 
 def test_ui_runtime_config_sources_publish_same_origin_oidc_overrides() -> None:
     required_fragments = [
+        '"apiBaseUrl": "/api"',
         "window.location.origin",
         "oidcRedirectUri",
         "/auth/callback",
@@ -235,7 +271,8 @@ def test_setup_env_dry_run_reports_sources_without_prompting() -> None:
     assert "prompt_required=" in stdout
     assert "# Preview (.env.local)" in stdout
     assert "VITE_API_PROXY_TARGET=" in stdout
-    assert "VITE_PROXY_CONFIG_JS=" in stdout
+    assert "VITE_OIDC_AUTHORITY=" in stdout
+    assert "VITE_PROXY_CONFIG_JS=" not in stdout
 
 
 def test_setup_env_writes_local_vite_env_file(tmp_path: Path) -> None:
@@ -265,5 +302,8 @@ def test_setup_env_writes_local_vite_env_file(tmp_path: Path) -> None:
     local_env_text = local_env_file.read_text(encoding="utf-8")
     assert "VITE_API_BASE_URL=/api" in local_env_text
     assert "VITE_API_PROXY_TARGET=https://example.internal.test" in local_env_text
-    assert "VITE_PROXY_CONFIG_JS=true" in local_env_text
     assert "VITE_UI_AUTH_ENABLED=true" in local_env_text
+    assert "VITE_OIDC_AUTHORITY=https://login.microsoftonline.com/example-tenant" in local_env_text
+    assert "VITE_OIDC_CLIENT_ID=example-client-id" in local_env_text
+    assert "VITE_OIDC_SCOPES=openid profile api://asset-allocation-api/user_impersonation" in local_env_text
+    assert "VITE_OIDC_AUDIENCE=api://asset-allocation-api" in local_env_text

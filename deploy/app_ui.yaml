@@ -30,6 +30,14 @@ properties:
         value: "${API_UPSTREAM_SCHEME}"
       - name: UI_AUTH_ENABLED
         value: "${UI_AUTH_ENABLED}"
+      - name: UI_OIDC_AUTHORITY
+        value: "${UI_OIDC_AUTHORITY}"
+      - name: UI_OIDC_CLIENT_ID
+        value: "${UI_OIDC_CLIENT_ID}"
+      - name: UI_OIDC_SCOPES
+        value: "${UI_OIDC_SCOPES}"
+      - name: UI_OIDC_AUDIENCE
+        value: "${UI_OIDC_AUDIENCE}"
       resources:
         cpu: 0.25
         memory: 0.5Gi

@@ -26,36 +26,40 @@ def load_validator_module():
     return module
 
 
-def build_config_js(
+def build_ui_config_js(
     *,
-    redirect_uri: str,
-    post_logout_redirect_uri: str,
-    auth_required: bool = True,
-    oidc_enabled: bool = True,
+    api_base_url: str = "/api",
+    ui_auth_enabled: bool = True,
+    include_oidc: bool = True,
 ) -> str:
     payload = {
-        "apiBaseUrl": "/api",
-        "oidcEnabled": oidc_enabled,
-        "authRequired": auth_required,
-        "oidcAuthority": "https://login.microsoftonline.com/example-tenant",
-        "oidcClientId": "example-client-id",
-        "oidcScopes": ["openid", "profile"],
-        "oidcRedirectUri": redirect_uri,
-        "oidcPostLogoutRedirectUri": post_logout_redirect_uri,
+        "apiBaseUrl": api_base_url,
+        "uiAuthEnabled": ui_auth_enabled,
+        "authRequired": ui_auth_enabled,
+        "oidcEnabled": ui_auth_enabled and include_oidc,
     }
-    return f"window.__API_UI_CONFIG__ = {json.dumps(payload)};"
-
-
-def build_ui_config_js() -> str:
-    return """
-const currentUiConfig = window.__API_UI_CONFIG__ || {};
+    if include_oidc:
+        payload.update(
+            {
+                "oidcAuthority": "https://login.microsoftonline.com/example-tenant",
+                "oidcClientId": "example-client-id",
+                "oidcScopes": "openid profile api://asset-allocation-api/user_impersonation",
+            }
+        )
+    return f"""
+window.__API_UI_CONFIG__ = {json.dumps(payload)};
+const currentUiConfig = window.__API_UI_CONFIG__ || {{}};
 const sameOriginRedirectUri = new URL('/auth/callback', window.location.origin).toString();
 const sameOriginPostLogoutRedirectUri = new URL('/auth/logout-complete', window.location.origin).toString();
-window.__API_UI_CONFIG__ = {
+window.__API_UI_CONFIG__ = {{
   ...currentUiConfig,
-  oidcRedirectUri: sameOriginRedirectUri,
-  oidcPostLogoutRedirectUri: sameOriginPostLogoutRedirectUri
-};
+  ...(Boolean(currentUiConfig.oidcEnabled || (currentUiConfig.oidcAuthority && currentUiConfig.oidcClientId))
+    ? {{
+        oidcRedirectUri: sameOriginRedirectUri,
+        oidcPostLogoutRedirectUri: sameOriginPostLogoutRedirectUri
+      }}
+    : {{}})
+}};
 """
 
 
@@ -70,17 +74,13 @@ def make_fetcher(mapping: dict[str, str]):
     return fetcher
 
 
-def test_validator_accepts_same_origin_redirect_contract() -> None:
+def test_validator_accepts_ui_owned_same_origin_bootstrap() -> None:
     validator = load_validator_module()
     ui_origin = "https://asset-allocation-ui.example.com"
     result = validator.validate_deployed_ui_oidc(
         ui_origin=ui_origin,
         fetcher=make_fetcher(
             {
-                f"{ui_origin}/config.js": build_config_js(
-                    redirect_uri=f"{ui_origin}/auth/callback",
-                    post_logout_redirect_uri=f"{ui_origin}/auth/logout-complete",
-                ),
                 f"{ui_origin}/ui-config.js": build_ui_config_js(),
             }
         ),
@@ -88,10 +88,10 @@ def test_validator_accepts_same_origin_redirect_contract() -> None:
 
     assert result["ui_origin"] == ui_origin
     assert result["expected_redirect_uri"] == f"{ui_origin}/auth/callback"
-    assert result["config"]["oidcRedirectUri"] == f"{ui_origin}/auth/callback"
+    assert result["config"]["apiBaseUrl"] == "/api"
 
 
-def test_validator_rejects_api_origin_redirect_drift() -> None:
+def test_validator_rejects_non_same_origin_api_base_url() -> None:
     validator = load_validator_module()
     ui_origin = "https://asset-allocation-ui.example.com"
     with pytest.raises(validator.ValidationError) as excinfo:
@@ -99,16 +99,27 @@ def test_validator_rejects_api_origin_redirect_drift() -> None:
             ui_origin=ui_origin,
             fetcher=make_fetcher(
                 {
-                    f"{ui_origin}/config.js": build_config_js(
-                        redirect_uri="https://asset-allocation-api.example.com/auth/callback",
-                        post_logout_redirect_uri="https://asset-allocation-api.example.com/auth/logout-complete",
+                    f"{ui_origin}/ui-config.js": build_ui_config_js(
+                        api_base_url="https://asset-allocation-api.example.com/api"
                     ),
-                    f"{ui_origin}/ui-config.js": build_ui_config_js(),
                 }
             ),
         )
 
-    message = str(excinfo.value)
-    assert "oidcRedirectUri" in message
-    assert "UI_OIDC_REDIRECT_URI" in message
-    assert "provision_entra_oidc.ps1" in message
+    assert "apiBaseUrl" in str(excinfo.value)
+
+
+def test_validator_rejects_missing_oidc_fields_when_auth_is_enabled() -> None:
+    validator = load_validator_module()
+    ui_origin = "https://asset-allocation-ui.example.com"
+    with pytest.raises(validator.ValidationError) as excinfo:
+        validator.validate_deployed_ui_oidc(
+            ui_origin=ui_origin,
+            fetcher=make_fetcher(
+                {
+                    f"{ui_origin}/ui-config.js": build_ui_config_js(include_oidc=False),
+                }
+            ),
+        )
+
+    assert "oidcAuthority" in str(excinfo.value)

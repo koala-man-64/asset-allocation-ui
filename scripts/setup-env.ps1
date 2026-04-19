@@ -195,17 +195,23 @@ function Build-LocalEnvResults {
     $apiUpstream = Get-ResolvedResultValue -Results $ResolvedResults -Name "API_UPSTREAM"
     $apiUpstreamScheme = Get-ResolvedResultValue -Results $ResolvedResults -Name "API_UPSTREAM_SCHEME" -Fallback "https"
     $uiAuthEnabled = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_AUTH_ENABLED" -Fallback "true"
+    $uiOidcAuthority = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_OIDC_AUTHORITY"
+    $uiOidcClientId = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_OIDC_CLIENT_ID"
+    $uiOidcScopes = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_OIDC_SCOPES"
+    $uiOidcAudience = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_OIDC_AUDIENCE"
     $proxyTarget = Join-UpstreamUrl -UpstreamHost $apiUpstream -UpstreamScheme $apiUpstreamScheme
     if ([string]::IsNullOrWhiteSpace($proxyTarget)) {
         $proxyTarget = "http://127.0.0.1:9000"
     }
-    $proxyConfigJs = if ([string]::IsNullOrWhiteSpace($apiUpstream)) { "false" } else { "true" }
 
     return @(
         [pscustomobject]@{ Name = "VITE_API_BASE_URL"; Value = $apiBaseUrl; Source = "derived"; IsSecret = $false; PromptRequired = $false },
         [pscustomobject]@{ Name = "VITE_API_PROXY_TARGET"; Value = $proxyTarget; Source = "derived"; IsSecret = $false; PromptRequired = $false },
-        [pscustomobject]@{ Name = "VITE_PROXY_CONFIG_JS"; Value = $proxyConfigJs; Source = "derived"; IsSecret = $false; PromptRequired = $false },
-        [pscustomobject]@{ Name = "VITE_UI_AUTH_ENABLED"; Value = $uiAuthEnabled; Source = "derived"; IsSecret = $false; PromptRequired = $false }
+        [pscustomobject]@{ Name = "VITE_UI_AUTH_ENABLED"; Value = $uiAuthEnabled; Source = "derived"; IsSecret = $false; PromptRequired = $false },
+        [pscustomobject]@{ Name = "VITE_OIDC_AUTHORITY"; Value = $uiOidcAuthority; Source = "derived"; IsSecret = $false; PromptRequired = $false },
+        [pscustomobject]@{ Name = "VITE_OIDC_CLIENT_ID"; Value = $uiOidcClientId; Source = "derived"; IsSecret = $false; PromptRequired = $false },
+        [pscustomobject]@{ Name = "VITE_OIDC_SCOPES"; Value = $uiOidcScopes; Source = "derived"; IsSecret = $false; PromptRequired = $false },
+        [pscustomobject]@{ Name = "VITE_OIDC_AUDIENCE"; Value = $uiOidcAudience; Source = "derived"; IsSecret = $false; PromptRequired = $false }
     )
 }
 
