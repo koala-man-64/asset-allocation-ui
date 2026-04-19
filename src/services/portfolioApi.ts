@@ -637,7 +637,11 @@ function buildSyntheticPreview(detail: PortfolioDetail, asOfDate: string): Portf
       projectedPositionCount
     },
     allocations,
-    warnings
+    warnings,
+    tradeProposals: [],
+    previewSource: 'inferred',
+    blocked: false,
+    blockedReasons: []
   };
 }
 
@@ -658,7 +662,20 @@ function buildPreviewFromProposal(
       projectedPositionCount: proposal.trades.length || fallback.summary.projectedPositionCount
     },
     allocations: fallback.allocations,
-    warnings: [...proposal.warnings, ...proposal.blockedReasons]
+    warnings: [...proposal.warnings, ...proposal.blockedReasons],
+    tradeProposals: proposal.trades.map((trade) => ({
+      sleeveId: trade.sleeveId,
+      symbol: trade.symbol,
+      side: trade.side,
+      quantity: trade.quantity,
+      estimatedPrice: trade.estimatedPrice,
+      estimatedNotional: trade.estimatedNotional,
+      estimatedCommission: trade.estimatedCommission,
+      estimatedSlippageCost: trade.estimatedSlippageCost
+    })),
+    previewSource: 'live-proposal',
+    blocked: proposal.blocked,
+    blockedReasons: proposal.blockedReasons
   };
 }
 
