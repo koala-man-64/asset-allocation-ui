@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import { findNavItem, NAV_SECTIONS, createDefaultNavOrderBySection } from '@/app/navigationModel';
 import { LeftNavigation } from '../components/layout/LeftNavigation';
+import { SidebarProvider, SidebarTrigger } from '../components/ui/sidebar';
 import { useUIStore, UI_STORAGE_KEY } from '@/stores/useUIStore';
 
 vi.mock('lucide-react', () => ({
@@ -20,6 +21,8 @@ vi.mock('lucide-react', () => ({
   SlidersHorizontal: () => <div data-testid="icon-sliders" />,
   ScanSearch: () => <div data-testid="icon-scan" />,
   BarChart3: () => <div data-testid="icon-bar-chart" />,
+  PanelLeftIcon: () => <span>icon-panel-left</span>,
+  XIcon: () => <span>icon-x</span>,
   ChevronLeft: () => <span>icon-left</span>,
   ChevronRight: () => <span>icon-right</span>,
   Pin: () => <div data-testid="icon-pin" />,
@@ -41,7 +44,9 @@ function createTestQueryClient() {
 function LocationProbe() {
   const location = useLocation();
 
-  return <div data-testid="location-probe">{`${location.pathname}${location.search}${location.hash}`}</div>;
+  return (
+    <div data-testid="location-probe">{`${location.pathname}${location.search}${location.hash}`}</div>
+  );
 }
 
 function setViewportWidth(width: number) {
@@ -72,10 +77,13 @@ function renderNavigation(initialEntries: string[] = ['/system-status']) {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={initialEntries}>
-        <LeftNavigation />
-        <LocationProbe />
-      </MemoryRouter>
+      <SidebarProvider defaultOpen>
+        <MemoryRouter initialEntries={initialEntries}>
+          <SidebarTrigger aria-label="Open navigation" />
+          <LeftNavigation />
+          <LocationProbe />
+        </MemoryRouter>
+      </SidebarProvider>
     </QueryClientProvider>
   );
 }
@@ -218,22 +226,22 @@ describe('LeftNavigation', () => {
     expect(screen.getAllByRole('link', { name: 'Strategies' })).toHaveLength(1);
   });
 
-  it('starts collapsed on narrow viewports while keeping nav items accessible', () => {
+  it('opens the navigation as a sheet on narrow viewports', async () => {
     setViewportWidth(640);
 
     renderNavigation();
 
-    expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Stock Explorer' })).toHaveAttribute(
-      'aria-label',
-      'Stock Explorer'
-    );
+    expect(screen.queryByRole('link', { name: 'Stock Explorer' })).not.toBeInTheDocument();
     expect(screen.queryByText('UPTIME CLOCK')).not.toBeInTheDocument();
-    expect(screen.queryByText('Stock Explorer')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Expand navigation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
 
-    expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument();
-    expect(screen.getByText('Stock Explorer')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Stock Explorer' })).toHaveAttribute(
+        'aria-label',
+        'Stock Explorer'
+      );
+    });
+    expect(screen.getByText('UPTIME CLOCK')).toBeInTheDocument();
   });
 });

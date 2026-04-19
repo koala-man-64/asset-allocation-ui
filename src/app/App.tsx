@@ -8,6 +8,7 @@ import { useUIStore } from '@/stores/useUIStore';
 
 import { ErrorBoundary } from '@/app/components/common/ErrorBoundary';
 import { LeftNavigation } from '@/app/components/layout/LeftNavigation';
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/app/components/ui/sidebar';
 import {
   OidcAccessGate,
   OidcCallbackPage,
@@ -63,18 +64,32 @@ function RouteTransitionIndicator() {
 
 function AppShell({ children }: { children: ReactNode }) {
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <SidebarProvider defaultOpen>
       <RouteTransitionIndicator />
-      <div className="flex-1 flex min-w-0 overflow-hidden">
+      <div className="flex min-h-screen w-full bg-background">
         <LeftNavigation />
 
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          <div className="container mx-auto p-8 max-w-[1800px]">{children}</div>
-        </main>
+        <SidebarInset className="min-w-0 overflow-hidden">
+          <div className="border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur md:hidden">
+            <div className="flex items-center gap-3">
+              <SidebarTrigger aria-label="Open navigation" />
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                  Asset Allocation
+                </div>
+                <div className="font-display text-lg text-foreground">Operations Desk</div>
+              </div>
+            </div>
+          </div>
+
+          <main className="min-w-0 flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-[1800px] px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+          </main>
+        </SidebarInset>
       </div>
 
       <Toaster />
-    </div>
+    </SidebarProvider>
   );
 }
 

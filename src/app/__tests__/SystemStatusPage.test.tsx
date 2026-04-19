@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 
 import { renderWithProviders } from '@/test/utils';
-import { SystemStatusPage } from '@/app/components/pages/SystemStatusPage';
+import { SystemStatusPage } from '@/features/system-status/SystemStatusPage';
 import { getDomainOrderEntries } from '@/app/components/pages/system-status/domainOrdering';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { upsertRunningJobOverride } from '@/hooks/useSystemHealthJobOverrides';

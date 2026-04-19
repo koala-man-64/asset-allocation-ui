@@ -1,5 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { PageLoader } from '@/app/components/common/PageLoader';
 import { STOCK_DETAIL_ROUTE } from '@/features/stocks/stockRoutes';
 
 const DataExplorerPage = lazy(() =>
@@ -66,17 +67,9 @@ const SymbolPurgeByCriteriaPage = lazy(() =>
   }))
 );
 
-function RouteLoadingFallback() {
-  return (
-    <div className="flex h-full min-h-[400px] w-full items-center justify-center">
-      <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
-    </div>
-  );
-}
-
 export function AppRoutes() {
   return (
-    <Suspense fallback={<RouteLoadingFallback />}>
+    <Suspense fallback={<PageLoader text="Loading workspace..." variant="panel" />}>
       <Routes>
         <Route path="/" element={<Navigate to="/system-status" replace />} />
         <Route path="/data-explorer" element={<DataExplorerPage />} />

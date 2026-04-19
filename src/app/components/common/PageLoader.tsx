@@ -1,5 +1,7 @@
 import React from 'react';
 
+import { cn } from '@/app/components/ui/utils';
+
 interface PageLoaderProps {
   /**
    * Optional text to display below the spinner.
@@ -10,16 +12,26 @@ interface PageLoaderProps {
    * Optional className to override or extend the container styling.
    */
   className?: string;
+  /**
+   * Controls the loader footprint.
+   */
+  variant?: 'page' | 'panel' | 'inline';
 }
 
-export function PageLoader({ text = 'Loading...', className = '' }: PageLoaderProps) {
+const variantClassNames = {
+  page: 'min-h-[calc(100vh-100px)] w-full',
+  panel: 'min-h-[14rem] w-full rounded-[1.5rem] border border-border/40 bg-background/50',
+  inline: 'min-h-[7rem] w-full'
+} as const;
+
+export function PageLoader({ text = 'Loading...', className, variant = 'page' }: PageLoaderProps) {
   return (
     <div
-      className={`flex items-center justify-center h-[calc(100vh-100px)] w-full ${className}`}
+      className={cn('flex items-center justify-center', variantClassNames[variant], className)}
       data-testid="page-loader"
     >
       <div className="flex flex-col items-center gap-4">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
         {text && (
           <p className="text-muted-foreground text-sm font-mono tracking-widest uppercase animate-pulse">
             {text}

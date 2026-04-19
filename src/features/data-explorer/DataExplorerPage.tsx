@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { PageHero } from '@/app/components/common/PageHero';
 import { DataExplorerHierarchyNavigator } from '@/features/data-explorer/components/DataExplorerHierarchyNavigator';
 import { DataExplorerPreviewDossier } from '@/features/data-explorer/components/DataExplorerPreviewDossier';
 import { DataExplorerRail } from '@/features/data-explorer/components/DataExplorerRail';
@@ -15,26 +16,6 @@ import { DataService } from '@/services/DataService';
 import type { AdlsFilePreviewResponse, AdlsHierarchyEntry } from '@/services/apiService';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { Database } from 'lucide-react';
-
-function HeaderMetric({
-  label,
-  value,
-  detail
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className="rounded-[1.6rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
-      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-2 break-all font-display text-2xl text-foreground">{value}</div>
-      <div className="mt-2 text-sm text-muted-foreground">{detail}</div>
-    </div>
-  );
-}
 
 function getPreviewStatusLabel(preview: AdlsFilePreviewResponse | null): string {
   if (!preview?.previewMode) {
@@ -226,37 +207,38 @@ export const DataExplorerPage: React.FC = () => {
 
   return (
     <div className="page-shell">
-      <div className="page-header-row items-start gap-6">
-        <div className="page-header min-w-0 flex-1">
-          <p className="page-kicker">Live Operations</p>
-          <h1 className="page-title flex items-center gap-2">
+      <PageHero
+        kicker="Live Operations"
+        title={
+          <span className="flex items-center gap-2">
             <Database className="h-5 w-5 text-mcm-teal" />
             Data Explorer
-          </h1>
-          <p className="page-subtitle max-w-3xl">
-            Browse ADLS hierarchies with a dedicated navigation pane, then inspect text, parquet,
-            and delta-backed assets in a professional preview dossier.
-          </p>
-        </div>
-
-        <div className="grid w-full max-w-[48rem] gap-3 sm:grid-cols-3">
-          <HeaderMetric
-            label="Desk Scope"
-            value={`${layer} / ${domain}`}
-            detail="Current container and domain selection."
-          />
-          <HeaderMetric
-            label="Root Path"
-            value={rootPath || '/'}
-            detail={rootMeta?.truncated ? 'Listing is truncated at the current scan limit.' : 'Listing is currently within the scan limit.'}
-          />
-          <HeaderMetric
-            label="Preview Status"
-            value={previewStatusLabel}
-            detail={selectedFilePath ? `Focused on ${selectedAssetLabel}.` : 'No asset selected yet.'}
-          />
-        </div>
-      </div>
+          </span>
+        }
+        subtitle="Browse ADLS hierarchies with a dedicated navigation pane, then inspect text, parquet, and delta-backed assets in a structured preview dossier."
+        metrics={[
+          {
+            label: 'Desk Scope',
+            value: `${layer} / ${domain}`,
+            detail: 'Current container and domain selection.'
+          },
+          {
+            label: 'Root Path',
+            value: rootPath || '/',
+            detail: rootMeta?.truncated
+              ? 'Listing is truncated at the current scan limit.'
+              : 'Listing is currently within the scan limit.',
+            valueClassName: 'break-all'
+          },
+          {
+            label: 'Preview Status',
+            value: previewStatusLabel,
+            detail: selectedFilePath
+              ? `Focused on ${selectedAssetLabel}.`
+              : 'No asset selected yet.'
+          }
+        ]}
+      />
 
       <div className="grid flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_380px]">
         <DataExplorerRail

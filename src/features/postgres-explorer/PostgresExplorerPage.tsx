@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { PageHero } from '@/app/components/common/PageHero';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import {
@@ -38,26 +39,6 @@ import {
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { Database, RefreshCw, Save } from 'lucide-react';
 import { toast } from 'sonner';
-
-function HeaderMetric({
-  label,
-  value,
-  detail
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className="rounded-[1.6rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
-      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-2 font-display text-2xl text-foreground">{value}</div>
-      <div className="mt-2 text-sm text-muted-foreground">{detail}</div>
-    </div>
-  );
-}
 
 export const PostgresExplorerPage: React.FC = () => {
   const [schemas, setSchemas] = useState<string[]>([]);
@@ -480,37 +461,34 @@ export const PostgresExplorerPage: React.FC = () => {
 
   return (
     <div className="page-shell">
-      <div className="page-header-row items-start gap-6">
-        <div className="page-header min-w-0 flex-1">
-          <p className="page-kicker">Live Operations</p>
-          <h1 className="page-title flex items-center gap-2">
+      <PageHero
+        kicker="Live Operations"
+        title={
+          <span className="flex items-center gap-2">
             <Database className="h-5 w-5 text-mcm-teal" />
             Postgres Explorer
-          </h1>
-          <p className="page-subtitle max-w-3xl">
-            Review schema scope, query live tables, and edit primary-key-backed rows from a
-            structured result dossier instead of a loose control slab.
-          </p>
-        </div>
-
-        <div className="grid w-full max-w-[48rem] gap-3 sm:grid-cols-3">
-          <HeaderMetric
-            label="Desk Focus"
-            value={selectedSchema && selectedTable ? `${selectedSchema}.${selectedTable}` : 'No table'}
-            detail="Current schema and table selection."
-          />
-          <HeaderMetric
-            label="Filters"
-            value={String(queryFilters.length).padStart(2, '0')}
-            detail="Server-side filters staged before query execution."
-          />
-          <HeaderMetric
-            label="Edit Status"
-            value={editingEnabled ? 'Live' : 'Read Only'}
-            detail={tableMetadataLoading ? 'Metadata still loading.' : editCapabilityLabel}
-          />
-        </div>
-      </div>
+          </span>
+        }
+        subtitle="Review schema scope, query live tables, and edit primary-key-backed rows from a structured result dossier instead of a loose control slab."
+        metrics={[
+          {
+            label: 'Desk Focus',
+            value:
+              selectedSchema && selectedTable ? `${selectedSchema}.${selectedTable}` : 'No table',
+            detail: 'Current schema and table selection.'
+          },
+          {
+            label: 'Filters',
+            value: String(queryFilters.length).padStart(2, '0'),
+            detail: 'Server-side filters staged before query execution.'
+          },
+          {
+            label: 'Edit Status',
+            value: editingEnabled ? 'Live' : 'Read Only',
+            detail: tableMetadataLoading ? 'Metadata still loading.' : editCapabilityLabel
+          }
+        ]}
+      />
 
       <div className="grid flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_320px]">
         <PostgresQueryDeck

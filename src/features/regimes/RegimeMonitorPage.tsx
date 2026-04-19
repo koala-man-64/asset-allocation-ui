@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, AlertTriangle, Gauge, Layers3, Sparkles } from 'lucide-react';
 
 import { PageLoader } from '@/app/components/common/PageLoader';
+import { PageHero } from '@/app/components/common/PageHero';
+import { StatePanel } from '@/app/components/common/StatePanel';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import {
@@ -177,42 +179,62 @@ export function RegimeMonitorPage() {
     const revisions = selectedModelDetailQuery.data?.revisions || [];
     return revisions.length ? revisions[0].version : undefined;
   }, [selectedModelDetailQuery.data?.revisions]);
+  const currentRegimeLabel = currentSnapshot
+    ? currentSnapshot.regime_code.replaceAll('_', ' ')
+    : 'Unavailable';
 
   return (
     <div className="page-shell">
-      <div className="page-header-row">
-        <div className="page-header">
-          <p className="page-kicker">Live Operations</p>
-          <h1 className="page-title flex items-center gap-2">
+      <PageHero
+        kicker="Live Operations"
+        title={
+          <span className="flex items-center gap-2">
             <Sparkles className="h-6 w-6 text-mcm-olive" />
             Regime Monitor
-          </h1>
-          <p className="page-subtitle">
-            Track the active gold regime model, inspect confirmed and transition states, and
-            activate new model revisions without leaving the control plane.
-          </p>
-        </div>
-
-        <div className="w-full max-w-sm rounded-2xl border border-mcm-walnut/25 bg-mcm-paper/85 p-4">
-          <Label htmlFor="regime-model-selector">Selected Model</Label>
-          <select
-            id="regime-model-selector"
-            value={selectedModelName}
-            onChange={(event) => setSelectedModelName(event.target.value)}
-            className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
-          >
-            {modelOptions.map((model) => (
-              <option key={model.name} value={model.name}>
-                {model.name}
-              </option>
-            ))}
-          </select>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">Active v{activeVersion ?? 'n/a'}</Badge>
-            <Badge variant="outline">Latest v{latestRevisionVersion ?? 'n/a'}</Badge>
+          </span>
+        }
+        subtitle="Track the active gold regime model, inspect confirmed and transition states, and activate new model revisions without leaving the control plane."
+        actions={
+          <div className="w-full max-w-sm rounded-2xl border border-mcm-walnut/25 bg-mcm-paper/85 p-4">
+            <Label htmlFor="regime-model-selector">Selected Model</Label>
+            <select
+              id="regime-model-selector"
+              value={selectedModelName}
+              onChange={(event) => setSelectedModelName(event.target.value)}
+              className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+            >
+              {modelOptions.map((model) => (
+                <option key={model.name} value={model.name}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">Active v{activeVersion ?? 'n/a'}</Badge>
+              <Badge variant="outline">Latest v{latestRevisionVersion ?? 'n/a'}</Badge>
+            </div>
           </div>
-        </div>
-      </div>
+        }
+        metrics={[
+          {
+            label: 'Current Regime',
+            value: currentRegimeLabel,
+            detail: currentSnapshot
+              ? `Status: ${currentSnapshot.regime_status}.`
+              : 'No current snapshot is available.'
+          },
+          {
+            label: 'Active Version',
+            value: activeVersion ? `v${activeVersion}` : 'n/a',
+            detail: 'Revision currently driving gold outputs.'
+          },
+          {
+            label: 'Latest Version',
+            value: latestRevisionVersion ? `v${latestRevisionVersion}` : 'n/a',
+            detail: 'Newest saved revision for the selected model.'
+          }
+        ]}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.95fr)]">
         <div className="space-y-6">
@@ -226,7 +248,7 @@ export function RegimeMonitorPage() {
               </CardHeader>
               <CardContent className="space-y-3 pt-6">
                 {currentQuery.isLoading ? (
-                  <PageLoader text="Loading regime..." className="h-32" />
+                  <PageLoader text="Loading regime..." variant="panel" className="min-h-[8rem]" />
                 ) : currentSnapshot ? (
                   <>
                     <Badge variant={regimeTone(currentSnapshot)} className="capitalize">
@@ -254,9 +276,12 @@ export function RegimeMonitorPage() {
                     </div>
                   </>
                 ) : (
-                  <div className="text-sm text-muted-foreground">
-                    No regime snapshot is available yet for this model.
-                  </div>
+                  <StatePanel
+                    tone="empty"
+                    title="No Regime Snapshot"
+                    message="No regime snapshot is available yet for this model."
+                    className="rounded-xl p-4"
+                  />
                 )}
               </CardContent>
             </Card>
@@ -341,11 +366,13 @@ export function RegimeMonitorPage() {
             </CardHeader>
             <CardContent className="pt-6">
               {historyQuery.isLoading ? (
-                <PageLoader text="Loading history..." className="h-40" />
+                <PageLoader text="Loading history..." variant="panel" className="min-h-[10rem]" />
               ) : historyRows.length === 0 ? (
-                <div className="rounded-2xl border-2 border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-6 text-sm text-muted-foreground">
-                  No regime history is available for this model yet.
-                </div>
+                <StatePanel
+                  tone="empty"
+                  title="No Regime History"
+                  message="No regime history is available for this model yet."
+                />
               ) : (
                 <Table>
                   <TableHeader>
@@ -441,7 +468,7 @@ export function RegimeMonitorPage() {
             </CardHeader>
             <CardContent className="pt-6">
               {selectedModelDetailQuery.isLoading ? (
-                <PageLoader text="Loading revisions..." className="h-40" />
+                <PageLoader text="Loading revisions..." variant="panel" className="min-h-[10rem]" />
               ) : selectedModelDetailQuery.data?.revisions?.length ? (
                 <Table>
                   <TableHeader>
@@ -458,9 +485,9 @@ export function RegimeMonitorPage() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <span className="font-medium">v{revision.version}</span>
-                            {revision.version === activeVersion ? (
+                            {revision.version === activeVersion && (
                               <Badge variant="secondary">Active</Badge>
-                            ) : null}
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>{formatTimestamp(revision.published_at)}</TableCell>
@@ -487,9 +514,11 @@ export function RegimeMonitorPage() {
                   </TableBody>
                 </Table>
               ) : (
-                <div className="rounded-2xl border-2 border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-6 text-sm text-muted-foreground">
-                  No revisions found for this model.
-                </div>
+                <StatePanel
+                  tone="empty"
+                  title="No Revisions Found"
+                  message="No revisions found for this model."
+                />
               )}
             </CardContent>
           </Card>

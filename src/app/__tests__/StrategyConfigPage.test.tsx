@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest';
-import { StrategyConfigPage } from '@/app/components/pages/StrategyConfigPage';
+import { StrategyConfigPage } from '@/features/strategies/StrategyConfigPage';
 import { backtestApi } from '@/services/backtestApi';
 import { rankingApi } from '@/services/rankingApi';
 import { strategyApi } from '@/services/strategyApi';
@@ -236,7 +236,9 @@ describe('StrategyConfigPage', () => {
     renderWithProviders(<StrategyConfigPage />);
 
     expect(await screen.findByText(/detail failed/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /open strategy quality-trend/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /open strategy quality-trend/i })
+    ).toBeInTheDocument();
   });
 
   it('keeps the editor open and raises a toast when save fails', async () => {
@@ -386,7 +388,9 @@ describe('StrategyConfigPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
 
-    expect(await screen.findByRole('heading', { name: /discard draft changes/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /discard draft changes/i })
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /keep editing/i }));
     expect(screen.getByRole('heading', { name: /new strategy/i })).toBeInTheDocument();
   });

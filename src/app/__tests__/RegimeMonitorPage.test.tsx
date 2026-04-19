@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RegimeModelConfig } from '@asset-allocation/contracts';
 
-import { RegimeMonitorPage } from '@/app/components/pages/RegimeMonitorPage';
+import { RegimeMonitorPage } from '@/features/regimes/RegimeMonitorPage';
 import { regimeApi } from '@/services/regimeApi';
 import { renderWithProviders } from '@/test/utils';
 

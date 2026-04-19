@@ -46,3 +46,27 @@ Canonical workflows live under `.github/workflows/`.
 - `scripts/setup-env.ps1` builds repo-local `.env.web` and `.env.local` using Azure and git discovery where possible, and can ingest `NPMRC` from a file path.
 - `scripts/sync-all-to-github.ps1` syncs the `.env.web` surface into repo vars and secrets.
 - `DEPLOYMENT_SETUP.md` is the canonical deploy, operate, and rollback runbook.
+
+## UI Shell
+
+The control-plane pages share one admin shell vocabulary:
+
+- `src/app/components/common/PageHero.tsx` defines the compact header grammar for kicker, title, subtitle, actions, and KPI rows.
+- `src/app/components/common/StatCard.tsx` is the shared metric tile for admin pages.
+- `src/app/components/common/StatePanel.tsx` standardizes loading-adjacent empty, info, and error messaging.
+- `src/app/components/layout/LeftNavigation.tsx` is the single navigation shell and now sits on the sidebar primitives instead of a parallel custom layout stack.
+
+Targeted verification for shell changes:
+
+```powershell
+corepack pnpm format:check
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm test --run
+corepack pnpm build
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
+python .codex/skills/code-drift-sentinel/scripts/codedrift_sentinel.py --mode audit --repo . --config .codedrift.yml
+```
+
+`format:check` is diff-scoped against `main` by default so legacy formatting debt outside the current change set does not block admin-shell work. Override the comparison ref with `FORMAT_BASE_REF` when needed.

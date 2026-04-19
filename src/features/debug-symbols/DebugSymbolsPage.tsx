@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { RefreshCw, Save, ShieldAlert, Trash2 } from 'lucide-react';
-import { useDebugSymbolsQuery, queryKeys } from '@/hooks/useDataQueries';
-import { DataService } from '@/services/DataService';
+import { Bug, RefreshCw, Save, ShieldAlert, Trash2 } from 'lucide-react';
+
+import { PageHero } from '@/app/components/common/PageHero';
+import { PageLoader } from '@/app/components/common/PageLoader';
+import { StatePanel } from '@/app/components/common/StatePanel';
+import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Textarea } from '@/app/components/ui/textarea';
-import { Badge } from '@/app/components/ui/badge';
 import { formatTimeAgo } from '@/app/components/pages/system-status/SystemStatusHelpers';
+import { queryKeys, useDebugSymbolsQuery } from '@/hooks/useDataQueries';
+import { DataService } from '@/services/DataService';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
-import { PageLoader } from '@/app/components/common/PageLoader';
 
 const MAX_PREVIEW = 20;
 
@@ -28,7 +31,7 @@ function normalizeSymbols(raw: string): string[] {
           .map((item) => item.toUpperCase());
       }
     } catch {
-      // Fallback to CSV parsing.
+      // Fall back to CSV parsing.
     }
   }
 
@@ -60,8 +63,39 @@ export function DebugSymbolsPage() {
   const currentSymbols = String(debugSymbolsQuery.data?.symbols || '').trim();
   const isConfigured = currentSymbols.length > 0;
   const isDirty = symbolsInput.trim() !== currentSymbols;
-
   const updatedAgo = formatTimeAgo(debugSymbolsQuery.data?.updatedAt || null);
+
+  const hero = (
+    <PageHero
+      kicker="Live Operations"
+      title={
+        <span className="flex items-center gap-2">
+          <Bug className="h-5 w-5 text-mcm-teal" />
+          Debug Symbols
+        </span>
+      }
+      subtitle="Control the symbol allowlist stored in Postgres runtime config and applied at ETL startup."
+      metrics={[
+        {
+          label: 'Presence',
+          value: isConfigured ? 'Configured' : 'Not Set',
+          detail: isConfigured
+            ? 'Stored symbols are active on job startup.'
+            : 'No allowlist is currently stored.'
+        },
+        {
+          label: 'Normalized Count',
+          value: String(normalizedSymbols.length),
+          detail: 'Symbols parsed from the current editor contents.'
+        },
+        {
+          label: 'Updated',
+          value: updatedAgo,
+          detail: 'Age of the last persisted update.'
+        }
+      ]}
+    />
+  );
 
   const handleReset = () => {
     setHasLocalChanges(false);
@@ -77,8 +111,8 @@ export function DebugSymbolsPage() {
       toast.success('Debug symbols updated.');
       setHasLocalChanges(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.debugSymbols() });
-    } catch (err) {
-      const message = formatSystemStatusText(err);
+    } catch (error) {
+      const message = formatSystemStatusText(error);
       toast.error(`Failed to update debug symbols: ${message}`);
     } finally {
       setIsSaving(false);
@@ -93,8 +127,8 @@ export function DebugSymbolsPage() {
       setHasLocalChanges(false);
       setSymbolsInput('');
       void queryClient.invalidateQueries({ queryKey: queryKeys.debugSymbols() });
-    } catch (err) {
-      const message = formatSystemStatusText(err);
+    } catch (error) {
+      const message = formatSystemStatusText(error);
       toast.error(`Failed to remove debug symbols: ${message}`);
     } finally {
       setIsDeleting(false);
@@ -102,30 +136,36 @@ export function DebugSymbolsPage() {
   };
 
   if (debugSymbolsQuery.isLoading) {
-    return <PageLoader text="Loading Debug Configuration..." />;
+    return (
+      <div className="page-shell">
+        {hero}
+        <PageLoader text="Loading Debug Configuration..." variant="panel" />
+      </div>
+    );
   }
 
   if (debugSymbolsQuery.error) {
     return (
-      <div className="mcm-panel rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-destructive">
-        <div className="flex items-center gap-2 font-mono text-sm uppercase">
-          <ShieldAlert className="h-4 w-4" />
-          Debug Symbols Unavailable
-        </div>
-        <p className="mt-3 text-sm">{formatSystemStatusText(debugSymbolsQuery.error)}</p>
+      <div className="page-shell">
+        {hero}
+        <StatePanel
+          tone="error"
+          title={
+            <span className="flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4" />
+              Debug Symbols Unavailable
+            </span>
+          }
+          message={formatSystemStatusText(debugSymbolsQuery.error)}
+          className="mcm-panel border-destructive/30 bg-destructive/10"
+        />
       </div>
     );
   }
 
   return (
     <div className="page-shell">
-      <div className="page-header">
-        <p className="page-kicker">Live Operations</p>
-        <h1 className="page-title">Debug Symbols</h1>
-        <p className="page-subtitle">
-          Control the symbol allowlist stored in Postgres runtime config and applied at ETL startup.
-        </p>
-      </div>
+      {hero}
 
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <Card className="mcm-panel">
@@ -245,10 +285,16 @@ export function DebugSymbolsPage() {
                 </Badge>
               )}
             </div>
-            <div className="rounded-lg border border-dashed border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
-              Jobs pull this list from Postgres runtime config on startup. Removing the row makes
-              debug filtering disappear entirely.
-            </div>
+            <StatePanel
+              tone={normalizedSymbols.length ? 'info' : 'empty'}
+              title={normalizedSymbols.length ? 'Startup Behavior' : 'No Symbols Configured'}
+              message={
+                normalizedSymbols.length
+                  ? 'Jobs pull this list from Postgres runtime config on startup. Removing the row makes debug filtering disappear entirely.'
+                  : 'Persist at least one symbol to activate startup-time debug filtering.'
+              }
+              className="rounded-xl p-4"
+            />
           </CardContent>
         </Card>
       </div>

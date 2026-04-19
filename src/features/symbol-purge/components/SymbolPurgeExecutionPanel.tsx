@@ -1,5 +1,6 @@
 import { AlertTriangle, Loader2, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 
+import { StatCard } from '@/app/components/common/StatCard';
 import { Button } from '@/app/components/ui/button';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import { Input } from '@/app/components/ui/input';
@@ -34,22 +35,24 @@ export function SymbolPurgeExecutionPanel({ controller }: Props) {
           ) : null}
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-md border border-border/70 bg-muted/30 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Selected symbols
-            </p>
-            <p className="font-mono text-2xl font-black">{candidate.selectedCount}</p>
-          </div>
-          <div className="rounded-md border border-border/70 bg-muted/30 p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Estimated purge target
-            </p>
-            <p className="font-mono text-2xl font-black">
-              {candidate.response
+          <StatCard
+            label="Selected Symbols"
+            value={candidate.selectedCount}
+            detail="Symbols currently staged for destructive work."
+            className="rounded-md border border-border/70 bg-muted/30 p-3 shadow-none"
+            valueClassName="font-mono text-2xl font-black"
+          />
+          <StatCard
+            label="Estimated Purge Target"
+            value={
+              candidate.response
                 ? formatNumber(candidate.response.summary.estimatedDeletionTargets)
-                : '-'}
-            </p>
-          </div>
+                : '-'
+            }
+            detail="Approximate delete targets from the latest preview."
+            className="rounded-md border border-border/70 bg-muted/30 p-3 shadow-none"
+            valueClassName="font-mono text-2xl font-black"
+          />
         </div>
 
         {candidate.response?.note ? (
@@ -149,26 +152,41 @@ export function SymbolPurgeExecutionPanel({ controller }: Props) {
 
         {execution.completionSummary ? (
           <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <MetricCard label="Requested" value={execution.completionSummary.requested} />
-            <MetricCard label="Completed" value={execution.completionSummary.completed} />
-            <MetricCard
+            <StatCard
+              label="Requested"
+              value={execution.completionSummary.requested}
+              className="rounded-md border border-border/70 bg-muted/30 p-2 shadow-none"
+              valueClassName="font-mono text-lg font-black"
+            />
+            <StatCard
+              label="Completed"
+              value={execution.completionSummary.completed}
+              className="rounded-md border border-border/70 bg-muted/30 p-2 shadow-none"
+              valueClassName="font-mono text-lg font-black"
+            />
+            <StatCard
               label="In Progress"
               value={execution.completionSummary.inProgress}
-              valueClassName="text-amber-600"
+              className="rounded-md border border-border/70 bg-muted/30 p-2 shadow-none"
+              valueClassName="font-mono text-lg font-black text-amber-600"
             />
-            <MetricCard
+            <StatCard
               label="Succeeded"
               value={execution.completionSummary.succeeded}
-              valueClassName="text-emerald-600"
+              className="rounded-md border border-border/70 bg-muted/30 p-2 shadow-none"
+              valueClassName="font-mono text-lg font-black text-emerald-600"
             />
-            <MetricCard
+            <StatCard
               label="Failed"
               value={execution.completionSummary.failed}
-              valueClassName="text-destructive"
+              className="rounded-md border border-border/70 bg-muted/30 p-2 shadow-none"
+              valueClassName="font-mono text-lg font-black text-destructive"
             />
-            <MetricCard
+            <StatCard
               label="Deleted"
               value={formatNumber(execution.completionSummary.totalDeleted)}
+              className="rounded-md border border-border/70 bg-muted/30 p-2 shadow-none"
+              valueClassName="font-mono text-lg font-black"
             />
           </div>
         ) : null}
@@ -207,22 +225,5 @@ export function SymbolPurgeExecutionPanel({ controller }: Props) {
         </div>
       ) : null}
     </>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  valueClassName
-}: {
-  label: string;
-  value: number | string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className="rounded-md border border-border/70 bg-muted/30 p-2 text-sm">
-      <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
-      <div className={`font-mono font-black ${valueClassName || ''}`}>{value}</div>
-    </div>
   );
 }
