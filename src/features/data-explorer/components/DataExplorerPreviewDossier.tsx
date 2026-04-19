@@ -5,7 +5,7 @@ import {
 } from '@/features/data-explorer/lib/dataExplorer';
 import type { AdlsFilePreviewResponse } from '@/services/apiService';
 import { formatPreviewContent } from '@/utils/formatPreviewContent';
-import { Database, FileText } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
 interface DataExplorerPreviewDossierProps {
   selectedFilePath: string | null;

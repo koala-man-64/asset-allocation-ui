@@ -501,12 +501,12 @@ export function ContainerAppsPanel() {
                               target="_blank"
                               rel="noreferrer"
                               className="hover:text-primary transition-colors"
-                              title={probeUrl}
+                              title={probeUrl ?? undefined}
                             >
                               {probeUrl}
                             </a>
                           ) : probeUrl ? (
-                            <span title={probeUrl}>{probeUrl}</span>
+                            <span title={probeUrl ?? undefined}>{probeUrl}</span>
                           ) : (
                             '—'
                           )}

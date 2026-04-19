@@ -178,11 +178,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const oidcAuthority = config.oidcAuthority;
   const oidcScopes = config.oidcScopes;
   const oidcRedirectUri = config.oidcRedirectUri;
+  const authRequired = config.authRequired;
   const oidcPostLogoutRedirectUri = resolvePostLogoutRedirectUri(
     config.oidcPostLogoutRedirectUri,
     oidcRedirectUri
   );
-  const oidcScopeKey = oidcScopes.join(' ');
 
   const enabled =
     config.oidcEnabled &&
@@ -204,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       oidcClientId,
       oidcPostLogoutRedirectUri,
       oidcRedirectUri,
-      oidcScopeKey
+      oidcScopes
     ]
   );
 
@@ -213,7 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<AuthPhase>(
     enabled && typeof window !== 'undefined' && isCallbackPath(window.location.pathname)
       ? 'redirecting'
-      : enabled && config.authRequired
+      : enabled && authRequired
         ? 'initializing'
         : 'signed-out'
   );
@@ -258,7 +258,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     };
-  }, [msalSession, oidcScopeKey]);
+  }, [msalSession, oidcScopes]);
 
   useEffect(() => {
     if (!msalSession) {
@@ -279,17 +279,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setReady(false);
     setError(null);
     setInteractionReason(null);
-    setPhase(onCallbackPath ? 'redirecting' : config.authRequired ? 'initializing' : 'signed-out');
+    setPhase(onCallbackPath ? 'redirecting' : authRequired ? 'initializing' : 'signed-out');
     logAuthTransition('bootstrap-start', {
       pathname,
-      authRequired: config.authRequired,
+      authRequired,
       callback: onCallbackPath,
       logoutComplete: onLogoutCompletePath
     });
 
     const bootstrap = async () => {
       const result = await msalSession.runBootstrap({
-        authRequired: config.authRequired,
+        authRequired,
         pathname,
         onCallbackPath,
         onLogoutCompletePath
@@ -341,7 +341,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [config.authRequired, msalSession, oidcScopeKey]);
+  }, [authRequired, msalSession]);
 
   useEffect(() => {
     if (!msalSession) {
@@ -373,10 +373,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       setAccessTokenProvider(null);
     };
-  }, [account, msalSession, oidcScopeKey]);
+  }, [account, msalSession, oidcScopes]);
 
   useEffect(() => {
-    if (!enabled || !config.authRequired) {
+    if (!enabled || !authRequired) {
       setInteractiveAuthHandler(null);
       return;
     }
@@ -407,7 +407,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       setInteractiveAuthHandler(null);
     };
-  }, [config.authRequired, enabled, msalSession]);
+  }, [authRequired, enabled, msalSession]);
 
   const signIn = (returnPath?: string) => {
     if (!beginLoginRedirect) {
