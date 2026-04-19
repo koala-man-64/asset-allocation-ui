@@ -115,7 +115,15 @@ def test_ui_repo_has_bootstrap_scripts_and_no_shared_provisioner() -> None:
     assert (scripts_dir / "setup-env.ps1").exists()
     assert (scripts_dir / "sync-all-to-github.ps1").exists()
     assert (scripts_dir / "validate_deployed_ui_oidc.py").exists()
+    assert (scripts_dir / "validate_github_deploy_vars.py").exists()
     assert not (scripts_dir / "provision_azure.ps1").exists()
+
+
+def test_sync_all_to_github_uses_body_flags_for_gh_cli() -> None:
+    text = (repo_root() / "scripts" / "sync-all-to-github.ps1").read_text(encoding="utf-8")
+    assert "Normalize-TextValue" in text
+    assert "gh variable set $key --body $value" in text
+    assert "gh secret set $key --body" in text
 
 
 def test_ui_deploy_workflow_is_release_driven_and_uses_repo_var() -> None:
@@ -127,6 +135,8 @@ def test_ui_deploy_workflow_is_release_driven_and_uses_repo_var() -> None:
     assert "- UI Release" in text
     assert "branches:\n      - main" in text
     assert "actions: read" in text
+    assert "validate-runtime-repo-vars" in text
+    assert 'python scripts/validate_github_deploy_vars.py --repo "${GITHUB_REPOSITORY}" --mode prod-runtime' in text
     assert "vars.API_UPSTREAM" in text
     assert "actions/workflows/release.yml/runs?branch=main&per_page=20" in text
     assert "actions/runs/${{ steps.release-run.outputs.release_run_id }}/artifacts" in text
@@ -152,6 +162,8 @@ def test_ui_rollback_workflow_requires_only_image_digest() -> None:
     assert "image_digest:" in text
     assert "api_upstream:" not in text
     assert "contracts_version:" not in text
+    assert "Validate required repo deploy vars" in text
+    assert 'python scripts/validate_github_deploy_vars.py --repo "${GITHUB_REPOSITORY}" --mode prod-runtime' in text
     assert "uses: ./.github/workflows/deploy-ui-runtime.yml" in text
 
 
@@ -234,11 +246,10 @@ def test_ui_runtime_config_sources_publish_same_origin_oidc_overrides() -> None:
         )
 
 
-def test_ui_release_workflow_fails_fast_when_azure_repo_vars_are_missing() -> None:
+def test_ui_release_workflow_fails_fast_when_required_repo_vars_are_missing() -> None:
     text = workflow_text("release.yml")
-    assert "Verify required Azure repo vars" in text
-    assert "Missing required UI release repo vars" in text
-    assert "AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID ACR_NAME RESOURCE_GROUP" in text
+    assert "Validate required repo deploy vars" in text
+    assert 'python scripts/validate_github_deploy_vars.py --repo "${GITHUB_REPOSITORY}" --mode prod-runtime' in text
 
 
 def test_ui_release_workflow_publishes_release_manifest_artifact() -> None:

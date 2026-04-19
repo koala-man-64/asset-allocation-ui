@@ -19,8 +19,10 @@ Rules:
 - `API_UPSTREAM_SCHEME` is a first-class repo variable that controls how the UI proxy connects to `API_UPSTREAM`. Use `https` for the public ACA FQDN and `http` only for trusted internal upstreams that do not redirect.
 - `UI_AUTH_ENABLED` is a first-class repo or environment variable consumed at UI container startup. It can still be disabled for local-only bypass scenarios.
 - `UI_OIDC_AUTHORITY`, `UI_OIDC_CLIENT_ID`, and `UI_OIDC_SCOPES` are required repo variables whenever `UI_AUTH_ENABLED=true` in a deployed environment because `/ui-config.js` is now the only pre-main bootstrap surface.
+- The authoritative source for those UI OIDC values is the sibling `asset-allocation-control-plane` provisioning flow. After any Entra reprovision or UI app-registration change, refresh `.env.web` here and re-run `scripts/sync-all-to-github.ps1` so the UI repo variables stay aligned.
 - `UI_OIDC_AUDIENCE` is optional and is passed through to the runtime bootstrap when present.
 - `UI_PUBLIC_HOSTNAME` is optional until custom-domain cutover. When set, `deploy-ui-runtime.yml` binds that hostname directly to the UI Container App, requests an ACA-managed certificate, and verifies the deployed UI through the stable public hostname.
 - `NPMRC` is a required GitHub secret for CI build/test, release, Docker builds, and lockfile refreshes because `@asset-allocation/contracts` is installed from the published registry package. `security.yml` scans `pnpm-lock.yaml` directly with OSV-Scanner and does not require registry auth.
 - `.env.web` is line-based, so multiline secret values such as `NPMRC` are stored with escaped `\n` and converted back to real newlines when `scripts/sync-all-to-github.ps1` publishes the secret.
+- `release.yml`, `deploy-prod.yml`, and `rollback-prod.yml` now share the same repo-variable preflight via `scripts/validate_github_deploy_vars.py`. Missing deploy vars are treated as repo-config drift and fail before build, artifact resolution, Azure login, or rollout work starts.
 - Shared Azure provisioning lives in the sibling `asset-allocation-control-plane` repo, not here.
