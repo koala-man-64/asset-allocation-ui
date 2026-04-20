@@ -377,7 +377,7 @@ describe('AuthProvider', () => {
     });
   });
 
-  it('returns no bearer token when silent token acquisition fails unexpectedly', async () => {
+  it('fails fast when silent token acquisition fails unexpectedly', async () => {
     const account = { username: 'analyst@example.com', name: 'Analyst' };
     mockConfig.authRequired = true;
     window.history.pushState({}, 'System Status', '/system-status');
@@ -394,12 +394,12 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
     });
 
-    let headers: Headers | undefined;
     await act(async () => {
-      headers = await appendAuthHeaders(undefined, { forceRefresh: true });
+      await expect(appendAuthHeaders(undefined, { forceRefresh: true })).rejects.toThrow(
+        'OIDC access token acquisition failed. cache failure'
+      );
     });
 
-    expect(headers?.has('Authorization')).toBe(false);
     expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
   });
 

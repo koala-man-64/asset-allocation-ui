@@ -375,8 +375,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (err instanceof InteractionRequiredAuthError) {
           throw createInteractionRequiredError('OIDC session refresh requires sign-in.');
         }
-        console.warn('Failed to acquire access token', err);
-        return null;
+        console.error('Failed to acquire access token', err);
+        throw new Error(describeAuthError('OIDC access token acquisition failed.', err), {
+          cause: err
+        });
       }
     });
 

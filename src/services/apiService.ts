@@ -64,6 +64,10 @@ function buildRecentSessionSuppressedAuthMessage(
   return `API Error: ${response.status} ${response.statusText} [requestId=${requestId}]${suffix} Interactive sign-in was suppressed because /auth/session succeeded recently; check API authorization or upstream auth configuration.`;
 }
 
+function buildMissingBearerTokenAfterRefreshMessage(endpoint: string, requestId: string): string {
+  return `OIDC token refresh did not produce a bearer token [requestId=${requestId}] - ${endpoint}. The UI refused to replay the protected API call without authorization.`;
+}
+
 function isRetryableStatusCode(statusCode: number): boolean {
   return API_COLD_START_RETRYABLE_STATUS_CODES.has(statusCode);
 }
@@ -322,6 +326,17 @@ async function performRequest<T>(
       });
       try {
         authHeaders = await appendAuthHeaders(requestHeaders, { forceRefresh: true });
+        if (!authHeaders.has('Authorization')) {
+          const error = new Error(buildMissingBearerTokenAfterRefreshMessage(endpoint, requestId));
+          logAuthRecovery('silent-recovery-missing-token', {
+            endpoint,
+            method: requestMethod,
+            requestId,
+            recoveryAttempt: 1,
+            error: error.message
+          });
+          throw error;
+        }
         logAuthRecovery('silent-recovery-success', {
           endpoint,
           method: requestMethod,

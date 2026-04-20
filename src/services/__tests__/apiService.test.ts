@@ -3,8 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { mockAppendAuthHeaders, mockHasInteractiveAuthHandler, mockRequestInteractiveReauth } =
   vi.hoisted(() => ({
     mockAppendAuthHeaders: vi.fn(
-      async (headersInput?: HeadersInit, _options?: { forceRefresh?: boolean }) =>
-        new Headers(headersInput)
+      async (headersInput?: HeadersInit, _options?: { forceRefresh?: boolean }) => {
+        const headers = new Headers(headersInput);
+        headers.set('Authorization', 'Bearer test-token');
+        return headers;
+      }
     ),
     mockHasInteractiveAuthHandler: vi.fn(() => true),
     mockRequestInteractiveReauth: vi.fn(async (_request?: unknown) => {
@@ -207,6 +210,37 @@ describe('apiService cold start handling', () => {
 
     expect(mockAppendAuthHeaders).toHaveBeenNthCalledWith(
       3,
+      expect.any(Headers),
+      expect.objectContaining({ forceRefresh: true })
+    );
+    expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
+  });
+
+  it('refuses to replay a protected request when a forced refresh yields no bearer token', async () => {
+    mockAppendAuthHeaders.mockImplementationOnce(async (headersInput?: HeadersInit) => {
+      const headers = new Headers(headersInput);
+      headers.set('Authorization', 'Bearer stale-token');
+      return headers;
+    });
+    mockAppendAuthHeaders.mockImplementationOnce(async (headersInput?: HeadersInit) => {
+      const headers = new Headers(headersInput);
+      headers.delete('Authorization');
+      return headers;
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }));
+
+    const { request } = await importApiService();
+
+    await expect(request('/system/status-view')).rejects.toThrow(
+      /OIDC token refresh did not produce a bearer token/i
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mockAppendAuthHeaders).toHaveBeenNthCalledWith(
+      2,
       expect.any(Headers),
       expect.objectContaining({ forceRefresh: true })
     );
