@@ -12,6 +12,7 @@ import {
   type AccessTokenRequestOptions,
   type InteractiveAuthRequest
 } from '@/services/authTransport';
+import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
 const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
 const DEFAULT_POST_LOGIN_PATH = '/system-status';
@@ -33,8 +34,26 @@ function describeAuthError(prefix: string, err: unknown): string {
   return detail ? `${prefix} ${detail}` : prefix;
 }
 
-function logAuthTransition(event: string, detail: Record<string, unknown> = {}): void {
-  console.info(`[Auth] ${event}`, detail);
+function summarizeAccountForLogs(account: AccountInfo | null | undefined): Record<string, unknown> {
+  if (!account) {
+    return { present: false };
+  }
+
+  return {
+    present: true,
+    username: account.username ?? null,
+    name: account.name ?? null,
+    tenantId: account.tenantId ?? null,
+    homeAccountId: account.homeAccountId ?? null
+  };
+}
+
+function logAuthTransition(
+  event: string,
+  detail: Record<string, unknown> = {},
+  level: 'info' | 'warn' | 'error' = 'info'
+): void {
+  logUiDiagnostic('Auth', event, detail, level);
 }
 
 export interface AuthContextType {
@@ -223,6 +242,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [interactionReason, setInteractionReason] = useState<string | null>(null);
   const [interactionRequest, setInteractionRequest] = useState<InteractiveAuthRequest | null>(null);
 
+  useEffect(() => {
+    logAuthTransition('provider-config', {
+      enabled,
+      authRequired,
+      oidcEnabled: config.oidcEnabled,
+      apiBaseUrl: config.apiBaseUrl,
+      authority: oidcAuthority || null,
+      redirectUri: oidcRedirectUri || null,
+      postLogoutRedirectUri: oidcPostLogoutRedirectUri || null,
+      scopes: oidcScopes
+    });
+  }, [
+    authRequired,
+    enabled,
+    oidcAuthority,
+    oidcPostLogoutRedirectUri,
+    oidcRedirectUri,
+    oidcScopes
+  ]);
+
   const beginLoginRedirect = useMemo(() => {
     if (!msalSession) {
       return null;
@@ -246,7 +285,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setReady(true);
       storePostLoginRedirectPath(nextReturnPath);
       logAuthTransition('redirect-start', {
-        returnPath: nextReturnPath
+        returnPath: nextReturnPath,
+        scopes: oidcScopes
       });
 
       try {
@@ -254,9 +294,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await instance.loginRedirect({
           scopes: oidcScopes
         });
+        logAuthTransition('redirect-dispatched', {
+          returnPath: nextReturnPath,
+          scopes: oidcScopes
+        });
       } catch (err) {
         msalSession.setRedirectInFlight(false);
         console.error('OIDC sign-in failed', err);
+        logAuthTransition(
+          'redirect-start-failed',
+          {
+            returnPath: nextReturnPath,
+            scopes: oidcScopes,
+            error: err
+          },
+          'error'
+        );
         setPhase('signed-out');
         setError(describeAuthError('OIDC sign-in could not be started.', err));
         throw err;
@@ -273,6 +326,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       setPhase('signed-out');
       setReady(true);
+      logAuthTransition('provider-disabled', {
+        authRequired,
+        enabled
+      });
       return;
     }
 
@@ -317,7 +374,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logAuthTransition('bootstrap-authenticated', {
           callback: onCallbackPath,
           redirectResult: Boolean(result.redirectResult),
-          returnPath: peekPostLoginRedirectPath()
+          returnPath: peekPostLoginRedirectPath(),
+          account: summarizeAccountForLogs(result.account)
         });
         return;
       }
@@ -328,15 +386,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       setPhase('signed-out');
       setReady(true);
-      logAuthTransition(result.interactionRequired ? 'bootstrap-interaction-required' : 'bootstrap-signed-out', {
-        pathname,
-        callback: onCallbackPath
-      });
+      logAuthTransition(
+        result.interactionRequired ? 'bootstrap-interaction-required' : 'bootstrap-signed-out',
+        {
+          pathname,
+          callback: onCallbackPath,
+          interactionRequired: result.interactionRequired
+        }
+      );
     };
 
     bootstrap().catch((err) => {
       msalSession.setRedirectInFlight(false);
       console.error('OIDC bootstrap failed', err);
+      logAuthTransition(
+        'bootstrap-failed',
+        {
+          pathname,
+          callback: onCallbackPath,
+          logoutComplete: onLogoutCompletePath,
+          error: err
+        },
+        'error'
+      );
       if (!cancelled) {
         setAccount(null);
         setInteractionReason(null);
@@ -354,12 +426,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!msalSession) {
+      logAuthTransition('access-token-provider-cleared', {
+        reason: 'msal-session-unavailable'
+      });
       setAccessTokenProvider(null);
       return;
     }
 
+    logAuthTransition('access-token-provider-registered', {
+      account: summarizeAccountForLogs(account),
+      scopes: oidcScopes
+    });
     setAccessTokenProvider(async (options: AccessTokenRequestOptions = {}) => {
+      logAuthTransition('access-token-request-start', {
+        account: summarizeAccountForLogs(account),
+        scopes: oidcScopes,
+        forceRefresh: Boolean(options.forceRefresh)
+      });
       if (!account) {
+        logAuthTransition(
+          'access-token-request-no-account',
+          {
+            scopes: oidcScopes,
+            forceRefresh: Boolean(options.forceRefresh)
+          },
+          'warn'
+        );
         return null;
       }
 
@@ -370,12 +462,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           scopes: oidcScopes,
           forceRefresh: Boolean(options.forceRefresh)
         });
+        logAuthTransition('access-token-request-success', {
+          account: summarizeAccountForLogs(result.account ?? account),
+          scopes: result.scopes ?? oidcScopes,
+          expiresOn: result.expiresOn?.toISOString() ?? null,
+          forceRefresh: Boolean(options.forceRefresh),
+          hasAccessToken: Boolean(result.accessToken)
+        });
         return result.accessToken || null;
       } catch (err) {
         if (err instanceof InteractionRequiredAuthError) {
+          logAuthTransition(
+            'access-token-request-interaction-required',
+            {
+              account: summarizeAccountForLogs(account),
+              scopes: oidcScopes,
+              forceRefresh: Boolean(options.forceRefresh),
+              error: err
+            },
+            'warn'
+          );
           throw createInteractionRequiredError('OIDC session refresh requires sign-in.');
         }
         console.error('Failed to acquire access token', err);
+        logAuthTransition(
+          'access-token-request-failed',
+          {
+            account: summarizeAccountForLogs(account),
+            scopes: oidcScopes,
+            forceRefresh: Boolean(options.forceRefresh),
+            error: err
+          },
+          'error'
+        );
         throw new Error(describeAuthError('OIDC access token acquisition failed.', err), {
           cause: err
         });
@@ -383,16 +502,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => {
+      logAuthTransition('access-token-provider-cleared', {
+        reason: 'effect-cleanup'
+      });
       setAccessTokenProvider(null);
     };
   }, [account, msalSession, oidcScopes]);
 
   useEffect(() => {
     if (!enabled || !authRequired) {
+      logAuthTransition('interactive-auth-handler-cleared', {
+        enabled,
+        authRequired
+      });
       setInteractiveAuthHandler(null);
       return;
     }
 
+    logAuthTransition('interactive-auth-handler-registered', {
+      enabled,
+      authRequired
+    });
     setInteractiveAuthHandler((request = {}) => {
       if (typeof window !== 'undefined' && isLogoutCompletePath(window.location.pathname)) {
         logAuthTransition('reauth-suppressed-on-logout-route', {
@@ -422,12 +552,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => {
+      logAuthTransition('interactive-auth-handler-cleared', {
+        reason: 'effect-cleanup'
+      });
       setInteractiveAuthHandler(null);
     };
   }, [authRequired, enabled, msalSession]);
 
   const signIn = (returnPath?: string) => {
     if (!beginLoginRedirect) {
+      logAuthTransition(
+        'sign-in-ignored',
+        {
+          returnPath: resolveReturnPath(returnPath),
+          reason: 'login-redirect-unavailable'
+        },
+        'warn'
+      );
       return;
     }
 
@@ -436,6 +577,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = () => {
     if (!msalSession || phase === 'redirecting' || phase === 'signing-out') {
+      logAuthTransition(
+        'sign-out-ignored',
+        {
+          user: account?.username ?? null,
+          phase,
+          hasMsalSession: Boolean(msalSession)
+        },
+        'warn'
+      );
       return;
     }
 
@@ -452,14 +602,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     void msalSession
       .ensureInitialized()
-      .then((instance) =>
-        instance.logoutRedirect({
+      .then((instance) => {
+        logAuthTransition('sign-out-redirect-dispatched', {
+          user: account?.username ?? null,
+          postLogoutRedirectUri: oidcPostLogoutRedirectUri || null
+        });
+        return instance.logoutRedirect({
           account: account ?? undefined,
           postLogoutRedirectUri: oidcPostLogoutRedirectUri || undefined
-        })
-      )
+        });
+      })
       .catch((err) => {
         console.error('OIDC sign-out failed', err);
+        logAuthTransition(
+          'sign-out-failed',
+          {
+            user: account?.username ?? null,
+            error: err
+          },
+          'error'
+        );
         setPhase(account ? 'authenticated' : 'signed-out');
         setError(describeAuthError('OIDC sign-out could not be completed.', err));
       });

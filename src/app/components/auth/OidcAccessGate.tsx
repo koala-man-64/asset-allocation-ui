@@ -15,6 +15,7 @@ import { ApiError } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
 import type { InteractiveAuthRequest } from '@/services/authTransport';
 import { isAuthReauthRequiredError } from '@/services/authTransport';
+import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
 type AccessState = 'idle' | 'checking' | 'allowed' | 'forbidden' | 'error';
 type AuthStepId = 'sign-in' | 'redirect' | 'access';
@@ -54,6 +55,14 @@ const SLOW_REDIRECT_HELPER =
   'The redirect is taking longer than expected. If this browser blocks sign-in, retry the flow.';
 const SLOW_ACCESS_HELPER =
   'The session is authenticated, but the control plane is still validating access. Retry if this does not clear.';
+
+function logAuthGate(
+  event: string,
+  detail: Record<string, unknown> = {},
+  level: 'info' | 'warn' | 'error' = 'info'
+) {
+  logUiDiagnostic('AuthGate', event, detail, level);
+}
 
 function createDiagnostic(
   id: string,
@@ -717,22 +726,74 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    logAuthGate('state-snapshot', {
+      route,
+      authReady: auth.ready,
+      authPhase: auth.phase,
+      authenticated: auth.authenticated,
+      authEnabled: auth.enabled,
+      accessState,
+      retryNonce,
+      authError: auth.error,
+      interactionReason: auth.interactionReason,
+      browserOidcMisconfigured,
+      missingBrowserOidcConfig,
+      crossOriginRedirectMisconfiguration: crossOriginRedirectMisconfiguration || null,
+      apiBaseUrl: config.apiBaseUrl,
+      oidcRedirectUri: config.oidcRedirectUri || null
+    });
+  }, [
+    accessState,
+    auth.authenticated,
+    auth.enabled,
+    auth.error,
+    auth.interactionReason,
+    auth.phase,
+    auth.ready,
+    browserOidcMisconfigured,
+    crossOriginRedirectMisconfiguration,
+    missingBrowserOidcConfig,
+    retryNonce,
+    route
+  ]);
+
+  useEffect(() => {
     if (browserOidcMisconfigured) {
+      logAuthGate('access-check-skipped-misconfigured', {
+        route,
+        advertisedCallback: config.oidcRedirectUri || null,
+        uiOrigin: typeof window !== 'undefined' ? window.location.origin : null
+      }, 'warn');
       setAccessState('idle');
       setErrorMessage('');
       return;
     }
     if (!config.oidcEnabled || !config.authRequired) {
+      logAuthGate('access-check-bypassed-auth-disabled', {
+        route,
+        oidcEnabled: config.oidcEnabled,
+        authRequired: config.authRequired
+      });
       setAccessState('allowed');
       setErrorMessage('');
       return;
     }
     if (!auth.ready || auth.phase === 'redirecting' || auth.phase === 'signing-out') {
+      logAuthGate('access-check-waiting-auth-state', {
+        route,
+        authReady: auth.ready,
+        authPhase: auth.phase
+      });
       setAccessState('idle');
       setErrorMessage('');
       return;
     }
     if (!auth.authenticated) {
+      logAuthGate('access-check-waiting-authenticated-session', {
+        route,
+        authReady: auth.ready,
+        authPhase: auth.phase
+      });
       setAccessState('idle');
       setErrorMessage('');
       return;
@@ -745,18 +806,36 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
         return;
       }
       if (isAuthReauthRequiredError(error)) {
+        logAuthGate('access-check-reauth-required', {
+          route,
+          error
+        }, 'warn');
         setAccessState('idle');
         return;
       }
       if (error instanceof ApiError && error.status === 403) {
+        logAuthGate('access-check-forbidden', {
+          route,
+          error: formatAccessError(error),
+          requestId: extractRequestId(formatAccessError(error))
+        }, 'warn');
         setErrorMessage(formatAccessError(error));
         setAccessState('forbidden');
         return;
       }
       if (error instanceof ApiError && error.status === 401) {
+        logAuthGate('access-check-unauthorized', {
+          route,
+          error: formatAccessError(error),
+          requestId: extractRequestId(formatAccessError(error))
+        }, 'warn');
         setAccessState('idle');
         return;
       }
+      logAuthGate('access-check-failed', {
+        route,
+        error
+      }, 'error');
       setAccessState('error');
       setErrorMessage(formatAccessError(error));
     };
@@ -764,10 +843,24 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
     const verifyAccess = async () => {
       setAccessState('checking');
       setErrorMessage('');
+      logAuthGate('access-check-start', {
+        route,
+        retryNonce,
+        primaryEndpoint: '/auth/session',
+        fallbackEndpoint: '/system/health'
+      });
 
       try {
-        await DataService.getAuthSessionStatusWithMeta();
+        const response = await DataService.getAuthSessionStatusWithMeta();
         if (!cancelled) {
+          logAuthGate('access-check-success', {
+            route,
+            endpoint: '/auth/session',
+            requestId: response.meta.requestId,
+            status: response.meta.status,
+            durationMs: response.meta.durationMs,
+            url: response.meta.url
+          });
           setAccessState('allowed');
         }
       } catch (error) {
@@ -775,9 +868,23 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
           console.info(
             '[Auth] /api/auth/session is unavailable on this control-plane build. Falling back to /api/system/health.'
           );
+          logAuthGate('access-check-fallback-start', {
+            route,
+            fromEndpoint: '/auth/session',
+            toEndpoint: '/system/health',
+            error: formatAccessError(error)
+          }, 'warn');
           try {
-            await DataService.getSystemHealthWithMeta();
+            const response = await DataService.getSystemHealthWithMeta();
             if (!cancelled) {
+              logAuthGate('access-check-fallback-success', {
+                route,
+                endpoint: '/system/health',
+                requestId: response.meta.requestId,
+                status: response.meta.status,
+                durationMs: response.meta.durationMs,
+                url: response.meta.url
+              });
               setAccessState('allowed');
             }
             return;
