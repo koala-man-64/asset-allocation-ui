@@ -68,6 +68,24 @@ function buildMissingBearerTokenAfterRefreshMessage(endpoint: string, requestId:
   return `OIDC token refresh did not produce a bearer token [requestId=${requestId}] - ${endpoint}. The UI refused to replay the protected API call without authorization.`;
 }
 
+function canReplayWithBrowserSession(url: string, headers: Headers): boolean {
+  if (!headers.has('Authorization') || typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return new URL(url, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+function buildBrowserSessionReplayHeaders(headers: Headers): Headers {
+  const replayHeaders = new Headers(headers);
+  replayHeaders.delete('Authorization');
+  return replayHeaders;
+}
+
 function isRetryableStatusCode(statusCode: number): boolean {
   return API_COLD_START_RETRYABLE_STATUS_CODES.has(statusCode);
 }
@@ -285,6 +303,7 @@ async function performRequest<T>(
   let retryDelayMs = API_REQUEST_RETRY_BASE_DELAY_MS;
   let response: Response | null = null;
   let attemptedSilentAuthRecovery = false;
+  let attemptedBrowserSessionReplay = false;
   const startedAt = performance.now();
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const shouldRetry = attempt < maxAttempts;
@@ -312,6 +331,14 @@ async function performRequest<T>(
     }
 
     if (response.ok) {
+      if (attemptedBrowserSessionReplay) {
+        logAuthRecovery('browser-session-recovery-success', {
+          endpoint,
+          method: requestMethod,
+          requestId,
+          recoveryAttempt: attemptedSilentAuthRecovery ? 2 : 1
+        });
+      }
       noteAuthSessionValidation(endpoint, true);
       break;
     }
@@ -356,6 +383,27 @@ async function performRequest<T>(
       }
     }
 
+    if (
+      response.status === 401 &&
+      allowSilentAuthRecovery &&
+      !attemptedBrowserSessionReplay &&
+      canReplayWithBrowserSession(url, authHeaders)
+    ) {
+      const recentSessionValidationAgeMs = getRecentAuthSessionValidationAgeMs(endpoint);
+      if (recentSessionValidationAgeMs !== null) {
+        attemptedBrowserSessionReplay = true;
+        authHeaders = buildBrowserSessionReplayHeaders(requestHeaders);
+        logAuthRecovery('browser-session-recovery-start', {
+          endpoint,
+          method: requestMethod,
+          requestId,
+          recoveryAttempt: attemptedSilentAuthRecovery ? 2 : 1,
+          recentSessionValidationAgeMs
+        });
+        continue;
+      }
+    }
+
     if (!shouldRetry || !retryableStatusCodes.has(response.status)) {
       break;
     }
@@ -373,6 +421,15 @@ async function performRequest<T>(
   if (!response.ok) {
     noteAuthSessionValidation(endpoint, false);
     const errorBody = await response.text();
+    if (attemptedBrowserSessionReplay && response.status === 401) {
+      logAuthRecovery('browser-session-recovery-failed', {
+        endpoint,
+        method: requestMethod,
+        requestId,
+        status: response.status,
+        recoveryAttempt: attemptedSilentAuthRecovery ? 2 : 1
+      });
+    }
     if (response.status === 401 && hasInteractiveAuthHandler()) {
       const recentSessionValidationAgeMs = getRecentAuthSessionValidationAgeMs(endpoint);
       if (recentSessionValidationAgeMs !== null) {

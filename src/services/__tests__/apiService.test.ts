@@ -193,7 +193,13 @@ describe('apiService cold start handling', () => {
         })
       )
       .mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }))
-      .mockResolvedValueOnce(new Response('Unauthorized again', { status: 401, statusText: 'Unauthorized' }));
+      .mockResolvedValueOnce(new Response('Unauthorized again', { status: 401, statusText: 'Unauthorized' }))
+      .mockResolvedValueOnce(
+        new Response('Unauthorized with browser session', {
+          status: 401,
+          statusText: 'Unauthorized'
+        })
+      );
 
     const { request } = await importApiService();
 
@@ -214,6 +220,43 @@ describe('apiService cold start handling', () => {
       expect.objectContaining({ forceRefresh: true })
     );
     expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
+  });
+
+  it('replays same-origin reads without the bearer token when the browser session was validated recently', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          authMode: 'oidc',
+          subject: 'user-123',
+          requiredRoles: ['AssetAllocation.Access'],
+          grantedRoles: ['AssetAllocation.Access']
+        })
+      )
+      .mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }))
+      .mockResolvedValueOnce(new Response('Unauthorized again', { status: 401, statusText: 'Unauthorized' }))
+      .mockResolvedValueOnce(jsonResponse({ status: 'healthy' }));
+
+    const { request } = await importApiService();
+
+    await expect(request('/auth/session')).resolves.toEqual(
+      expect.objectContaining({
+        authMode: 'oidc',
+        subject: 'user-123'
+      })
+    );
+
+    await expect(request('/system/status-view')).resolves.toEqual({ status: 'healthy' });
+
+    expect(mockAppendAuthHeaders).toHaveBeenNthCalledWith(
+      3,
+      expect.any(Headers),
+      expect.objectContaining({ forceRefresh: true })
+    );
+    expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
+    const replayHeaders = (fetchMock.mock.calls[4]?.[1] as RequestInit)?.headers as Headers;
+    expect(replayHeaders.get('Authorization')).toBeNull();
+    expect(replayHeaders.get('X-Request-ID')).toBeTruthy();
   });
 
   it('refuses to replay a protected request when a forced refresh yields no bearer token', async () => {
