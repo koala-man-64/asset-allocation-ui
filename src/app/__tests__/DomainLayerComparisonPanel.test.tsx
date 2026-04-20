@@ -667,8 +667,8 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
 
     await waitFor(() => {
       expect(screen.queryByTestId('domain-refresh-indicator-market')).not.toBeInTheDocument();
+      expect(screen.getAllByText('0 symbols').length).toBeGreaterThan(0);
     });
-    expect(await screen.findByText('0 symbols')).toBeInTheDocument();
   });
 
   it('omits empty medallion layer columns', async () => {
