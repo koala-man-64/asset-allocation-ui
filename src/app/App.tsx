@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { QueryProvider } from '@/providers/QueryProvider';
@@ -16,6 +16,7 @@ import {
   OidcLogoutCompletePage
 } from '@/app/components/auth/OidcAccessGate';
 import { AppRoutes } from '@/app/routes';
+import { DEFAULT_APP_ROUTE_PATH } from '@/app/routeRegistry';
 import { Toaster } from '@/app/components/ui/sonner';
 
 function AppShell({ children }: { children: ReactNode }) {
@@ -64,6 +65,7 @@ export default function App() {
     <AuthProvider>
       <QueryProvider>
         <Routes>
+          <Route path="/" element={<Navigate to={DEFAULT_APP_ROUTE_PATH} replace />} />
           <Route path="/auth/callback" element={<OidcCallbackPage />} />
           <Route path="/auth/logout-complete" element={<OidcLogoutCompletePage />} />
           <Route

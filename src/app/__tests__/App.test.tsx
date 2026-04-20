@@ -75,17 +75,23 @@ vi.mock('@/features/strategy-exploration/StrategyDataCatalogPage', () => ({
   )
 }));
 vi.mock('@/features/symbol-enrichment/SymbolEnrichmentPage', () => ({
-  SymbolEnrichmentPage: () => (
-    <div data-testid="mock-symbol-enrichment">Mock Symbol Enrichment</div>
-  )
+  SymbolEnrichmentPage: () => <div data-testid="mock-symbol-enrichment">Mock Symbol Enrichment</div>
 }));
 vi.mock('@/features/intraday-monitor/IntradayMonitorPage', () => ({
-  IntradayMonitorPage: () => (
-    <div data-testid="mock-intraday-monitor">Mock Intraday Monitor</div>
-  )
+  IntradayMonitorPage: () => <div data-testid="mock-intraday-monitor">Mock Intraday Monitor</div>
 }));
 
 describe('App Smoke Test', () => {
+  it('redirects the root shell entrypoint to system status', async () => {
+    window.history.pushState({}, 'Root', '/');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/system-status');
+    });
+  });
+
   it('renders without crashing', async () => {
     window.history.pushState({}, 'System Status', '/system-status');
     renderWithProviders(<App />);

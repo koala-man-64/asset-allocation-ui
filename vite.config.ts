@@ -71,49 +71,19 @@ export default defineConfig(({ mode }) => {
               return 'contracts-vendor';
             }
             if (
-              id.includes('node_modules/recharts/es6/chart/') ||
-              id.includes('node_modules/recharts/lib/chart/')
+              id.includes('node_modules/@reduxjs/') ||
+              id.includes('node_modules/react-redux/') ||
+              id.includes('node_modules/use-sync-external-store/') ||
+              id.includes('node_modules/reselect/') ||
+              id.includes('node_modules/immer/') ||
+              id.includes('node_modules/es-toolkit/') ||
+              id.includes('node_modules/decimal.js-light/') ||
+              id.includes('node_modules/eventemitter3/') ||
+              id.includes('node_modules/tiny-invariant/')
             ) {
-              return 'recharts-chart-vendor';
+              return 'chart-state-vendor';
             }
-            if (
-              id.includes('node_modules/recharts/es6/cartesian/') ||
-              id.includes('node_modules/recharts/lib/cartesian/')
-            ) {
-              return 'recharts-cartesian-vendor';
-            }
-            if (
-              id.includes('node_modules/recharts/es6/component/') ||
-              id.includes('node_modules/recharts/lib/component/')
-            ) {
-              return 'recharts-component-vendor';
-            }
-            if (
-              id.includes('node_modules/recharts/es6/container/') ||
-              id.includes('node_modules/recharts/lib/container/') ||
-              id.includes('node_modules/recharts/es6/context/') ||
-              id.includes('node_modules/recharts/lib/context/') ||
-              id.includes('node_modules/recharts/es6/state/') ||
-              id.includes('node_modules/recharts/lib/state/') ||
-              id.includes('node_modules/recharts/es6/selectors/') ||
-              id.includes('node_modules/recharts/lib/selectors/') ||
-              id.includes('node_modules/recharts/es6/synchronisation/') ||
-              id.includes('node_modules/recharts/lib/synchronisation/') ||
-              id.includes('node_modules/recharts/es6/animation/') ||
-              id.includes('node_modules/recharts/lib/animation/') ||
-              id.includes('node_modules/recharts/es6/shape/') ||
-              id.includes('node_modules/recharts/lib/shape/') ||
-              id.includes('node_modules/recharts/es6/polar/') ||
-              id.includes('node_modules/recharts/lib/polar/') ||
-              id.includes('node_modules/recharts/es6/util/') ||
-              id.includes('node_modules/recharts/lib/util/') ||
-              id.includes('node_modules/recharts/es6/hooks') ||
-              id.includes('node_modules/recharts/lib/hooks') ||
-              id.includes('node_modules/recharts/es6/index') ||
-              id.includes('node_modules/recharts/lib/index')
-            ) {
-              return 'recharts-support-vendor';
-            }
+            // Leave Recharts on Rollup's default chunking; custom splits created circular runtime imports.
             if (id.includes('node_modules/d3-') || id.includes('node_modules/victory-vendor/')) {
               return 'chart-math-vendor';
             }

@@ -1,24 +1,9 @@
-import { useMemo, useState } from 'react';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  LineChart,
-  XAxis,
-  YAxis
-} from 'recharts';
-
+import { Suspense, lazy, useMemo, useState } from 'react';
+import { PageLoader } from '@/app/components/common/PageLoader';
 import { StatePanel } from '@/app/components/common/StatePanel';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent
-} from '@/app/components/ui/chart';
 import {
   Table,
   TableBody,
@@ -53,16 +38,19 @@ interface PortfolioPerformanceTabProps {
   currentRegimeCode?: string | null;
 }
 
-const CHART_CONFIG = {
-  portfolioIndexed: { label: 'Portfolio', color: '#1e6b6b' },
-  benchmarkIndexed: { label: 'Benchmark', color: '#9a6b2f' },
-  activeReturnPct: { label: 'Active return', color: '#6a3f2a' },
-  drawdownPct: { label: 'Drawdown', color: '#8f2d2d' },
-  turnoverPct: { label: 'Turnover', color: '#566635' },
-  costDragBps: { label: 'Cost drag', color: '#5f4b32' }
-};
+const PortfolioPerformanceTrendCharts = lazy(() =>
+  import('@/features/portfolios/components/PortfolioPerformanceTrendCharts').then((module) => ({
+    default: module.PortfolioPerformanceTrendCharts
+  }))
+);
 
-function ChartCard({
+const PortfolioPerformanceRiskCharts = lazy(() =>
+  import('@/features/portfolios/components/PortfolioPerformanceRiskCharts').then((module) => ({
+    default: module.PortfolioPerformanceRiskCharts
+  }))
+);
+
+function PanelCard({
   title,
   description,
   children
@@ -82,6 +70,10 @@ function ChartCard({
       <div className="mt-4">{children}</div>
     </div>
   );
+}
+
+function PerformanceChartsLoader() {
+  return <PageLoader text="Loading chart views..." variant="panel" className="min-h-[18rem]" />;
 }
 
 export function PortfolioPerformanceTab({
@@ -136,9 +128,13 @@ export function PortfolioPerformanceTab({
         <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
           Performance
         </div>
-        <h2 className="mt-2 font-display text-2xl">NAV, benchmark, attribution, and model outlook</h2>
+        <h2 className="mt-2 font-display text-2xl">
+          NAV, benchmark, attribution, and model outlook
+        </h2>
         <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-          Replace table-only performance history with benchmark-relative context, drawdown visibility, turnover and cost drag trends, and a forecast surface with explicit confidence.
+          Replace table-only performance history with benchmark-relative context, drawdown
+          visibility, turnover and cost drag trends, and a forecast surface with explicit
+          confidence.
         </p>
       </div>
 
@@ -150,156 +146,20 @@ export function PortfolioPerformanceTab({
         />
       ) : null}
       {regimeHistoryError ? (
-        <StatePanel
-          tone="error"
-          title="Regime History Unavailable"
-          message={regimeHistoryError}
-        />
+        <StatePanel tone="error" title="Regime History Unavailable" message={regimeHistoryError} />
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <ChartCard
-          title="NAV vs Benchmark"
-          description="Portfolio NAV and benchmark are normalized to the same starting point for the selected local history."
-        >
-          {chartPoints.length === 0 ? (
-            <StatePanel
-              tone="empty"
-              title="No chart data"
-              message="Benchmark-relative history could not be aligned to the current portfolio snapshot."
-            />
-          ) : (
-            <ChartContainer config={CHART_CONFIG} className="h-[20rem] w-full">
-              <LineChart data={chartPoints}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={32} />
-                <YAxis tickFormatter={(value) => `${value}`} width={52} />
-                <ChartTooltip
-                  content={({ content, ...props }) => <ChartTooltipContent {...props} />}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="portfolioIndexed"
-                  stroke="var(--color-portfolioIndexed)"
-                  strokeWidth={2.5}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="benchmarkIndexed"
-                  stroke="var(--color-benchmarkIndexed)"
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls
-                />
-              </LineChart>
-            </ChartContainer>
-          )}
-        </ChartCard>
-
-        <ChartCard
-          title="Active Return"
-          description="Cumulative active return isolates the local benchmark-relative edge instead of reporting only absolute performance."
-        >
-          {chartPoints.length === 0 ? (
-            <StatePanel
-              tone="empty"
-              title="No active return view"
-              message="Active return requires aligned portfolio and benchmark history."
-            />
-          ) : (
-            <ChartContainer config={CHART_CONFIG} className="h-[20rem] w-full">
-              <AreaChart data={chartPoints}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={32} />
-                <YAxis tickFormatter={(value) => `${value}%`} width={60} />
-                <ChartTooltip
-                  content={({ content, ...props }) => <ChartTooltipContent {...props} />}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="activeReturnPct"
-                  stroke="var(--color-activeReturnPct)"
-                  fill="var(--color-activeReturnPct)"
-                  fillOpacity={0.2}
-                />
-              </AreaChart>
-            </ChartContainer>
-          )}
-        </ChartCard>
-
-        <ChartCard
-          title="Drawdown"
-          description="Drawdown stays visible next to performance so the desk sees path risk instead of only endpoint return."
-        >
-          {chartPoints.length === 0 ? (
-            <StatePanel tone="empty" title="No drawdown series" message="Drawdown history is unavailable." />
-          ) : (
-            <ChartContainer config={CHART_CONFIG} className="h-[18rem] w-full">
-              <AreaChart data={chartPoints}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={32} />
-                <YAxis tickFormatter={(value) => `${value}%`} width={60} />
-                <ChartTooltip
-                  content={({ content, ...props }) => <ChartTooltipContent {...props} />}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="drawdownPct"
-                  stroke="var(--color-drawdownPct)"
-                  fill="var(--color-drawdownPct)"
-                  fillOpacity={0.22}
-                />
-              </AreaChart>
-            </ChartContainer>
-          )}
-        </ChartCard>
-
-        <ChartCard
-          title="Turnover and Cost Drag"
-          description="Turnover and cost drag trend together so a strong return line is not read without execution burden context."
-        >
-          {chartPoints.length === 0 ? (
-            <StatePanel tone="empty" title="No turnover series" message="Turnover history is unavailable." />
-          ) : (
-            <ChartContainer config={CHART_CONFIG} className="h-[18rem] w-full">
-              <ComposedChart data={chartPoints}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={32} />
-                <YAxis yAxisId="turnover" tickFormatter={(value) => `${value}%`} width={56} />
-                <YAxis
-                  yAxisId="drag"
-                  orientation="right"
-                  tickFormatter={(value) => `${value} bps`}
-                  width={64}
-                />
-                <ChartTooltip
-                  content={({ content, ...props }) => <ChartTooltipContent {...props} />}
-                />
-                <Area
-                  yAxisId="turnover"
-                  type="monotone"
-                  dataKey="turnoverPct"
-                  stroke="var(--color-turnoverPct)"
-                  fill="var(--color-turnoverPct)"
-                  fillOpacity={0.18}
-                />
-                <Line
-                  yAxisId="drag"
-                  type="monotone"
-                  dataKey="costDragBps"
-                  stroke="var(--color-costDragBps)"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </ComposedChart>
-            </ChartContainer>
-          )}
-        </ChartCard>
+        <Suspense fallback={<PerformanceChartsLoader />}>
+          <PortfolioPerformanceTrendCharts chartPoints={chartPoints} />
+        </Suspense>
+        <Suspense fallback={<PerformanceChartsLoader />}>
+          <PortfolioPerformanceRiskCharts chartPoints={chartPoints} />
+        </Suspense>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <ChartCard
+        <PanelCard
           title="Sleeve Attribution"
           description="Return contribution, market value, and target-vs-live weight make sleeve-level performance and drift visible in one place."
         >
@@ -333,15 +193,19 @@ export function PortfolioPerformanceTab({
                       <TableCell className="text-right">
                         {formatCurrency(sleeve.marketValue ?? null, monitorSnapshot.baseCurrency)}
                       </TableCell>
-                      <TableCell className="text-right">{formatPercent(sleeve.targetWeightPct)}</TableCell>
-                      <TableCell className="text-right">{formatPercent(sleeve.liveWeightPct)}</TableCell>
+                      <TableCell className="text-right">
+                        {formatPercent(sleeve.targetWeightPct)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatPercent(sleeve.liveWeightPct)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
           )}
-        </ChartCard>
+        </PanelCard>
 
         <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-5">
           <div className="flex items-center justify-between gap-3">
@@ -413,15 +277,21 @@ export function PortfolioPerformanceTab({
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
                 <div className="text-sm text-muted-foreground">Expected portfolio return</div>
-                <div className="mt-2 font-display text-2xl">{formatPercent(outlook.expectedReturnPct)}</div>
+                <div className="mt-2 font-display text-2xl">
+                  {formatPercent(outlook.expectedReturnPct)}
+                </div>
               </div>
               <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
                 <div className="text-sm text-muted-foreground">Expected active return</div>
-                <div className="mt-2 font-display text-2xl">{formatPercent(outlook.expectedActiveReturnPct)}</div>
+                <div className="mt-2 font-display text-2xl">
+                  {formatPercent(outlook.expectedActiveReturnPct)}
+                </div>
               </div>
               <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
                 <div className="text-sm text-muted-foreground">Downside band</div>
-                <div className="mt-2 font-display text-2xl">{formatPercent(outlook.downsidePct)}</div>
+                <div className="mt-2 font-display text-2xl">
+                  {formatPercent(outlook.downsidePct)}
+                </div>
               </div>
               <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
                 <div className="text-sm text-muted-foreground">Upside band</div>
