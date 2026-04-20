@@ -32,6 +32,17 @@ const SUBSCRIPTION_TOPICS = [
 const CONTAINER_APPS_QUERY_KEY = ['system', 'container-apps'] as const;
 const REALTIME_TICKET_TIMEOUT_MS = 5_000;
 
+function createRealtimeRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `realtime-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function logRealtimeAuth(event: string, detail: Record<string, unknown> = {}): void {
+  console.info(`[RealtimeAuth] ${event}`, detail);
+}
+
 type RealtimeEvent = {
   type?: unknown;
   payload?: unknown;
@@ -154,38 +165,98 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
     }
 
     async function fetchRealtimeTicket(): Promise<string | null> {
-      const headers = await appendAuthHeaders();
-      const response = await fetchWithOptionalTimeout(
-        `${httpBase}/realtime/ticket`,
-        {
-          method: 'POST',
-          headers,
-          cache: 'no-store'
-        },
-        {
-          timeoutMs: REALTIME_TICKET_TIMEOUT_MS,
-          label: '/realtime/ticket',
-          timeoutMessagePrefix: 'Realtime ticket request timed out after'
-        }
-      );
+      const requestId = createRealtimeRequestId();
 
-      if (!response.ok) {
-        if (response.status === 401 && hasInteractiveAuthHandler()) {
-          await requestInteractiveReauth({
-            reason: 'Realtime ticket request returned 401.',
-            source: 'realtime-ticket'
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const forceRefresh = attempt === 1;
+
+        if (forceRefresh) {
+          logRealtimeAuth('silent-recovery-start', {
+            endpoint: '/realtime/ticket',
+            requestId,
+            recoveryAttempt: 1
           });
         }
+
+        let headers: Headers;
+        try {
+          headers = await appendAuthHeaders(
+            {
+              'X-Request-ID': requestId
+            },
+            forceRefresh ? { forceRefresh: true } : {}
+          );
+        } catch (error) {
+          if (forceRefresh) {
+            logRealtimeAuth('silent-recovery-failed', {
+              endpoint: '/realtime/ticket',
+              requestId,
+              recoveryAttempt: 1,
+              error: error instanceof Error ? error.message : String(error ?? 'Unknown error')
+            });
+          }
+          throw error;
+        }
+
+        const response = await fetchWithOptionalTimeout(
+          `${httpBase}/realtime/ticket`,
+          {
+            method: 'POST',
+            headers,
+            cache: 'no-store'
+          },
+          {
+            timeoutMs: REALTIME_TICKET_TIMEOUT_MS,
+            label: '/realtime/ticket',
+            timeoutMessagePrefix: 'Realtime ticket request timed out after'
+          }
+        );
+
+        if (response.ok) {
+          if (forceRefresh) {
+            logRealtimeAuth('silent-recovery-success', {
+              endpoint: '/realtime/ticket',
+              requestId,
+              recoveryAttempt: 1
+            });
+          }
+
+          const payload = (await response.json()) as RealtimeTicketResponse;
+          const ticket = typeof payload.ticket === 'string' ? payload.ticket.trim() : '';
+          if (!ticket) {
+            throw new Error('Realtime ticket response was missing a ticket.');
+          }
+          return ticket;
+        }
+
+        if (response.status === 401 && !forceRefresh) {
+          continue;
+        }
+
+        if (response.status === 401 && hasInteractiveAuthHandler()) {
+          logRealtimeAuth('interactive-reauth-required', {
+            endpoint: '/realtime/ticket',
+            requestId,
+            status: response.status,
+            recoveryAttempt: forceRefresh ? 1 : 0
+          });
+          await requestInteractiveReauth({
+            reason: forceRefresh
+              ? 'Realtime ticket request returned 401 after a silent session refresh.'
+              : 'Realtime ticket request returned 401.',
+            source: 'realtime-ticket',
+            endpoint: '/realtime/ticket',
+            status: response.status,
+            requestId,
+            recoveryAttempt: forceRefresh ? 1 : 0
+          });
+        }
+
         const message = await response.text();
         throw new Error(message || `Realtime ticket request failed (${response.status})`);
       }
 
-      const payload = (await response.json()) as RealtimeTicketResponse;
-      const ticket = typeof payload.ticket === 'string' ? payload.ticket.trim() : '';
-      if (!ticket) {
-        throw new Error('Realtime ticket response was missing a ticket.');
-      }
-      return ticket;
+      return null;
     }
 
     async function connect(): Promise<void> {
@@ -246,7 +317,9 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
           if (event.code === 4401 && hasInteractiveAuthHandler()) {
             void requestInteractiveReauth({
               reason: 'Realtime websocket authentication was rejected.',
-              source: 'realtime-websocket'
+              source: 'realtime-websocket',
+              endpoint: '/ws/updates',
+              status: event.code
             }).catch((error) => {
               if (isAuthReauthRequiredError(error)) {
                 return;

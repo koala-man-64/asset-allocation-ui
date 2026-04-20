@@ -1,10 +1,20 @@
 type HeadersInit = Headers | [string, string][] | Record<string, string>;
 
-export type AccessTokenProvider = () => Promise<string | null>;
+export type AccessTokenRequestOptions = {
+  forceRefresh?: boolean;
+};
+
+export type AccessTokenProvider = (
+  options?: AccessTokenRequestOptions
+) => Promise<string | null>;
 export type InteractiveAuthRequest = {
   reason?: string;
   returnPath?: string;
   source?: string;
+  endpoint?: string;
+  status?: number;
+  requestId?: string;
+  recoveryAttempt?: number;
 };
 export type InteractiveAuthHandler = (request?: InteractiveAuthRequest) => void;
 
@@ -41,11 +51,25 @@ function normalizeInteractiveAuthRequest(request: InteractiveAuthRequest = {}): 
   const reason = String(request.reason ?? '').trim();
   const returnPath = String(request.returnPath ?? '').trim() || resolveCurrentPath();
   const source = String(request.source ?? '').trim();
+  const endpoint = String(request.endpoint ?? '').trim();
+  const requestId = String(request.requestId ?? '').trim();
+  const status =
+    typeof request.status === 'number' && Number.isFinite(request.status)
+      ? Math.floor(request.status)
+      : undefined;
+  const recoveryAttempt =
+    typeof request.recoveryAttempt === 'number' && Number.isFinite(request.recoveryAttempt)
+      ? Math.max(0, Math.floor(request.recoveryAttempt))
+      : undefined;
 
   return {
     reason: reason || undefined,
     returnPath: returnPath || undefined,
-    source: source || undefined
+    source: source || undefined,
+    endpoint: endpoint || undefined,
+    status,
+    requestId: requestId || undefined,
+    recoveryAttempt
   };
 }
 
@@ -53,7 +77,11 @@ function logAuthTransport(event: string, request?: InteractiveAuthRequest): void
   console.info(`[AuthTransport] ${event}`, {
     source: request?.source ?? null,
     reason: request?.reason ?? null,
-    returnPath: request?.returnPath ?? null
+    returnPath: request?.returnPath ?? null,
+    endpoint: request?.endpoint ?? null,
+    status: request?.status ?? null,
+    requestId: request?.requestId ?? null,
+    recoveryAttempt: request?.recoveryAttempt ?? null
   });
 }
 
@@ -104,18 +132,20 @@ export async function requestInteractiveReauth(
   throw new AuthReauthRequiredError(pendingReauthRequest);
 }
 
-export async function appendAuthHeaders(headersInput?: HeadersInit): Promise<Headers> {
-  const headers = new Headers(headersInput as HeadersInit);
-
+async function appendAuthHeadersWithOptions(
+  headers: Headers,
+  options: AccessTokenRequestOptions
+): Promise<Headers> {
   if (accessTokenProvider && !headers.has('Authorization')) {
     let token: string | null = null;
     try {
-      token = await accessTokenProvider();
+      token = await accessTokenProvider(options);
     } catch (error) {
       if (isAuthInteractionRequiredError(error)) {
         await requestInteractiveReauth({
           reason: error.message,
-          source: 'access-token-provider'
+          source: 'access-token-provider',
+          recoveryAttempt: options.forceRefresh ? 1 : 0
         });
       }
       throw error;
@@ -126,6 +156,14 @@ export async function appendAuthHeaders(headersInput?: HeadersInit): Promise<Hea
   }
 
   return headers;
+}
+
+export async function appendAuthHeaders(
+  headersInput?: HeadersInit,
+  options: AccessTokenRequestOptions = {}
+): Promise<Headers> {
+  const headers = new Headers(headersInput as HeadersInit);
+  return appendAuthHeadersWithOptions(headers, options);
 }
 
 export function resetAuthTransportForTests(): void {

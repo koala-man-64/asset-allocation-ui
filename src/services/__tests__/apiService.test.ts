@@ -1,7 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { mockAppendAuthHeaders, mockHasInteractiveAuthHandler, mockRequestInteractiveReauth } =
+  vi.hoisted(() => ({
+    mockAppendAuthHeaders: vi.fn(
+      async (headersInput?: HeadersInit, _options?: { forceRefresh?: boolean }) =>
+        new Headers(headersInput)
+    ),
+    mockHasInteractiveAuthHandler: vi.fn(() => true),
+    mockRequestInteractiveReauth: vi.fn(async (_request?: unknown) => {
+      throw new Error('reauth-required');
+    })
+  }));
+
 vi.mock('@/services/authTransport', () => ({
-  appendAuthHeaders: vi.fn(async (headersInput?: HeadersInit) => new Headers(headersInput))
+  appendAuthHeaders: mockAppendAuthHeaders,
+  hasInteractiveAuthHandler: mockHasInteractiveAuthHandler,
+  requestInteractiveReauth: mockRequestInteractiveReauth
 }));
 
 type ApiServiceModule = typeof import('@/services/apiService');
@@ -22,6 +36,13 @@ describe('apiService cold start handling', () => {
   beforeEach(() => {
     vi.resetModules();
     fetchMock.mockReset();
+    mockAppendAuthHeaders.mockClear();
+    mockHasInteractiveAuthHandler.mockReset();
+    mockHasInteractiveAuthHandler.mockReturnValue(true);
+    mockRequestInteractiveReauth.mockReset();
+    mockRequestInteractiveReauth.mockImplementation(async () => {
+      throw new Error('reauth-required');
+    });
     windowWithConfig.__API_UI_CONFIG__ = { apiBaseUrl: '/api' };
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -93,6 +114,93 @@ describe('apiService cold start handling', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/healthz');
     expect(fetchMock.mock.calls[1]?.[0]).toContain('/asset-allocation/api/system/health');
+  });
+
+  it('replays safe reads once with a forced token refresh after a 401', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }))
+      .mockResolvedValueOnce(jsonResponse({ data: 9 }));
+
+    const { request } = await importApiService();
+
+    const response = await request<{ data: number }>('/system/health');
+
+    expect(response.data).toBe(9);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(mockAppendAuthHeaders.mock.calls[0]?.[0]).toBeInstanceOf(Headers);
+    expect(mockAppendAuthHeaders.mock.calls[0]?.[1]).toBeUndefined();
+    expect(mockAppendAuthHeaders).toHaveBeenNthCalledWith(
+      2,
+      expect.any(Headers),
+      expect.objectContaining({ forceRefresh: true })
+    );
+    expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
+  });
+
+  it('escalates to interactive reauth after a silent-recovery replay still returns 401', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }))
+      .mockResolvedValueOnce(new Response('Unauthorized again', { status: 401, statusText: 'Unauthorized' }));
+
+    mockRequestInteractiveReauth.mockImplementationOnce(async (request?: unknown) => {
+      const payload = request as {
+        endpoint?: string;
+        requestId?: string;
+        recoveryAttempt?: number;
+      };
+      throw new Error(
+        `reauth:${JSON.stringify({
+          endpoint: payload?.endpoint,
+          requestId: payload?.requestId,
+          recoveryAttempt: payload?.recoveryAttempt
+        })}`
+      );
+    });
+
+    const { request } = await importApiService();
+
+    await expect(request('/system/status-view')).rejects.toThrow(/reauth:/);
+
+    expect(mockAppendAuthHeaders).toHaveBeenNthCalledWith(
+      2,
+      expect.any(Headers),
+      expect.objectContaining({ forceRefresh: true })
+    );
+    expect(mockRequestInteractiveReauth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: '/system/status-view',
+        status: 401,
+        recoveryAttempt: 1,
+        requestId: expect.any(String)
+      })
+    );
+  });
+
+  it('does not replay non-safe requests before interactive reauth', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }));
+
+    const { request } = await importApiService();
+
+    await expect(
+      request('/system/runtime-config', {
+        method: 'POST',
+        body: JSON.stringify({ key: 'feature.alpha', value: 'true' })
+      })
+    ).rejects.toThrow('reauth-required');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mockAppendAuthHeaders).toHaveBeenCalledTimes(1);
+    expect(mockRequestInteractiveReauth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: '/system/runtime-config',
+        status: 401,
+        recoveryAttempt: 0
+      })
+    );
   });
 
   it('warms the API origin when apiBaseUrl is absolute', async () => {

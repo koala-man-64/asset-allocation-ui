@@ -23,6 +23,10 @@ const API_REQUEST_RETRY_MAX_DELAY_MS = 4000;
 const apiWarmupAttempted = new Set<string>();
 const apiWarmupInFlight = new Map<string, Promise<void>>();
 
+function logAuthRecovery(event: string, detail: Record<string, unknown> = {}): void {
+  console.info(`[AuthRecovery] ${event}`, detail);
+}
+
 function isRetryableStatusCode(statusCode: number): boolean {
   return API_COLD_START_RETRYABLE_STATUS_CODES.has(statusCode);
 }
@@ -63,6 +67,13 @@ function resolveWarmupUrl(apiBaseUrl: string): string {
     }
   }
   return API_WARMUP_PATH;
+}
+
+function isSafeReplayMethod(method?: string): boolean {
+  const normalizedMethod = String(method ?? 'GET')
+    .trim()
+    .toUpperCase();
+  return normalizedMethod === 'GET' || normalizedMethod === 'HEAD';
 }
 
 function buildRequestUrl(
@@ -215,6 +226,10 @@ async function performRequest<T>(
   let url = buildRequestUrl(apiBaseUrl, endpoint, params);
 
   const requestHeaders = new Headers(headers);
+  const requestMethod = String(customConfig.method ?? 'GET')
+    .trim()
+    .toUpperCase() || 'GET';
+  const allowSilentAuthRecovery = isSafeReplayMethod(requestMethod);
   const hasBody = customConfig.body !== undefined && customConfig.body !== null;
   if (hasBody && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json');
@@ -222,12 +237,13 @@ async function performRequest<T>(
   if (!requestHeaders.has('X-Request-ID')) {
     requestHeaders.set('X-Request-ID', createRequestId());
   }
-  const authHeaders = await appendAuthHeaders(requestHeaders);
+  let authHeaders = await appendAuthHeaders(requestHeaders);
   const requestId = authHeaders.get('X-Request-ID') || '';
   await warmUpApiOnce(apiBaseUrl);
 
   let retryDelayMs = API_REQUEST_RETRY_BASE_DELAY_MS;
   let response: Response | null = null;
+  let attemptedSilentAuthRecovery = false;
   const startedAt = performance.now();
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const shouldRetry = attempt < maxAttempts;
@@ -258,6 +274,35 @@ async function performRequest<T>(
       break;
     }
 
+    if (response.status === 401 && allowSilentAuthRecovery && !attemptedSilentAuthRecovery) {
+      attemptedSilentAuthRecovery = true;
+      logAuthRecovery('silent-recovery-start', {
+        endpoint,
+        method: requestMethod,
+        requestId,
+        recoveryAttempt: 1
+      });
+      try {
+        authHeaders = await appendAuthHeaders(requestHeaders, { forceRefresh: true });
+        logAuthRecovery('silent-recovery-success', {
+          endpoint,
+          method: requestMethod,
+          requestId,
+          recoveryAttempt: 1
+        });
+        continue;
+      } catch (error) {
+        logAuthRecovery('silent-recovery-failed', {
+          endpoint,
+          method: requestMethod,
+          requestId,
+          recoveryAttempt: 1,
+          error: error instanceof Error ? error.message : String(error ?? 'Unknown error')
+        });
+        throw error;
+      }
+    }
+
     if (!shouldRetry || !retryableStatusCodes.has(response.status)) {
       break;
     }
@@ -275,9 +320,23 @@ async function performRequest<T>(
   if (!response.ok) {
     const errorBody = await response.text();
     if (response.status === 401 && hasInteractiveAuthHandler()) {
+      const recoveryAttempt = attemptedSilentAuthRecovery ? 1 : 0;
+      logAuthRecovery('interactive-reauth-required', {
+        endpoint,
+        method: requestMethod,
+        requestId,
+        status: response.status,
+        recoveryAttempt
+      });
       await requestInteractiveReauth({
-        reason: `API ${endpoint} returned 401.`,
-        source: `api:${endpoint}`
+        reason: attemptedSilentAuthRecovery
+          ? `API ${endpoint} returned 401 after a silent session refresh.`
+          : `API ${endpoint} returned 401.`,
+        source: `api:${endpoint}`,
+        endpoint,
+        status: response.status,
+        requestId,
+        recoveryAttempt
       });
     }
     throw new ApiError(

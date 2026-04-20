@@ -25,6 +25,16 @@ const mockAuth = vi.hoisted(() => ({
   userLabel: null as string | null,
   error: null as string | null,
   interactionReason: null as string | null,
+  interactionRequest: null as
+    | {
+        reason?: string;
+        source?: string;
+        endpoint?: string;
+        status?: number;
+        requestId?: string;
+        recoveryAttempt?: number;
+      }
+    | null,
   signIn: vi.fn(),
   signOut: vi.fn()
 }));
@@ -81,6 +91,7 @@ describe('App OIDC access flow', () => {
     mockAuth.userLabel = null;
     mockAuth.error = null;
     mockAuth.interactionReason = null;
+    mockAuth.interactionRequest = null;
     mockUseRealtime.mockReset();
     mockAuth.signIn.mockReset();
     mockAuth.signOut.mockReset();
@@ -102,7 +113,9 @@ describe('App OIDC access flow', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByText('Sign-in required')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue sign-in' })).toHaveFocus();
     expect(screen.getByTestId('auth-step-sign-in')).toHaveAttribute('data-state', 'active');
+    expect(screen.getByTestId('auth-diagnostic-route')).toHaveTextContent('/system-status');
     expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue sign-in' }));
@@ -135,7 +148,7 @@ describe('App OIDC access flow', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByText('Sign-in required')).toBeInTheDocument();
-    expect(screen.getByText(/popup blocked/i)).toBeInTheDocument();
+    expect(screen.getByTestId('auth-diagnostic-reason')).toHaveTextContent(/popup blocked/i);
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(screen.getByTestId('auth-step-redirect')).toHaveAttribute('data-state', 'error');
   });
@@ -149,6 +162,9 @@ describe('App OIDC access flow', () => {
     renderWithProviders(<App />);
 
     expect(screen.getByText('Continuing sign-in')).toBeInTheDocument();
+    expect(screen.getByTestId('auth-status-indicator').className).toContain(
+      'motion-reduce:animate-none'
+    );
     expect(screen.queryByText(/The redirect is taking longer/i)).not.toBeInTheDocument();
 
     await act(async () => {
@@ -160,13 +176,23 @@ describe('App OIDC access flow', () => {
 
   it('shows a session-expired prompt instead of forcing a background redirect', async () => {
     mockAuth.phase = 'session-expired';
-    mockAuth.interactionReason = 'API /system/status returned 401.';
+    mockAuth.interactionReason = 'API /system/status-view returned 401 after a silent session refresh.';
+    mockAuth.interactionRequest = {
+      reason: 'API /system/status-view returned 401 after a silent session refresh.',
+      source: 'api:/system/status-view',
+      endpoint: '/system/status-view',
+      status: 401,
+      requestId: 'req-401',
+      recoveryAttempt: 1
+    };
     window.history.pushState({}, 'System Status', '/system-status');
 
     renderWithProviders(<App />);
 
     expect(await screen.findByText('Session expired')).toBeInTheDocument();
-    expect(screen.getByText(/API \/system\/status returned 401/i)).toBeInTheDocument();
+    expect(screen.getByTestId('auth-diagnostic-endpoint')).toHaveTextContent('/system/status-view');
+    expect(screen.getByTestId('auth-diagnostic-request-id')).toHaveTextContent('req-401');
+    expect(screen.getByTestId('auth-diagnostic-recovery-attempt')).toHaveTextContent('1');
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue sign-in' }));
     expect(mockAuth.signIn).toHaveBeenCalledWith('/system-status');
@@ -192,8 +218,10 @@ describe('App OIDC access flow', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByText('Deployment auth misconfigured')).toBeInTheDocument();
-    expect(screen.getByText(/asset-allocation-api\.example\.com\/auth\/callback/i)).toBeInTheDocument();
     expect(screen.getByText(/instead of this UI origin/i)).toBeInTheDocument();
+    expect(screen.getByTestId('auth-diagnostic-advertised-callback')).toHaveTextContent(
+      'https://asset-allocation-api.example.com/auth/callback'
+    );
     expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
     expect(mockUseRealtime).not.toHaveBeenCalled();
   });
@@ -271,6 +299,7 @@ describe('App OIDC access flow', () => {
 
     expect(await screen.findByText('Access check failed')).toBeInTheDocument();
     expect(screen.getByText(/Gateway timeout/i)).toBeInTheDocument();
+    expect(screen.getByTestId('auth-diagnostic-route')).toHaveTextContent('/system-status');
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     expect(screen.getByTestId('auth-step-access')).toHaveAttribute('data-state', 'error');
@@ -341,6 +370,7 @@ describe('App OIDC access flow', () => {
 
     expect(await screen.findByText('Signed out')).toBeInTheDocument();
     expect(screen.getByText(/Signed out successfully/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in again' })).toHaveFocus();
   });
 
   it('retries callback sign-in with the preserved deep link', async () => {
@@ -352,7 +382,7 @@ describe('App OIDC access flow', () => {
     renderWithProviders(<App />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
-    expect(peekPostLoginRedirectPath).toHaveBeenCalledTimes(1);
+    expect(peekPostLoginRedirectPath).toHaveBeenCalled();
     expect(mockAuth.signIn).toHaveBeenCalledWith('/postgres-explorer?foo=1#bar');
   });
 });

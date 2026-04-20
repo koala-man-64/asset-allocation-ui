@@ -452,15 +452,21 @@ describe('useRealtime', () => {
     expect(MockWebSocket.instances).toHaveLength(0);
   });
 
-  it('suppresses unauthorized toasts when a 401 ticket failure starts reauth', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      text: async () => 'Unauthorized'
-    });
+  it('retries the realtime ticket once with forceRefresh after a 401', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        text: async () => 'Unauthorized'
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ticket: 'ticket-2', expiresAt: '2026-03-15T12:00:05Z' })
+      });
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
-    const handler = vi.fn();
-    setInteractiveAuthHandler(handler);
+    const provider = vi.fn(async () => 'access-token');
+    setAccessTokenProvider(provider);
 
     const queryClient = createQueryClient();
     render(
@@ -470,10 +476,43 @@ describe('useRealtime', () => {
     );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    expect(provider).toHaveBeenNthCalledWith(1, {});
+    expect(provider).toHaveBeenNthCalledWith(2, { forceRefresh: true });
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
+  it('suppresses unauthorized toasts when a 401 ticket failure still needs reauth after silent recovery', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: async () => 'Unauthorized'
+      });
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    const handler = vi.fn();
+    setInteractiveAuthHandler(handler);
+    const provider = vi.fn(async () => 'access-token');
+    setAccessTokenProvider(provider);
+
+    const queryClient = createQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
     expect(mockToastError).not.toHaveBeenCalled();
     expect(handler).toHaveBeenCalledTimes(1);
+    expect(provider).toHaveBeenNthCalledWith(1, {});
+    expect(provider).toHaveBeenNthCalledWith(2, { forceRefresh: true });
     expect(MockWebSocket.instances).toHaveLength(0);
   });
 

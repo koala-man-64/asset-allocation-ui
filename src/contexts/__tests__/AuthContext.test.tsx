@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '../AuthContext';
 import { resetMsalSessionForTests } from '../msalSession';
 import {
   AuthReauthRequiredError,
+  appendAuthHeaders,
   requestInteractiveReauth,
   resetAuthTransportForTests
 } from '@/services/authTransport';
@@ -56,6 +57,7 @@ function Harness() {
       <div data-testid="authenticated">{String(auth.authenticated)}</div>
       <div data-testid="error">{auth.error ?? ''}</div>
       <div data-testid="interaction-reason">{auth.interactionReason ?? ''}</div>
+      <div data-testid="interaction-endpoint">{auth.interactionRequest?.endpoint ?? ''}</div>
       <button onClick={() => auth.signIn('/system-status')}>Sign in</button>
       <button onClick={() => auth.signOut()}>Sign out</button>
     </div>
@@ -306,8 +308,99 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('interaction-reason')).toHaveTextContent(
         'API /system/status returned 401.'
       );
+      expect(screen.getByTestId('interaction-endpoint')).toHaveTextContent('');
       expect(mockMsal.loginRedirect).not.toHaveBeenCalled();
     });
+  });
+
+  it('passes forceRefresh to acquireTokenSilent when a caller requests a fresh token', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'System Status', '/system-status');
+    mockMsal.getAllAccounts.mockReturnValue([account]);
+    mockMsal.acquireTokenSilent.mockResolvedValueOnce({ accessToken: 'fresh-token' });
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+    });
+
+    let headers: Headers | undefined;
+    await act(async () => {
+      headers = await appendAuthHeaders(undefined, { forceRefresh: true });
+    });
+
+    expect(headers?.get('Authorization')).toBe('Bearer fresh-token');
+    expect(mockMsal.acquireTokenSilent).toHaveBeenCalledWith({
+      account,
+      scopes: ['api://asset-allocation-api/user_impersonation'],
+      forceRefresh: true
+    });
+  });
+
+  it('switches into session-expired when a forced refresh requires interaction', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    const { InteractionRequiredAuthError } = await import('@azure/msal-browser');
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'System Status', '/system-status');
+    mockMsal.getAllAccounts.mockReturnValue([account]);
+    mockMsal.acquireTokenSilent.mockRejectedValueOnce(
+      new InteractionRequiredAuthError('refresh interaction required')
+    );
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+    });
+
+    await act(async () => {
+      await expect(appendAuthHeaders(undefined, { forceRefresh: true })).rejects.toBeInstanceOf(
+        AuthReauthRequiredError
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('session-expired');
+      expect(screen.getByTestId('interaction-reason')).toHaveTextContent(
+        'OIDC session refresh requires sign-in.'
+      );
+    });
+  });
+
+  it('returns no bearer token when silent token acquisition fails unexpectedly', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'System Status', '/system-status');
+    mockMsal.getAllAccounts.mockReturnValue([account]);
+    mockMsal.acquireTokenSilent.mockRejectedValueOnce(new Error('cache failure'));
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+    });
+
+    let headers: Headers | undefined;
+    await act(async () => {
+      headers = await appendAuthHeaders(undefined, { forceRefresh: true });
+    });
+
+    expect(headers?.has('Authorization')).toBe(false);
+    expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
   });
 
   it('dedupes bootstrap work across strict-mode remounts', async () => {

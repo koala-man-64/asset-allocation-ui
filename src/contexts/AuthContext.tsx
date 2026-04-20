@@ -9,6 +9,7 @@ import {
   createInteractionRequiredError,
   setAccessTokenProvider,
   setInteractiveAuthHandler,
+  type AccessTokenRequestOptions,
   type InteractiveAuthRequest
 } from '@/services/authTransport';
 
@@ -45,6 +46,7 @@ export interface AuthContextType {
   userLabel: string | null;
   error: string | null;
   interactionReason: string | null;
+  interactionRequest: InteractiveAuthRequest | null;
   signIn: (returnPath?: string) => void;
   signOut: () => void;
 }
@@ -219,6 +221,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const [error, setError] = useState<string | null>(null);
   const [interactionReason, setInteractionReason] = useState<string | null>(null);
+  const [interactionRequest, setInteractionRequest] = useState<InteractiveAuthRequest | null>(null);
 
   const beginLoginRedirect = useMemo(() => {
     if (!msalSession) {
@@ -238,6 +241,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       msalSession.setRedirectInFlight(true);
       setError(null);
       setInteractionReason(null);
+      setInteractionRequest(null);
       setPhase('redirecting');
       setReady(true);
       storePostLoginRedirectPath(nextReturnPath);
@@ -265,6 +269,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearReauthRequestState();
       setAccount(null);
       setInteractionReason(null);
+      setInteractionRequest(null);
       setError(null);
       setPhase('signed-out');
       setReady(true);
@@ -279,6 +284,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setReady(false);
     setError(null);
     setInteractionReason(null);
+    setInteractionRequest(null);
     setPhase(onCallbackPath ? 'redirecting' : authRequired ? 'initializing' : 'signed-out');
     logAuthTransition('bootstrap-start', {
       pathname,
@@ -304,6 +310,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clearReauthRequestState();
         setAccount(result.account);
         setInteractionReason(null);
+        setInteractionRequest(null);
         setError(null);
         setPhase('authenticated');
         setReady(true);
@@ -317,6 +324,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setAccount(null);
       setInteractionReason(null);
+      setInteractionRequest(null);
       setError(null);
       setPhase('signed-out');
       setReady(true);
@@ -332,6 +340,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!cancelled) {
         setAccount(null);
         setInteractionReason(null);
+        setInteractionRequest(null);
         setError(describeAuthError('OIDC sign-in could not be completed.', err));
         setPhase('signed-out');
         setReady(true);
@@ -349,7 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    setAccessTokenProvider(async () => {
+    setAccessTokenProvider(async (options: AccessTokenRequestOptions = {}) => {
       if (!account) {
         return null;
       }
@@ -358,7 +367,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const instance = await msalSession.ensureInitialized();
         const result = await instance.acquireTokenSilent({
           account,
-          scopes: oidcScopes
+          scopes: oidcScopes,
+          forceRefresh: Boolean(options.forceRefresh)
         });
         return result.accessToken || null;
       } catch (err) {
@@ -396,11 +406,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setReady(true);
       setError(null);
       setInteractionReason(resolveInteractionReason(request));
+      setInteractionRequest(request);
       setPhase('session-expired');
       logAuthTransition('reauth-required', {
         source: request.source ?? null,
         reason: request.reason ?? null,
-        returnPath: nextReturnPath
+        returnPath: nextReturnPath,
+        endpoint: request.endpoint ?? null,
+        status: request.status ?? null,
+        requestId: request.requestId ?? null,
+        recoveryAttempt: request.recoveryAttempt ?? null
       });
     });
 
@@ -426,6 +441,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     msalSession.setRedirectInFlight(false);
     clearPostLoginRedirectPath();
     setInteractionReason(null);
+    setInteractionRequest(null);
     setError(null);
     setPhase('signing-out');
     logAuthTransition('sign-out-start', {
@@ -461,6 +477,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userLabel,
         error,
         interactionReason,
+        interactionRequest,
         signIn,
         signOut
       }}
