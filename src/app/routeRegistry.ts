@@ -69,6 +69,19 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     }
   },
   {
+    key: 'intraday-monitor',
+    path: '/intraday-monitor',
+    load: () =>
+      import('@/features/intraday-monitor/IntradayMonitorPage').then((module) => ({
+        default: module.IntradayMonitorPage
+      })),
+    nav: {
+      label: 'Intraday Monitor',
+      icon: Activity,
+      sectionKey: 'live-operations'
+    }
+  },
+  {
     key: 'data-quality',
     path: '/data-quality',
     load: () =>
