@@ -226,6 +226,9 @@ async function previewCandidates(): Promise<void> {
   await waitFor(() => {
     expect(DataService.createPurgeCandidatesOperation).toHaveBeenCalled();
   });
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /preview symbols/i })).toBeEnabled();
+  });
 }
 
 describe('SymbolPurgeByCriteriaPage', () => {
