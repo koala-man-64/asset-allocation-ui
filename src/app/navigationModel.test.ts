@@ -29,6 +29,7 @@ describe('navigationModel', () => {
     ]);
     expect(normalizedOrder['live-operations']).toContain('/intraday-monitor');
     expect(normalizedOrder['live-operations']).toContain('/symbol-enrichment');
+    expect(normalizedOrder['live-operations']).toContain('/accounts');
     expect(normalizedOrder['live-operations']).toContain('/portfolios');
     expect(normalizedOrder['live-operations']).toContain('/rankings');
   });
@@ -62,6 +63,7 @@ describe('navigationModel', () => {
     );
     expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/rankings');
     expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/strategies');
+    expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/accounts');
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/intraday-monitor');
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/portfolios');
   });

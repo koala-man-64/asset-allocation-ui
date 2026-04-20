@@ -8,6 +8,7 @@ import {
   Filter,
   Folder,
   Globe,
+  Landmark,
   Layers3,
   Orbit,
   ScanSearch,
@@ -209,6 +210,19 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Strategies',
       icon: Target,
+      sectionKey: 'live-operations'
+    }
+  },
+  {
+    key: 'accounts',
+    path: '/accounts',
+    load: () =>
+      import('@/features/accounts/AccountOperationsPage').then((module) => ({
+        default: module.AccountOperationsPage
+      })),
+    nav: {
+      label: 'Account Operations',
+      icon: Landmark,
       sectionKey: 'live-operations'
     }
   },

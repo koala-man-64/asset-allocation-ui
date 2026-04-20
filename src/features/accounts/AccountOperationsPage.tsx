@@ -1,0 +1,1196 @@
+import { useDeferredValue, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Cable,
+  CheckCircle2,
+  Landmark,
+  RefreshCw,
+  ShieldAlert,
+  Wallet
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
+
+import { PageHero } from '@/app/components/common/PageHero';
+import { PageLoader } from '@/app/components/common/PageLoader';
+import { StatePanel } from '@/app/components/common/StatePanel';
+import { Badge } from '@/app/components/ui/badge';
+import { Button } from '@/app/components/ui/button';
+import { Input } from '@/app/components/ui/input';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle
+} from '@/app/components/ui/sheet';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
+import {
+  accountOperationsApi,
+  accountOperationsKeys
+} from '@/services/accountOperationsApi';
+import type {
+  BrokerAccountAlert,
+  BrokerAccountDetail,
+  BrokerAccountSummary,
+  BrokerVendor
+} from '@/types/brokerAccounts';
+import {
+  alertToneClass,
+  brokerAccentClass,
+  compactMetricToneClass,
+  formatCurrency,
+  formatNumber,
+  formatTimestamp,
+  getAccountSearchText,
+  sortAccountsByPriority,
+  statusBadgeVariant,
+  tradeReadinessLabel
+} from '@/features/accounts/lib/accountPresentation';
+import { toast } from 'sonner';
+
+type BrokerFilter = 'all' | BrokerVendor;
+type HealthFilter = 'all' | 'needs-action' | 'healthy' | 'paused' | 'disconnected';
+type DetailTab = 'overview' | 'connectivity' | 'risk' | 'activity';
+const EMPTY_ACCOUNTS: readonly BrokerAccountSummary[] = [];
+
+function brokerLabel(broker: BrokerVendor): string {
+  if (broker === 'alpaca') {
+    return 'Alpaca';
+  }
+
+  if (broker === 'schwab') {
+    return 'Schwab';
+  }
+
+  return 'E*TRADE';
+}
+
+function matchesHealthFilter(account: BrokerAccountSummary, filter: HealthFilter): boolean {
+  if (filter === 'all') {
+    return true;
+  }
+
+  if (filter === 'needs-action') {
+    return account.overallStatus !== 'healthy' || account.tradeReadiness !== 'ready';
+  }
+
+  if (filter === 'healthy') {
+    return account.overallStatus === 'healthy' && account.tradeReadiness === 'ready';
+  }
+
+  if (filter === 'paused') {
+    return account.connectionHealth.syncPaused;
+  }
+
+  return account.connectionHealth.connectionState !== 'connected';
+}
+
+function buildVerdict(accounts: readonly BrokerAccountSummary[]): {
+  title: string;
+  summary: string;
+} {
+  const criticalCount = accounts.filter((account) => account.overallStatus === 'critical').length;
+  const needsActionCount = accounts.filter(
+    (account) => account.overallStatus !== 'healthy' || account.tradeReadiness !== 'ready'
+  ).length;
+
+  if (criticalCount > 0) {
+    return {
+      title: 'Broker posture is offside.',
+      summary:
+        'At least one account is carrying a hard operational blocker. Reconnect or refresh the affected brokers before treating buying power as actionable.'
+    };
+  }
+
+  if (needsActionCount > 0) {
+    return {
+      title: 'Broker posture is tradable, but not clean.',
+      summary:
+        'The board is usable, but stale sync state, review flags, or muted permissions are already creating execution drag. Clean the exceptions before the next rebalance window.'
+    };
+  }
+
+  return {
+    title: 'Broker posture is orderly.',
+    summary:
+      'Connectivity, sync freshness, and trade readiness are aligned across the connected accounts. The page can stay in scan mode instead of triage mode.'
+  };
+}
+
+function AccountActionButton({
+  label,
+  disabled,
+  onClick,
+  variant = 'outline'
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  variant?: 'default' | 'outline' | 'secondary' | 'ghost';
+}) {
+  return (
+    <Button type="button" size="sm" variant={variant} disabled={disabled} onClick={onClick}>
+      {label}
+    </Button>
+  );
+}
+
+function AccountFilterRail({
+  accounts,
+  brokerFilter,
+  healthFilter,
+  searchText,
+  onBrokerFilterChange,
+  onHealthFilterChange,
+  onSearchTextChange,
+  onRefreshBoard,
+  onClearFilters,
+  boardRefreshing
+}: {
+  accounts: readonly BrokerAccountSummary[];
+  brokerFilter: BrokerFilter;
+  healthFilter: HealthFilter;
+  searchText: string;
+  onBrokerFilterChange: (value: BrokerFilter) => void;
+  onHealthFilterChange: (value: HealthFilter) => void;
+  onSearchTextChange: (value: string) => void;
+  onRefreshBoard: () => void;
+  onClearFilters: () => void;
+  boardRefreshing: boolean;
+}) {
+  const brokerCounts = useMemo(
+    () => ({
+      all: accounts.length,
+      alpaca: accounts.filter((account) => account.broker === 'alpaca').length,
+      schwab: accounts.filter((account) => account.broker === 'schwab').length,
+      etrade: accounts.filter((account) => account.broker === 'etrade').length
+    }),
+    [accounts]
+  );
+
+  const healthCounts = useMemo(
+    () => ({
+      all: accounts.length,
+      'needs-action': accounts.filter(
+        (account) => account.overallStatus !== 'healthy' || account.tradeReadiness !== 'ready'
+      ).length,
+      healthy: accounts.filter(
+        (account) => account.overallStatus === 'healthy' && account.tradeReadiness === 'ready'
+      ).length,
+      paused: accounts.filter((account) => account.connectionHealth.syncPaused).length,
+      disconnected: accounts.filter(
+        (account) => account.connectionHealth.connectionState !== 'connected'
+      ).length
+    }),
+    [accounts]
+  );
+
+  return (
+    <aside className="mcm-panel flex min-h-[760px] flex-col overflow-hidden">
+      <div className="border-b border-border/40 px-5 py-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+          Filters
+        </p>
+        <h2 className="mt-1 font-display text-xl text-foreground">Board Scope</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Keep the page in exception-first scan mode. Filter broker noise before you open the
+          account dossier.
+        </p>
+      </div>
+
+      <div className="flex-1 space-y-5 p-5">
+        <div className="space-y-2">
+          <label htmlFor="account-ops-search">Account search</label>
+          <Input
+            id="account-ops-search"
+            placeholder="Broker, portfolio, account, reason"
+            value={searchText}
+            onChange={(event) => onSearchTextChange(event.target.value)}
+          />
+        </div>
+
+        <div className="space-y-3 rounded-[1.6rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Broker Routing
+          </p>
+          {([
+            ['all', 'All Brokers'],
+            ['alpaca', 'Alpaca'],
+            ['schwab', 'Schwab'],
+            ['etrade', 'E*TRADE']
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`flex w-full items-center justify-between rounded-[1.1rem] border px-3 py-3 text-left transition ${
+                brokerFilter === value
+                  ? 'border-mcm-walnut bg-mcm-cream/90'
+                  : 'border-mcm-walnut/15 bg-mcm-paper/70'
+              }`}
+              onClick={() => onBrokerFilterChange(value)}
+            >
+              <span className="font-medium text-foreground">{label}</span>
+              <span className="text-sm text-muted-foreground">
+                {brokerCounts[value as keyof typeof brokerCounts]}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-3 rounded-[1.6rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Health Buckets
+          </p>
+          {([
+            ['all', 'All States'],
+            ['needs-action', 'Needs Action'],
+            ['healthy', 'Healthy'],
+            ['paused', 'Paused Sync'],
+            ['disconnected', 'Disconnected']
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`flex w-full items-center justify-between rounded-[1.1rem] border px-3 py-3 text-left transition ${
+                healthFilter === value
+                  ? 'border-mcm-walnut bg-mcm-cream/90'
+                  : 'border-mcm-walnut/15 bg-mcm-paper/70'
+              }`}
+              onClick={() => onHealthFilterChange(value)}
+            >
+              <span className="font-medium text-foreground">{label}</span>
+              <span className="text-sm text-muted-foreground">
+                {healthCounts[value as keyof typeof healthCounts]}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-3 rounded-[1.6rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Quick Actions
+          </p>
+          <Button
+            type="button"
+            className="w-full justify-between"
+            onClick={onRefreshBoard}
+            disabled={boardRefreshing}
+          >
+            {boardRefreshing ? 'Refreshing Board...' : 'Refresh Board'}
+            <RefreshCw className={`h-4 w-4 ${boardRefreshing ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button type="button" variant="ghost" className="w-full justify-between" onClick={onClearFilters}>
+            Clear Filters
+            <CheckCircle2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function AccountCard({
+  account,
+  onOpenDetail,
+  onRefresh,
+  onReconnect,
+  onTogglePause,
+  busy
+}: {
+  account: BrokerAccountSummary;
+  onOpenDetail: () => void;
+  onRefresh: () => void;
+  onReconnect: () => void;
+  onTogglePause: () => void;
+  busy: boolean;
+}) {
+  const pauseLabel = account.connectionHealth.syncPaused ? 'Resume Sync' : 'Pause Sync';
+  const reconnectDisabled =
+    busy ||
+    !account.connectionHealth.connectionState ||
+    account.connectionHealth.connectionState === 'connected';
+  const refreshDisabled = busy || account.connectionHealth.syncPaused;
+  const pauseDisabled = busy;
+
+  return (
+    <article
+      className={`rounded-[1.8rem] border-l-[10px] border border-mcm-walnut/20 p-5 shadow-sm ${brokerAccentClass(
+        account.broker
+      )}`}
+      data-testid={`account-card-${account.accountId}`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{brokerLabel(account.broker)}</Badge>
+            <Badge variant={statusBadgeVariant(account.overallStatus)}>
+              {account.overallStatus.toUpperCase()}
+            </Badge>
+            <Badge variant={statusBadgeVariant(account.tradeReadiness)}>
+              {tradeReadinessLabel(account.tradeReadiness)}
+            </Badge>
+            {account.accountNumberMasked ? (
+              <Badge variant="secondary">{account.accountNumberMasked}</Badge>
+            ) : null}
+          </div>
+          <div>
+            <h3 className="font-display text-xl text-foreground">{account.name}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {account.activePortfolioName || 'No portfolio assignment'}
+              {account.strategyLabel ? ` · ${account.strategyLabel}` : ''}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <AccountActionButton label="Open Dossier" variant="secondary" onClick={onOpenDetail} />
+          <AccountActionButton label="Refresh Now" disabled={refreshDisabled} onClick={onRefresh} />
+          <AccountActionButton
+            label={pauseLabel}
+            disabled={pauseDisabled}
+            onClick={onTogglePause}
+          />
+          <AccountActionButton
+            label="Reconnect"
+            disabled={reconnectDisabled}
+            onClick={onReconnect}
+          />
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className={`rounded-[1.2rem] border p-3 ${compactMetricToneClass(account.overallStatus)}`}>
+          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Buying Power
+          </div>
+          <div className="mt-2 font-display text-2xl text-foreground">
+            {formatCurrency(account.buyingPower, account.baseCurrency)}
+          </div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            Equity {formatCurrency(account.equity, account.baseCurrency)}
+          </div>
+        </div>
+
+        <div className="rounded-[1.2rem] border border-mcm-walnut/18 bg-mcm-paper/85 p-3">
+          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Sync Health
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <Badge variant={statusBadgeVariant(account.connectionHealth.syncStatus)}>
+              {account.connectionHealth.syncStatus}
+            </Badge>
+            <Badge variant={statusBadgeVariant(account.connectionHealth.connectionState)}>
+              {account.connectionHealth.connectionState}
+            </Badge>
+          </div>
+          <div className="mt-2 text-sm text-muted-foreground">
+            {account.connectionHealth.staleReason ||
+              account.connectionHealth.failureMessage ||
+              'No connectivity exception is currently flagged.'}
+          </div>
+        </div>
+
+        <div className="rounded-[1.2rem] border border-mcm-walnut/18 bg-mcm-paper/85 p-3">
+          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Cash / Orders
+          </div>
+          <div className="mt-2 font-display text-2xl text-foreground">
+            {formatCurrency(account.cash, account.baseCurrency)}
+          </div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            {formatNumber(account.openPositionCount)} positions · {formatNumber(account.openOrderCount)} open orders
+          </div>
+        </div>
+
+        <div className="rounded-[1.2rem] border border-mcm-walnut/18 bg-mcm-paper/85 p-3">
+          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Operator Flags
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <Badge variant={statusBadgeVariant(account.connectionHealth.authStatus)}>
+              {account.connectionHealth.authStatus}
+            </Badge>
+            <Badge variant={statusBadgeVariant(account.highestAlertSeverity || undefined)}>
+              {account.alertCount} alerts
+            </Badge>
+          </div>
+          <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+            <div>Auth expiry {formatTimestamp(account.connectionHealth.authExpiresAt)}</div>
+            <div>Last sync {formatTimestamp(account.lastSyncedAt)}</div>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function DetailSection({
+  label,
+  value,
+  detail
+}: {
+  label: string;
+  value: string;
+  detail?: string | null;
+}) {
+  return (
+    <div className="rounded-[1.2rem] border border-mcm-walnut/15 bg-mcm-paper/80 p-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-2 font-medium text-foreground">{value}</div>
+      {detail ? <div className="mt-1 text-sm text-muted-foreground">{detail}</div> : null}
+    </div>
+  );
+}
+
+function AccountDetailSheet({
+  open,
+  onOpenChange,
+  account,
+  detail,
+  loading,
+  error,
+  activeTab,
+  onActiveTabChange,
+  onRefresh,
+  onReconnect,
+  onTogglePause,
+  onAcknowledgeAlert,
+  mutationBusy
+}: {
+  open: boolean;
+  onOpenChange: (value: boolean) => void;
+  account: BrokerAccountSummary | null;
+  detail: BrokerAccountDetail | null;
+  loading: boolean;
+  error: string | null;
+  activeTab: DetailTab;
+  onActiveTabChange: (value: DetailTab) => void;
+  onRefresh: () => void;
+  onReconnect: () => void;
+  onTogglePause: () => void;
+  onAcknowledgeAlert: (alert: BrokerAccountAlert) => void;
+  mutationBusy: boolean;
+}) {
+  const subject = detail?.account ?? account;
+  const activeAlerts = detail?.alerts.filter((alert) => alert.status !== 'resolved') ?? [];
+  const capabilities = detail?.capabilities;
+  const reconnectDisabled =
+    mutationBusy ||
+    subject?.connectionHealth.connectionState === 'connected' ||
+    capabilities?.canReconnect === false;
+  const refreshDisabled =
+    mutationBusy ||
+    subject?.connectionHealth.syncPaused ||
+    capabilities?.canRefresh === false;
+  const pauseDisabled = mutationBusy || capabilities?.canPauseSync === false;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="overflow-y-auto border-l-2 border-mcm-walnut bg-mcm-paper sm:max-w-3xl"
+      >
+        <SheetHeader className="border-b border-border/40 pr-12">
+          <div className="flex flex-wrap items-center gap-2">
+            {subject ? <Badge variant="outline">{brokerLabel(subject.broker)}</Badge> : null}
+            {subject ? (
+              <Badge variant={statusBadgeVariant(subject.tradeReadiness)}>
+                {tradeReadinessLabel(subject.tradeReadiness)}
+              </Badge>
+            ) : null}
+          </div>
+          <SheetTitle className="font-display text-2xl text-foreground">
+            {subject?.name || 'Account dossier'}
+          </SheetTitle>
+          <SheetDescription>
+            Connectivity, risk, and recent operator actions for the selected broker account.
+          </SheetDescription>
+          {subject ? (
+            <div className="flex flex-wrap gap-2 pt-2">
+              <AccountActionButton
+                label="Refresh Now"
+                disabled={refreshDisabled}
+                onClick={onRefresh}
+              />
+              <AccountActionButton
+                label={subject.connectionHealth.syncPaused ? 'Resume Sync' : 'Pause Sync'}
+                disabled={pauseDisabled}
+                onClick={onTogglePause}
+              />
+              <AccountActionButton
+                label="Reconnect"
+                disabled={reconnectDisabled}
+                onClick={onReconnect}
+              />
+            </div>
+          ) : null}
+        </SheetHeader>
+
+        <div className="p-5">
+          {loading ? (
+            <PageLoader text="Loading account dossier..." variant="panel" className="min-h-[28rem]" />
+          ) : error ? (
+            <StatePanel tone="error" title="Account Dossier Unavailable" message={error} />
+          ) : detail && subject ? (
+            <Tabs value={activeTab} onValueChange={(value) => onActiveTabChange(value as DetailTab)}>
+              <TabsList className="w-full justify-start">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="connectivity">Connectivity</TabsTrigger>
+                <TabsTrigger value="risk">Risk</TabsTrigger>
+                <TabsTrigger value="activity">Activity</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="overview" className="mt-4 space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <DetailSection label="Account Type" value={detail.accountType} />
+                  <DetailSection
+                    label="Buying Power"
+                    value={formatCurrency(subject.buyingPower, subject.baseCurrency)}
+                    detail={`Equity ${formatCurrency(subject.equity, subject.baseCurrency)}`}
+                  />
+                  <DetailSection
+                    label="Cash"
+                    value={formatCurrency(subject.cash, subject.baseCurrency)}
+                    detail={`Snapshot ${formatTimestamp(subject.snapshotAsOf)}`}
+                  />
+                  <DetailSection
+                    label="Assignment"
+                    value={subject.activePortfolioName || 'No portfolio assignment'}
+                    detail={subject.strategyLabel || 'No strategy label'}
+                  />
+                  <DetailSection
+                    label="Open Inventory"
+                    value={`${formatNumber(subject.openPositionCount)} positions`}
+                    detail={`${formatNumber(subject.openOrderCount)} open orders`}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="connectivity" className="mt-4 space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <DetailSection
+                    label="Connection State"
+                    value={subject.connectionHealth.connectionState}
+                    detail={
+                      subject.connectionHealth.syncPaused
+                        ? 'Sync is currently paused by an operator action.'
+                        : 'Broker session routing is active.'
+                    }
+                  />
+                  <DetailSection
+                    label="Auth Status"
+                    value={subject.connectionHealth.authStatus}
+                    detail={`Expires ${formatTimestamp(subject.connectionHealth.authExpiresAt)}`}
+                  />
+                  <DetailSection
+                    label="Sync Status"
+                    value={subject.connectionHealth.syncStatus}
+                    detail={subject.connectionHealth.staleReason || subject.connectionHealth.failureMessage}
+                  />
+                  <DetailSection
+                    label="Last Successful Sync"
+                    value={formatTimestamp(subject.connectionHealth.lastSuccessfulSyncAt)}
+                  />
+                  <DetailSection
+                    label="Last Failed Sync"
+                    value={formatTimestamp(subject.connectionHealth.lastFailedSyncAt)}
+                    detail={subject.connectionHealth.failureMessage}
+                  />
+                </div>
+                <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                    Capability Flags
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {Object.entries(detail.capabilities).map(([key, enabled]) => (
+                      <Badge
+                        key={key}
+                        variant={enabled ? 'default' : 'outline'}
+                        className="capitalize"
+                      >
+                        {key.replace(/^can/, '').replace(/([A-Z])/g, ' $1').trim()}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="risk" className="mt-4 space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <DetailSection
+                    label="Buying Power"
+                    value={formatCurrency(subject.buyingPower, subject.baseCurrency)}
+                    detail={`Cash ${formatCurrency(subject.cash, subject.baseCurrency)}`}
+                  />
+                  <DetailSection
+                    label="Trading State"
+                    value={detail.tradingBlocked ? 'Blocked' : 'Clear'}
+                    detail={detail.tradingBlockedReason}
+                  />
+                  <DetailSection
+                    label="Unsettled Funds"
+                    value={formatCurrency(detail.unsettledFunds, subject.baseCurrency)}
+                  />
+                  <DetailSection
+                    label="Day-Trade Buying Power"
+                    value={formatCurrency(detail.dayTradeBuyingPower, subject.baseCurrency)}
+                  />
+                  <DetailSection
+                    label="Maintenance Excess"
+                    value={formatCurrency(detail.maintenanceExcess, subject.baseCurrency)}
+                  />
+                </div>
+
+                <div className="space-y-3 rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                    Active Alerts
+                  </p>
+                  {activeAlerts.length ? (
+                    activeAlerts.map((alert) => (
+                      <div
+                        key={alert.alertId}
+                        className={`rounded-[1.2rem] border p-3 ${alertToneClass(alert.severity)}`}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="font-medium text-foreground">{alert.title}</div>
+                            <div className="mt-1 text-sm text-muted-foreground">{alert.message}</div>
+                            <div className="mt-2 text-xs text-muted-foreground">
+                              Observed {formatTimestamp(alert.observedAt)}
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              mutationBusy ||
+                              alert.status === 'acknowledged' ||
+                              alert.status === 'resolved'
+                            }
+                            onClick={() => onAcknowledgeAlert(alert)}
+                          >
+                            {alert.status === 'open' ? 'Acknowledge' : alert.status}
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <StatePanel
+                      tone="empty"
+                      title="No active alerts"
+                      message="The selected account is not carrying any open risk or connectivity alerts."
+                    />
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="activity" className="mt-4 space-y-4">
+                <div className="space-y-3 rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                    Sync Runs
+                  </p>
+                  {detail.syncRuns.length ? (
+                    detail.syncRuns.map((run) => (
+                      <div
+                        key={run.runId}
+                        className="rounded-[1.2rem] border border-mcm-walnut/15 bg-mcm-cream/55 p-3"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="font-medium text-foreground">
+                              {run.trigger} · {run.scope}
+                            </div>
+                            <div className="mt-1 text-sm text-muted-foreground">
+                              Requested {formatTimestamp(run.requestedAt)}
+                            </div>
+                          </div>
+                          <Badge variant={statusBadgeVariant(run.status)}>{run.status}</Badge>
+                        </div>
+                        {run.errorMessage ? (
+                          <div className="mt-2 text-sm text-muted-foreground">{run.errorMessage}</div>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <StatePanel
+                      tone="empty"
+                      title="No sync activity"
+                      message="The selected account does not have any recent sync runs."
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-3 rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                    Manual Actions
+                  </p>
+                  {detail.recentActivity.length ? (
+                    detail.recentActivity.map((activity) => (
+                      <div
+                        key={activity.activityId}
+                        className="rounded-[1.2rem] border border-mcm-walnut/15 bg-mcm-cream/55 p-3"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="font-medium text-foreground">{activity.summary}</div>
+                            <div className="mt-1 text-sm text-muted-foreground">
+                              {activity.actor || 'system'} · {formatTimestamp(activity.requestedAt)}
+                            </div>
+                          </div>
+                          <Badge variant={statusBadgeVariant(activity.status)}>{activity.status}</Badge>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <StatePanel
+                      tone="empty"
+                      title="No recent manual actions"
+                      message="Reconnects, pauses, refreshes, and acknowledgements will appear here."
+                    />
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <StatePanel
+              tone="empty"
+              title="No account selected"
+              message="Open an account dossier from the board to inspect connectivity and risk."
+            />
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function DeskVerdictRail({
+  accounts,
+  generatedAt
+}: {
+  accounts: readonly BrokerAccountSummary[];
+  generatedAt?: string | null;
+}) {
+  const verdict = buildVerdict(accounts);
+  const immediateFocus = sortAccountsByPriority(accounts)
+    .filter((account) => account.overallStatus !== 'healthy' || account.tradeReadiness !== 'ready')
+    .slice(0, 4);
+
+  const connectedCount = accounts.filter(
+    (account) => account.connectionHealth.connectionState === 'connected'
+  ).length;
+  const disconnectedCount = accounts.filter(
+    (account) => account.connectionHealth.connectionState !== 'connected'
+  ).length;
+  const blockedCount = accounts.filter((account) => account.tradeReadiness === 'blocked').length;
+
+  return (
+    <aside className="mcm-panel flex min-h-[760px] flex-col overflow-hidden">
+      <div className="border-b border-border/40 px-5 py-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+          Desk Verdict
+        </p>
+        <h2 className="mt-1 font-display text-xl text-foreground">Exception Brief</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Lead with the operational posture, then pull the top exceptions into the queue.
+        </p>
+      </div>
+
+      <div className="flex-1 space-y-5 p-5">
+        <div className="rounded-[1.8rem] border border-mcm-walnut/20 bg-mcm-paper/85 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                Verdict
+              </p>
+              <p className="mt-2 font-display text-lg text-foreground">{verdict.title}</p>
+            </div>
+            <Badge variant={blockedCount > 0 ? 'destructive' : disconnectedCount > 0 ? 'secondary' : 'default'}>
+              {blockedCount > 0 ? 'BLOCKS PRESENT' : disconnectedCount > 0 ? 'WATCHLIST' : 'ORDERLY'}
+            </Badge>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{verdict.summary}</p>
+        </div>
+
+        <div className="space-y-3 rounded-[1.8rem] border border-mcm-walnut/20 bg-mcm-paper/85 p-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Observed Facts
+          </p>
+          {[
+            `${connectedCount} accounts are currently connected and ${disconnectedCount} are degraded or disconnected.`,
+            `${blockedCount} accounts are blocked from clean trade readiness.`,
+            generatedAt ? `Board snapshot generated ${formatTimestamp(generatedAt)}.` : 'Board timestamp is not currently available.'
+          ].map((fact) => (
+            <div
+              key={fact}
+              className="rounded-[1.2rem] border border-mcm-walnut/15 bg-mcm-cream/60 px-3 py-3 text-sm text-muted-foreground"
+            >
+              {fact}
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-3 rounded-[1.8rem] border border-mcm-walnut/20 bg-mcm-paper/85 p-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Immediate Focus
+          </p>
+          {immediateFocus.length ? (
+            immediateFocus.map((account) => (
+              <div
+                key={account.accountId}
+                className={`rounded-[1.2rem] border px-3 py-3 text-sm ${compactMetricToneClass(account.overallStatus)}`}
+              >
+                <div className="font-medium text-foreground">
+                  {account.name} · {brokerLabel(account.broker)}
+                </div>
+                <div className="mt-1 text-muted-foreground">
+                  {account.tradeReadinessReason ||
+                    account.connectionHealth.staleReason ||
+                    account.connectionHealth.failureMessage ||
+                    'Review the selected account before the next execution window.'}
+                </div>
+              </div>
+            ))
+          ) : (
+            <StatePanel
+              tone="empty"
+              title="No immediate queue"
+              message="The board is clear enough to stay in scan mode."
+            />
+          )}
+        </div>
+
+        <div className="space-y-3 rounded-[1.8rem] border border-mcm-walnut/20 bg-mcm-paper/85 p-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Adjacent Surfaces
+          </p>
+          <Button asChild variant="ghost" className="w-full justify-between">
+            <Link to="/portfolios">Portfolio Workspace</Link>
+          </Button>
+          <Button asChild variant="ghost" className="w-full justify-between">
+            <Link to="/runtime-config">Runtime Config</Link>
+          </Button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+export function AccountOperationsPage() {
+  const queryClient = useQueryClient();
+  const [brokerFilter, setBrokerFilter] = useState<BrokerFilter>('all');
+  const [healthFilter, setHealthFilter] = useState<HealthFilter>('all');
+  const [searchText, setSearchText] = useState('');
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
+  const deferredSearchText = useDeferredValue(searchText);
+
+  const listQuery = useQuery({
+    queryKey: accountOperationsKeys.list(),
+    queryFn: ({ signal }) => accountOperationsApi.listAccounts(signal),
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true
+  });
+
+  const detailQuery = useQuery({
+    queryKey: accountOperationsKeys.detail(selectedAccountId),
+    queryFn: ({ signal }) => accountOperationsApi.getAccountDetail(String(selectedAccountId), signal),
+    enabled: Boolean(selectedAccountId),
+    refetchInterval: selectedAccountId ? 60000 : false,
+    refetchOnWindowFocus: true
+  });
+
+  const reconnectMutation = useMutation({
+    mutationFn: (accountId: string) =>
+      accountOperationsApi.reconnectAccount(accountId, {
+        reason: 'Reconnect requested from Account Operations.'
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.list() }),
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.all() })
+      ]);
+      toast.success('Reconnect request submitted.');
+    },
+    onError: (error) => {
+      toast.error(`Failed to reconnect account: ${String(error)}`);
+    }
+  });
+
+  const refreshMutation = useMutation({
+    mutationFn: (accountId: string) =>
+      accountOperationsApi.refreshAccount(accountId, {
+        scope: 'full',
+        force: true,
+        reason: 'Manual refresh requested from Account Operations.'
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.list() }),
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.all() })
+      ]);
+      toast.success('Refresh queued.');
+    },
+    onError: (error) => {
+      toast.error(`Failed to queue refresh: ${String(error)}`);
+    }
+  });
+
+  const pauseMutation = useMutation({
+    mutationFn: (payload: { accountId: string; paused: boolean }) =>
+      accountOperationsApi.setSyncPaused(payload.accountId, {
+        paused: payload.paused,
+        reason: payload.paused
+          ? 'Sync paused from Account Operations.'
+          : 'Sync resumed from Account Operations.'
+      }),
+    onSuccess: async (_, payload) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.list() }),
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.detail(payload.accountId) })
+      ]);
+      toast.success(payload.paused ? 'Sync paused.' : 'Sync resumed.');
+    },
+    onError: (error) => {
+      toast.error(`Failed to update sync state: ${String(error)}`);
+    }
+  });
+
+  const acknowledgeMutation = useMutation({
+    mutationFn: (payload: { accountId: string; alertId: string }) =>
+      accountOperationsApi.acknowledgeAlert(payload.accountId, payload.alertId, {
+        note: 'Acknowledged from Account Operations.'
+      }),
+    onSuccess: async (_, payload) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.list() }),
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.detail(payload.accountId) })
+      ]);
+      toast.success('Alert acknowledged.');
+    },
+    onError: (error) => {
+      toast.error(`Failed to acknowledge alert: ${String(error)}`);
+    }
+  });
+
+  const accounts = listQuery.data?.accounts ?? EMPTY_ACCOUNTS;
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.accountId === selectedAccountId) ?? null,
+    [accounts, selectedAccountId]
+  );
+
+  const filteredAccounts = useMemo(() => {
+    const query = deferredSearchText.trim().toLowerCase();
+
+    return sortAccountsByPriority(accounts).filter((account) => {
+      if (brokerFilter !== 'all' && account.broker !== brokerFilter) {
+        return false;
+      }
+
+      if (!matchesHealthFilter(account, healthFilter)) {
+        return false;
+      }
+
+      if (query && !getAccountSearchText(account).includes(query)) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [accounts, brokerFilter, deferredSearchText, healthFilter]);
+
+  const connectedAccounts = accounts.filter(
+    (account) => account.connectionHealth.connectionState === 'connected'
+  ).length;
+  const tradeReadyAccounts = accounts.filter((account) => account.tradeReadiness === 'ready').length;
+  const needsActionAccounts = accounts.filter(
+    (account) => account.overallStatus !== 'healthy' || account.tradeReadiness !== 'ready'
+  ).length;
+  const aggregateBuyingPower = accounts.reduce((total, account) => total + account.buyingPower, 0);
+  const mutationBusy =
+    reconnectMutation.isPending ||
+    refreshMutation.isPending ||
+    pauseMutation.isPending ||
+    acknowledgeMutation.isPending;
+
+  const handleOpenDetail = (accountId: string) => {
+    setSelectedAccountId(accountId);
+    setDetailTab('overview');
+  };
+
+  if (listQuery.isLoading) {
+    return <PageLoader text="Loading account operations board..." />;
+  }
+
+  if (listQuery.error) {
+    return (
+      <StatePanel
+        tone="error"
+        title="Account Operations Unavailable"
+        message={String(listQuery.error)}
+      />
+    );
+  }
+
+  return (
+    <div className="page-shell">
+      <PageHero
+        kicker="Account Operations"
+        title={
+          <span className="flex items-center gap-2">
+            <Landmark className="h-6 w-6 text-mcm-teal" />
+            Account Operations
+          </span>
+        }
+        subtitle="An account-first broker operations board for connectivity health, sync freshness, trade readiness, and capital availability across Alpaca, Schwab, and E*TRADE without turning the surface into an order-entry screen."
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge variant="outline">
+              <Cable className="mr-1 h-3.5 w-3.5" />
+              {connectedAccounts} connected
+            </Badge>
+            <Button
+              type="button"
+              onClick={() => listQuery.refetch()}
+              disabled={listQuery.isFetching}
+            >
+              {listQuery.isFetching ? 'Refreshing...' : 'Refresh Board'}
+            </Button>
+          </div>
+        }
+        metrics={[
+          {
+            label: 'Connected Accounts',
+            value: String(connectedAccounts),
+            detail: `${accounts.length} tracked accounts on the board.`,
+            icon: <Cable className="h-4 w-4 text-mcm-teal" />
+          },
+          {
+            label: 'Trade Ready',
+            value: String(tradeReadyAccounts),
+            detail: 'Accounts currently clear for trade readiness.',
+            icon: <CheckCircle2 className="h-4 w-4 text-mcm-teal" />
+          },
+          {
+            label: 'Needs Action',
+            value: String(needsActionAccounts),
+            detail: 'Accounts carrying warnings, stale sync, or blocked trade state.',
+            icon: <ShieldAlert className="h-4 w-4 text-mcm-rust" />
+          },
+          {
+            label: 'Buying Power',
+            value: formatCurrency(aggregateBuyingPower),
+            detail: 'Aggregate board-level buying power across the connected accounts.',
+            icon: <Wallet className="h-4 w-4 text-mcm-olive" />
+          }
+        ]}
+        sideClassName="max-w-[72rem]"
+        metricsClassName="grid-cols-2 xl:grid-cols-4"
+      />
+
+      <div className="grid gap-6 2xl:grid-cols-[300px_minmax(0,1.2fr)_340px]">
+        <AccountFilterRail
+          accounts={accounts}
+          brokerFilter={brokerFilter}
+          healthFilter={healthFilter}
+          searchText={searchText}
+          onBrokerFilterChange={setBrokerFilter}
+          onHealthFilterChange={setHealthFilter}
+          onSearchTextChange={setSearchText}
+          onRefreshBoard={() => void listQuery.refetch()}
+          onClearFilters={() => {
+            setBrokerFilter('all');
+            setHealthFilter('all');
+            setSearchText('');
+          }}
+          boardRefreshing={listQuery.isFetching}
+        />
+
+        <section className="mcm-panel min-h-[760px] overflow-hidden">
+          <div className="border-b border-border/40 px-5 py-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+                  Command Grid
+                </p>
+                <h2 className="mt-1 font-display text-xl text-foreground">Account Board</h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Default sort is exception-first: alert severity, stale or disconnected sync,
+                  blocked trading posture, then capital at risk.
+                </p>
+              </div>
+              <Badge variant="outline">{filteredAccounts.length} visible</Badge>
+            </div>
+          </div>
+
+          <div className="space-y-4 p-5">
+            {!accounts.length ? (
+              <StatePanel
+                tone="empty"
+                title="No connected accounts"
+                message="Connect a broker account to populate the board and start monitoring trade readiness."
+              />
+            ) : !filteredAccounts.length ? (
+              <StatePanel
+                tone="empty"
+                title="No accounts match the current filters"
+                message="Clear the filters or broaden the search to restore the board."
+              />
+            ) : (
+              filteredAccounts.map((account) => (
+                <AccountCard
+                  key={account.accountId}
+                  account={account}
+                  busy={mutationBusy}
+                  onOpenDetail={() => handleOpenDetail(account.accountId)}
+                  onRefresh={() => refreshMutation.mutate(account.accountId)}
+                  onReconnect={() => reconnectMutation.mutate(account.accountId)}
+                  onTogglePause={() =>
+                    pauseMutation.mutate({
+                      accountId: account.accountId,
+                      paused: !account.connectionHealth.syncPaused
+                    })
+                  }
+                />
+              ))
+            )}
+          </div>
+        </section>
+
+        <DeskVerdictRail accounts={filteredAccounts.length ? filteredAccounts : accounts} generatedAt={listQuery.data?.generatedAt} />
+      </div>
+
+      <AccountDetailSheet
+        open={Boolean(selectedAccountId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedAccountId(null);
+          }
+        }}
+        account={selectedAccount}
+        detail={detailQuery.data ?? null}
+        loading={detailQuery.isLoading}
+        error={detailQuery.error ? String(detailQuery.error) : null}
+        activeTab={detailTab}
+        onActiveTabChange={setDetailTab}
+        onRefresh={() => selectedAccountId && refreshMutation.mutate(selectedAccountId)}
+        onReconnect={() => selectedAccountId && reconnectMutation.mutate(selectedAccountId)}
+        onTogglePause={() =>
+          selectedAccountId &&
+          selectedAccount &&
+          pauseMutation.mutate({
+            accountId: selectedAccountId,
+            paused: !selectedAccount.connectionHealth.syncPaused
+          })
+        }
+        onAcknowledgeAlert={(alert) =>
+          acknowledgeMutation.mutate({ accountId: alert.accountId, alertId: alert.alertId })
+        }
+        mutationBusy={mutationBusy}
+      />
+    </div>
+  );
+}

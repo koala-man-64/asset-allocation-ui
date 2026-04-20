@@ -60,6 +60,11 @@ vi.mock('@/features/portfolios/PortfolioWorkspacePage', () => ({
     <div data-testid="mock-portfolio-workspace">Mock Portfolio Workspace</div>
   )
 }));
+vi.mock('@/features/accounts/AccountOperationsPage', () => ({
+  AccountOperationsPage: () => (
+    <div data-testid="mock-account-operations">Mock Account Operations</div>
+  )
+}));
 
 vi.mock('@/features/universes/UniverseConfigPage', () => ({
   UniverseConfigPage: () => <div data-testid="mock-universe-config">Mock Universe Workbench</div>
@@ -143,6 +148,13 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-portfolio-workspace')).toBeInTheDocument();
+  });
+
+  it('renders the account operations route through the application shell', async () => {
+    window.history.pushState({}, 'Accounts', '/accounts');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-account-operations')).toBeInTheDocument();
   });
 
   it('renders the regime monitor route through the application shell', async () => {

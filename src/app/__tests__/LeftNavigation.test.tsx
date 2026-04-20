@@ -13,6 +13,7 @@ vi.mock('lucide-react', () => ({
   Briefcase: () => <div data-testid="icon-briefcase" />,
   Database: () => <div data-testid="icon-database" />,
   Layers3: () => <div data-testid="icon-layers-3" />,
+  Landmark: () => <div data-testid="icon-landmark" />,
   Target: () => <div data-testid="icon-target" />,
   Folder: () => <div data-testid="icon-folder" />,
   Globe: () => <div data-testid="icon-globe" />,
@@ -154,6 +155,7 @@ describe('LeftNavigation', () => {
             '/runtime-config',
             '/strategy-exploration',
             '/strategies',
+            '/accounts',
             '/portfolios',
             '/universes',
             '/rankings'
@@ -182,6 +184,7 @@ describe('LeftNavigation', () => {
         '/symbol-enrichment',
         '/runtime-config',
         '/strategy-exploration',
+        '/accounts',
         '/portfolios',
         '/universes',
         '/rankings'
