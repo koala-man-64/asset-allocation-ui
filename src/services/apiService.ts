@@ -19,12 +19,49 @@ const API_WARMUP_TIMEOUT_MS = 5000;
 const API_REQUEST_MAX_ATTEMPTS = 3;
 const API_REQUEST_RETRY_BASE_DELAY_MS = 500;
 const API_REQUEST_RETRY_MAX_DELAY_MS = 4000;
+const AUTH_SESSION_STATUS_ENDPOINT = '/auth/session';
+const RECENT_AUTH_SESSION_VALIDATION_WINDOW_MS = 60_000;
 
 const apiWarmupAttempted = new Set<string>();
 const apiWarmupInFlight = new Map<string, Promise<void>>();
+let lastSuccessfulAuthSessionValidationAt = 0;
 
 function logAuthRecovery(event: string, detail: Record<string, unknown> = {}): void {
   console.info(`[AuthRecovery] ${event}`, detail);
+}
+
+function noteAuthSessionValidation(endpoint: string, ok: boolean): void {
+  if (endpoint !== AUTH_SESSION_STATUS_ENDPOINT) {
+    return;
+  }
+
+  lastSuccessfulAuthSessionValidationAt = ok ? Date.now() : 0;
+}
+
+function getRecentAuthSessionValidationAgeMs(endpoint: string): number | null {
+  if (
+    endpoint === AUTH_SESSION_STATUS_ENDPOINT ||
+    lastSuccessfulAuthSessionValidationAt <= 0
+  ) {
+    return null;
+  }
+
+  const ageMs = Date.now() - lastSuccessfulAuthSessionValidationAt;
+  if (ageMs < 0 || ageMs > RECENT_AUTH_SESSION_VALIDATION_WINDOW_MS) {
+    return null;
+  }
+
+  return ageMs;
+}
+
+function buildRecentSessionSuppressedAuthMessage(
+  response: Response,
+  requestId: string,
+  errorBody: string
+): string {
+  const detail = String(errorBody ?? '').trim();
+  const suffix = detail ? ` - ${detail}` : '';
+  return `API Error: ${response.status} ${response.statusText} [requestId=${requestId}]${suffix} Interactive sign-in was suppressed because /auth/session succeeded recently; check API authorization or upstream auth configuration.`;
 }
 
 function isRetryableStatusCode(statusCode: number): boolean {
@@ -271,6 +308,7 @@ async function performRequest<T>(
     }
 
     if (response.ok) {
+      noteAuthSessionValidation(endpoint, true);
       break;
     }
 
@@ -318,8 +356,25 @@ async function performRequest<T>(
   const durationMs = Math.max(0, Math.round(performance.now() - startedAt));
 
   if (!response.ok) {
+    noteAuthSessionValidation(endpoint, false);
     const errorBody = await response.text();
     if (response.status === 401 && hasInteractiveAuthHandler()) {
+      const recentSessionValidationAgeMs = getRecentAuthSessionValidationAgeMs(endpoint);
+      if (recentSessionValidationAgeMs !== null) {
+        logAuthRecovery('interactive-reauth-suppressed', {
+          endpoint,
+          method: requestMethod,
+          requestId,
+          status: response.status,
+          recoveryAttempt: attemptedSilentAuthRecovery ? 1 : 0,
+          recentSessionValidationAgeMs
+        });
+        throw new ApiError(
+          response.status,
+          buildRecentSessionSuppressedAuthMessage(response, requestId, errorBody)
+        );
+      }
+
       const recoveryAttempt = attemptedSilentAuthRecovery ? 1 : 0;
       logAuthRecovery('interactive-reauth-required', {
         endpoint,

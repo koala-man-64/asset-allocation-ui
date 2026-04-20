@@ -178,6 +178,41 @@ describe('apiService cold start handling', () => {
     );
   });
 
+  it('suppresses interactive reauth loops when /auth/session succeeded recently', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          authMode: 'oidc',
+          subject: 'user-123',
+          requiredRoles: ['AssetAllocation.Access'],
+          grantedRoles: ['AssetAllocation.Access']
+        })
+      )
+      .mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }))
+      .mockResolvedValueOnce(new Response('Unauthorized again', { status: 401, statusText: 'Unauthorized' }));
+
+    const { request } = await importApiService();
+
+    await expect(request('/auth/session')).resolves.toEqual(
+      expect.objectContaining({
+        authMode: 'oidc',
+        subject: 'user-123'
+      })
+    );
+
+    await expect(request('/system/status-view')).rejects.toThrow(
+      /Interactive sign-in was suppressed because \/auth\/session succeeded recently/i
+    );
+
+    expect(mockAppendAuthHeaders).toHaveBeenNthCalledWith(
+      3,
+      expect.any(Headers),
+      expect.objectContaining({ forceRefresh: true })
+    );
+    expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
+  });
+
   it('does not replay non-safe requests before interactive reauth', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
