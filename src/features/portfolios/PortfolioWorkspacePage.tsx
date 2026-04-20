@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, Briefcase, Clock3, Layers3, TrendingUp } from 'lucide-react';
 
@@ -28,11 +28,8 @@ import {
   titleCaseWords
 } from '@/features/portfolios/lib/portfolioPresentation';
 import { deriveNextRebalanceWindow } from '@/features/portfolios/lib/portfolioRebalance';
-import { PortfolioConstructionTab } from '@/features/portfolios/components/PortfolioConstructionTab';
 import { PortfolioLibraryRail } from '@/features/portfolios/components/PortfolioLibraryRail';
 import { PortfolioOverviewTab } from '@/features/portfolios/components/PortfolioOverviewTab';
-import { PortfolioPerformanceTab } from '@/features/portfolios/components/PortfolioPerformanceTab';
-import { PortfolioTradingTab } from '@/features/portfolios/components/PortfolioTradingTab';
 import { DataService } from '@/services/DataService';
 import { portfolioApi } from '@/services/portfolioApi';
 import { regimeApi } from '@/services/regimeApi';
@@ -47,8 +44,30 @@ import { toast } from 'sonner';
 
 type PortfolioWorkspaceTab = 'overview' | 'construction' | 'performance' | 'trading';
 
+const PortfolioConstructionTab = lazy(() =>
+  import('@/features/portfolios/components/PortfolioConstructionTab').then((module) => ({
+    default: module.PortfolioConstructionTab
+  }))
+);
+
+const PortfolioPerformanceTab = lazy(() =>
+  import('@/features/portfolios/components/PortfolioPerformanceTab').then((module) => ({
+    default: module.PortfolioPerformanceTab
+  }))
+);
+
+const PortfolioTradingTab = lazy(() =>
+  import('@/features/portfolios/components/PortfolioTradingTab').then((module) => ({
+    default: module.PortfolioTradingTab
+  }))
+);
+
 function buildDefaultPreviewDate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function TabPanelLoader() {
+  return <PageLoader text="Loading workspace panel..." variant="panel" className="min-h-[32rem]" />;
 }
 
 function syncPortfolioSummaryFields(detail: PortfolioDetail): PortfolioDetail {
@@ -120,15 +139,21 @@ function ContextRail({
           <div className="mt-4 space-y-3 text-sm">
             <div className="flex items-center justify-between gap-4">
               <span className="text-muted-foreground">Workspace</span>
-              <span className="font-medium">{monitorSnapshot?.accountName || draft.name || 'Unsaved draft'}</span>
+              <span className="font-medium">
+                {monitorSnapshot?.accountName || draft.name || 'Unsaved draft'}
+              </span>
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-muted-foreground">Portfolio</span>
-              <span className="font-medium">{draft.portfolioName || draft.name || 'Unassigned'}</span>
+              <span className="font-medium">
+                {draft.portfolioName || draft.name || 'Unassigned'}
+              </span>
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-muted-foreground">Version</span>
-              <span className="font-medium">v{monitorSnapshot?.activeVersion ?? draft.version}</span>
+              <span className="font-medium">
+                v{monitorSnapshot?.activeVersion ?? draft.version}
+              </span>
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-muted-foreground">Assignment date</span>
@@ -176,7 +201,12 @@ function ContextRail({
                 <Button type="button" onClick={onSave} disabled={saveDisabled}>
                   {savePending ? 'Saving...' : 'Save Workspace'}
                 </Button>
-                <Button type="button" variant="outline" onClick={onPreview} disabled={previewDisabled}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onPreview}
+                  disabled={previewDisabled}
+                >
                   {previewPending ? 'Previewing...' : 'Preview Allocation Stack'}
                 </Button>
                 <Button
@@ -228,8 +258,16 @@ function ContextRail({
                     <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
                       <div className="flex items-center justify-between gap-3">
                         <span className="font-medium">Preview source</span>
-                        <Badge variant={previewResult.previewSource === 'live-proposal' ? 'default' : 'secondary'}>
-                          {previewResult.previewSource === 'live-proposal' ? 'Live proposal' : 'Inferred'}
+                        <Badge
+                          variant={
+                            previewResult.previewSource === 'live-proposal'
+                              ? 'default'
+                              : 'secondary'
+                          }
+                        >
+                          {previewResult.previewSource === 'live-proposal'
+                            ? 'Live proposal'
+                            : 'Inferred'}
                         </Badge>
                       </div>
                       {previewStale ? (
@@ -240,7 +278,9 @@ function ContextRail({
                     </div>
                     <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
                       <div className="text-sm text-muted-foreground">Warnings</div>
-                      <div className="mt-2 font-display text-xl">{previewResult.warnings.length}</div>
+                      <div className="mt-2 font-display text-xl">
+                        {previewResult.warnings.length}
+                      </div>
                     </div>
                   </>
                 )}
@@ -257,12 +297,16 @@ function ContextRail({
                 <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
                   <div className="text-sm text-muted-foreground">Build health</div>
                   <div className="mt-2 font-display text-xl">
-                    {titleCaseWords(monitorSnapshot?.buildHealth || draft.buildStatus || draft.status)}
+                    {titleCaseWords(
+                      monitorSnapshot?.buildHealth || draft.buildStatus || draft.status
+                    )}
                   </div>
                 </div>
                 <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
                   <div className="text-sm text-muted-foreground">Alerts</div>
-                  <div className="mt-2 font-display text-xl">{monitorSnapshot?.alerts.length ?? 0}</div>
+                  <div className="mt-2 font-display text-xl">
+                    {monitorSnapshot?.alerts.length ?? 0}
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
                   <div className="text-sm text-muted-foreground">Snapshot as of</div>
@@ -429,7 +473,9 @@ export function PortfolioWorkspacePage() {
     setDraft((current) => {
       const nextDraft = syncPortfolioSummaryFields(updater(current));
       const targetWeightPct = Number(
-        nextDraft.config.sleeves.reduce((total, sleeve) => total + sleeve.targetWeightPct, 0).toFixed(2)
+        nextDraft.config.sleeves
+          .reduce((total, sleeve) => total + sleeve.targetWeightPct, 0)
+          .toFixed(2)
       );
       nextDraft.config.targetGrossExposurePct = targetWeightPct;
       nextDraft.config.cashReservePct = Number(Math.max(0, 100 - targetWeightPct).toFixed(2));
@@ -666,12 +712,19 @@ export function PortfolioWorkspacePage() {
             : activeTab === 'performance'
               ? 'Benchmark-relative performance, attribution, and model outlook.'
               : 'Rebalance workflow, blotter, build runs, and drift.',
-      icon: activeTab === 'trading' ? <Clock3 className="h-4 w-4 text-mcm-rust" /> : <Layers3 className="h-4 w-4 text-mcm-olive" />
+      icon:
+        activeTab === 'trading' ? (
+          <Clock3 className="h-4 w-4 text-mcm-rust" />
+        ) : (
+          <Layers3 className="h-4 w-4 text-mcm-olive" />
+        )
     },
     {
       label: 'Headline Return',
       value: formatPercent(
-        benchmarkComparison.activeHeadlineReturnPct ?? monitorSnapshot?.sinceInceptionReturnPct ?? null
+        benchmarkComparison.activeHeadlineReturnPct ??
+          monitorSnapshot?.sinceInceptionReturnPct ??
+          null
       ),
       detail:
         benchmarkComparison.activeHeadlineReturnPct !== null
@@ -682,11 +735,27 @@ export function PortfolioWorkspacePage() {
   ];
 
   const renderTabContent = () => {
-    if (selectedPortfolioName && detailQuery.isLoading && !detailQuery.data && activeTab !== 'construction') {
-      return <PageLoader text="Loading portfolio workspace..." variant="panel" className="min-h-[32rem]" />;
+    if (
+      selectedPortfolioName &&
+      detailQuery.isLoading &&
+      !detailQuery.data &&
+      activeTab !== 'construction'
+    ) {
+      return (
+        <PageLoader
+          text="Loading portfolio workspace..."
+          variant="panel"
+          className="min-h-[32rem]"
+        />
+      );
     }
 
-    if (selectedPortfolioName && detailErrorMessage && !detailQuery.data && activeTab !== 'construction') {
+    if (
+      selectedPortfolioName &&
+      detailErrorMessage &&
+      !detailQuery.data &&
+      activeTab !== 'construction'
+    ) {
       return (
         <StatePanel
           tone="error"
@@ -720,46 +789,52 @@ export function PortfolioWorkspacePage() {
 
     if (activeTab === 'construction') {
       return (
-        <PortfolioConstructionTab
-          draft={draft}
-          targetWeightTotal={targetWeightTotal}
-          residualWeightPct={residualWeightPct}
-          strategies={strategiesQuery.data ?? []}
-          strategiesLoading={strategiesQuery.isLoading}
-          strategiesError={strategiesErrorMessage || undefined}
-          previewResult={previewResult ?? null}
-          previewPending={previewMutation.isPending}
-          previewError={previewErrorMessage || undefined}
-          previewStale={previewStale}
-          onUpdateDraft={updateDraft}
-        />
+        <Suspense fallback={<TabPanelLoader />}>
+          <PortfolioConstructionTab
+            draft={draft}
+            targetWeightTotal={targetWeightTotal}
+            residualWeightPct={residualWeightPct}
+            strategies={strategiesQuery.data ?? []}
+            strategiesLoading={strategiesQuery.isLoading}
+            strategiesError={strategiesErrorMessage || undefined}
+            previewResult={previewResult ?? null}
+            previewPending={previewMutation.isPending}
+            previewError={previewErrorMessage || undefined}
+            previewStale={previewStale}
+            onUpdateDraft={updateDraft}
+          />
+        </Suspense>
       );
     }
 
     if (activeTab === 'performance') {
       return (
-        <PortfolioPerformanceTab
-          monitorSnapshot={monitorSnapshot}
-          benchmarkComparison={benchmarkComparison}
-          benchmarkError={benchmarkErrorMessage || undefined}
-          regimeHistory={regimeHistoryQuery.data?.rows ?? []}
-          regimeHistoryError={regimeHistoryErrorMessage || undefined}
-          currentRegimeCode={currentRegimeCode}
-        />
+        <Suspense fallback={<TabPanelLoader />}>
+          <PortfolioPerformanceTab
+            monitorSnapshot={monitorSnapshot}
+            benchmarkComparison={benchmarkComparison}
+            benchmarkError={benchmarkErrorMessage || undefined}
+            regimeHistory={regimeHistoryQuery.data?.rows ?? []}
+            regimeHistoryError={regimeHistoryErrorMessage || undefined}
+            currentRegimeCode={currentRegimeCode}
+          />
+        </Suspense>
       );
     }
 
     return (
-      <PortfolioTradingTab
-        monitorSnapshot={monitorSnapshot}
-        buildRuns={buildRuns}
-        buildRunsError={buildRunsErrorMessage || undefined}
-        nextRebalance={nextRebalance}
-        previewResult={previewResult ?? null}
-        triggerBuildPending={triggerBuildMutation.isPending}
-        triggerBuildDisabled={triggerBuildDisabled}
-        onTriggerBuild={() => triggerBuildMutation.mutate()}
-      />
+      <Suspense fallback={<TabPanelLoader />}>
+        <PortfolioTradingTab
+          monitorSnapshot={monitorSnapshot}
+          buildRuns={buildRuns}
+          buildRunsError={buildRunsErrorMessage || undefined}
+          nextRebalance={nextRebalance}
+          previewResult={previewResult ?? null}
+          triggerBuildPending={triggerBuildMutation.isPending}
+          triggerBuildDisabled={triggerBuildDisabled}
+          onTriggerBuild={() => triggerBuildMutation.mutate()}
+        />
+      </Suspense>
     );
   };
 
@@ -804,7 +879,10 @@ export function PortfolioWorkspacePage() {
 
         <section className="mcm-panel min-h-[720px] overflow-hidden">
           <div className="border-b border-border/40 px-5 py-4">
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as PortfolioWorkspaceTab)}>
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as PortfolioWorkspaceTab)}
+            >
               <TabsList className="w-full justify-start">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="construction">Construction</TabsTrigger>
