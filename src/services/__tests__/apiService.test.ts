@@ -33,7 +33,11 @@ function jsonResponse(payload: unknown, status = 200): Response {
 describe('apiService cold start handling', () => {
   const fetchMock = vi.fn();
   const windowWithConfig = window as typeof window & {
-    __API_UI_CONFIG__?: { apiBaseUrl?: string };
+    __API_UI_CONFIG__?: {
+      apiBaseUrl?: string;
+      authRequired?: boolean;
+      oidcEnabled?: boolean;
+    };
   };
 
   beforeEach(() => {
@@ -46,7 +50,11 @@ describe('apiService cold start handling', () => {
     mockRequestInteractiveReauth.mockImplementation(async () => {
       throw new Error('reauth-required');
     });
-    windowWithConfig.__API_UI_CONFIG__ = { apiBaseUrl: '/api' };
+    windowWithConfig.__API_UI_CONFIG__ = {
+      apiBaseUrl: '/api',
+      authRequired: true,
+      oidcEnabled: true
+    };
     vi.stubGlobal('fetch', fetchMock);
   });
 
@@ -193,13 +201,7 @@ describe('apiService cold start handling', () => {
         })
       )
       .mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }))
-      .mockResolvedValueOnce(new Response('Unauthorized again', { status: 401, statusText: 'Unauthorized' }))
-      .mockResolvedValueOnce(
-        new Response('Unauthorized with browser session', {
-          status: 401,
-          statusText: 'Unauthorized'
-        })
-      );
+      .mockResolvedValueOnce(new Response('Unauthorized again', { status: 401, statusText: 'Unauthorized' }));
 
     const { request } = await importApiService();
 
@@ -214,49 +216,17 @@ describe('apiService cold start handling', () => {
       /Interactive sign-in was suppressed because \/auth\/session succeeded recently/i
     );
 
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(mockAppendAuthHeaders).toHaveBeenNthCalledWith(
       3,
       expect.any(Headers),
       expect.objectContaining({ forceRefresh: true })
     );
+    const firstAttemptHeaders = (fetchMock.mock.calls[2]?.[1] as RequestInit)?.headers as Headers;
+    const secondAttemptHeaders = (fetchMock.mock.calls[3]?.[1] as RequestInit)?.headers as Headers;
+    expect(firstAttemptHeaders.get('Authorization')).toBe('Bearer test-token');
+    expect(secondAttemptHeaders.get('Authorization')).toBe('Bearer test-token');
     expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
-  });
-
-  it('replays same-origin reads without the bearer token when the browser session was validated recently', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          authMode: 'oidc',
-          subject: 'user-123',
-          requiredRoles: ['AssetAllocation.Access'],
-          grantedRoles: ['AssetAllocation.Access']
-        })
-      )
-      .mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }))
-      .mockResolvedValueOnce(new Response('Unauthorized again', { status: 401, statusText: 'Unauthorized' }))
-      .mockResolvedValueOnce(jsonResponse({ status: 'healthy' }));
-
-    const { request } = await importApiService();
-
-    await expect(request('/auth/session')).resolves.toEqual(
-      expect.objectContaining({
-        authMode: 'oidc',
-        subject: 'user-123'
-      })
-    );
-
-    await expect(request('/system/status-view')).resolves.toEqual({ status: 'healthy' });
-
-    expect(mockAppendAuthHeaders).toHaveBeenNthCalledWith(
-      3,
-      expect.any(Headers),
-      expect.objectContaining({ forceRefresh: true })
-    );
-    expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
-    const replayHeaders = (fetchMock.mock.calls[4]?.[1] as RequestInit)?.headers as Headers;
-    expect(replayHeaders.get('Authorization')).toBeNull();
-    expect(replayHeaders.get('X-Request-ID')).toBeTruthy();
   });
 
   it('refuses to replay a protected request when a forced refresh yields no bearer token', async () => {
@@ -287,6 +257,21 @@ describe('apiService cold start handling', () => {
       expect.any(Headers),
       expect.objectContaining({ forceRefresh: true })
     );
+    expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
+  });
+
+  it('fails fast before the network call when browser OIDC is enabled and no bearer token is available', async () => {
+    mockAppendAuthHeaders.mockImplementationOnce(async (headersInput?: HeadersInit) => {
+      return new Headers(headersInput);
+    });
+
+    const { request } = await importApiService();
+
+    await expect(request('/system/status-view')).rejects.toThrow(
+      /OIDC token acquisition did not produce a bearer token/i
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
   });
 

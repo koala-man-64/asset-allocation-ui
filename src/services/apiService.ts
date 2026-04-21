@@ -94,12 +94,19 @@ function buildRecentSessionSuppressedAuthMessage(
   return `API Error: ${response.status} ${response.statusText} [requestId=${requestId}]${suffix} Interactive sign-in was suppressed because /auth/session succeeded recently; check API authorization or upstream auth configuration.`;
 }
 
-function buildMissingBearerTokenAfterRefreshMessage(endpoint: string, requestId: string): string {
-  return `OIDC token refresh did not produce a bearer token [requestId=${requestId}] - ${endpoint}. The UI refused to replay the protected API call without authorization.`;
+function buildMissingBearerTokenMessage(
+  endpoint: string,
+  requestId: string,
+  options: { forceRefresh?: boolean } = {}
+): string {
+  const prefix = options.forceRefresh
+    ? 'OIDC token refresh did not produce a bearer token'
+    : 'OIDC token acquisition did not produce a bearer token';
+  return `${prefix} [requestId=${requestId}] - ${endpoint}. The UI refused to send the protected API call without authorization.`;
 }
 
 function canReplayWithBrowserSession(url: string, headers: Headers): boolean {
-  if (!headers.has('Authorization') || typeof window === 'undefined') {
+  if (uiConfig.oidcEnabled || !headers.has('Authorization') || typeof window === 'undefined') {
     return false;
   }
 
@@ -114,6 +121,10 @@ function buildBrowserSessionReplayHeaders(headers: Headers): Headers {
   const replayHeaders = new Headers(headers);
   replayHeaders.delete('Authorization');
   return replayHeaders;
+}
+
+function requiresOidcBearerToken(endpoint: string): boolean {
+  return uiConfig.oidcEnabled && endpoint !== AUTH_SESSION_STATUS_ENDPOINT;
 }
 
 function isRetryableStatusCode(statusCode: number): boolean {
@@ -371,6 +382,15 @@ async function performRequest<T>(
   }
   let authHeaders = await appendAuthHeaders(requestHeaders);
   const requestId = authHeaders.get('X-Request-ID') || '';
+  if (requiresOidcBearerToken(endpoint) && !authHeaders.has('Authorization')) {
+    const error = new Error(buildMissingBearerTokenMessage(endpoint, requestId));
+    logAuthRecovery('request-missing-bearer-token', {
+      endpoint,
+      method: requestMethod,
+      requestId
+    });
+    throw error;
+  }
   logApiRequest('request-prepared', {
     endpoint,
     method: requestMethod,
@@ -490,7 +510,9 @@ async function performRequest<T>(
       try {
         authHeaders = await appendAuthHeaders(requestHeaders, { forceRefresh: true });
         if (!authHeaders.has('Authorization')) {
-          const error = new Error(buildMissingBearerTokenAfterRefreshMessage(endpoint, requestId));
+          const error = new Error(
+            buildMissingBearerTokenMessage(endpoint, requestId, { forceRefresh: true })
+          );
           logAuthRecovery('silent-recovery-missing-token', {
             endpoint,
             method: requestMethod,
