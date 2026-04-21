@@ -23,11 +23,10 @@ export type {
   RankingSchemaConfig,
   RankingTransform,
   RankingTransformType,
-  RegimeBlockedAction,
   RegimeCode,
   RegimePolicy,
+  RegimePolicyMode,
   StrategyConfig,
-  TargetGrossExposureByRegime,
   UniverseSource,
   UniverseValue
 } from '@asset-allocation/contracts';

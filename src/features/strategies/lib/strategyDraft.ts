@@ -3,27 +3,14 @@ import type {
   ExitRulePriceField,
   ExitRuleType,
   IntrabarConflictPolicy,
-  RegimeBlockedAction,
-  RegimeCode,
   RegimePolicy,
+  RegimePolicyMode,
   StrategyDetail,
-  TargetGrossExposureByRegime
 } from '@/types/strategy';
 
 export type StrategyEditorMode = 'create' | 'edit' | 'duplicate';
 
-type StrategyDetailDraftInput = Omit<StrategyDetail, 'config'> & {
-  config: Omit<StrategyDetail['config'], 'regimePolicy'> & {
-    regimePolicy?:
-      | (Omit<
-          NonNullable<StrategyDetail['config']['regimePolicy']>,
-          'targetGrossExposureByRegime'
-        > & {
-          targetGrossExposureByRegime?: Partial<TargetGrossExposureByRegime>;
-        })
-      | null;
-  };
-};
+type StrategyDetailDraftInput = StrategyDetail;
 
 export const EXIT_RULE_OPTIONS: Array<{ value: ExitRuleType; label: string }> = [
   { value: 'stop_loss_fixed', label: 'Fixed Stop Loss' },
@@ -46,41 +33,17 @@ export const INTRABAR_OPTIONS: Array<{ value: IntrabarConflictPolicy; label: str
   { value: 'priority_order', label: 'Priority Order' }
 ];
 
-export const DEFAULT_REGIME_EXPOSURES: TargetGrossExposureByRegime = {
-  trending_bull: 1.0,
-  trending_bear: 0.5,
-  choppy_mean_reversion: 0.75,
-  high_vol: 0.0,
-  unclassified: 0.0
-};
-
-export const REGIME_CODES: Array<{ value: RegimeCode; label: string }> = [
-  { value: 'trending_bull', label: 'Trending Bull' },
-  { value: 'trending_bear', label: 'Trending Bear' },
-  { value: 'choppy_mean_reversion', label: 'Choppy Mean Reversion' },
-  { value: 'high_vol', label: 'High Vol' },
-  { value: 'unclassified', label: 'Unclassified' }
-];
-
-export const REGIME_BLOCKED_ACTIONS: Array<{ value: RegimeBlockedAction; label: string }> = [
-  { value: 'skip_entries', label: 'Skip Entries' },
-  { value: 'skip_rebalance', label: 'Skip Rebalance' }
+export const REGIME_POLICY_MODES: Array<{ value: RegimePolicyMode; label: string }> = [
+  { value: 'observe_only', label: 'Observe Only' }
 ];
 
 const DEFAULT_REGIME_POLICY: RegimePolicy = {
   modelName: 'default-regime',
-  targetGrossExposureByRegime: DEFAULT_REGIME_EXPOSURES,
-  blockOnTransition: true,
-  blockOnUnclassified: true,
-  honorHaltFlag: true,
-  onBlocked: 'skip_entries'
+  mode: 'observe_only'
 };
 
 export function buildDefaultRegimePolicy(): RegimePolicy {
-  return {
-    ...DEFAULT_REGIME_POLICY,
-    targetGrossExposureByRegime: { ...DEFAULT_REGIME_EXPOSURES }
-  };
+  return { ...DEFAULT_REGIME_POLICY };
 }
 
 export function buildEmptyStrategy(): StrategyDetail {
@@ -116,11 +79,7 @@ export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): Str
       regimePolicy: incomingPolicy
         ? {
             ...buildDefaultRegimePolicy(),
-            ...incomingPolicy,
-            targetGrossExposureByRegime: {
-              ...DEFAULT_REGIME_EXPOSURES,
-              ...(incomingPolicy.targetGrossExposureByRegime || {})
-            }
+            ...incomingPolicy
           }
         : undefined,
       exits: strategy.config.exits || []

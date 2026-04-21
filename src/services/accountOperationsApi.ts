@@ -29,7 +29,7 @@ export const accountOperationsApi = {
 
   async reconnectAccount(
     accountId: string,
-    payload: ReconnectBrokerAccountRequest = {},
+    payload: ReconnectBrokerAccountRequest,
     signal?: AbortSignal
   ): Promise<BrokerAccountActionResponse> {
     return request<BrokerAccountActionResponse>(
@@ -60,7 +60,7 @@ export const accountOperationsApi = {
 
   async refreshAccount(
     accountId: string,
-    payload: RefreshBrokerAccountRequest = {},
+    payload: RefreshBrokerAccountRequest,
     signal?: AbortSignal
   ): Promise<BrokerAccountActionResponse> {
     return request<BrokerAccountActionResponse>(
@@ -76,7 +76,7 @@ export const accountOperationsApi = {
   async acknowledgeAlert(
     accountId: string,
     alertId: string,
-    payload: AcknowledgeBrokerAlertRequest = {},
+    payload: AcknowledgeBrokerAlertRequest,
     signal?: AbortSignal
   ): Promise<BrokerAccountActionResponse> {
     return request<BrokerAccountActionResponse>(

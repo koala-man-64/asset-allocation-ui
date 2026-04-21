@@ -452,17 +452,7 @@ describe('PortfolioWorkspacePage', () => {
         intrabarConflictPolicy: 'stop_first',
         regimePolicy: {
           modelName: 'strategy-native',
-          blockOnTransition: true,
-          blockOnUnclassified: true,
-          honorHaltFlag: true,
-          onBlocked: 'skip_entries',
-          targetGrossExposureByRegime: {
-            trending_bull: 1,
-            trending_bear: 0.5,
-            choppy_mean_reversion: 0.75,
-            high_vol: 0.25,
-            unclassified: 0.25
-          }
+          mode: 'observe_only'
         },
         exits: []
       }
@@ -494,8 +484,19 @@ describe('PortfolioWorkspacePage', () => {
       model_version: 1,
       as_of_date: '2026-04-18',
       effective_from_date: '2026-04-18',
-      regime_code: 'trending_bull',
-      regime_status: 'confirmed',
+      active_regimes: ['trending_up'],
+      signals: [
+        {
+          regime_code: 'trending_up',
+          display_name: 'Trending Up',
+          signal_state: 'active',
+          score: 0.88,
+          activation_threshold: 0.6,
+          is_active: true,
+          matched_rule_id: 'trend-positive',
+          evidence: {}
+        }
+      ],
       halt_flag: false
     });
     vi.mocked(regimeApi.getHistory).mockResolvedValue({
@@ -508,8 +509,19 @@ describe('PortfolioWorkspacePage', () => {
           model_version: 1,
           as_of_date: '2026-04-17',
           effective_from_date: '2026-04-17',
-          regime_code: 'trending_bull',
-          regime_status: 'confirmed',
+          active_regimes: ['trending_up'],
+          signals: [
+            {
+              regime_code: 'trending_up',
+              display_name: 'Trending Up',
+              signal_state: 'active',
+              score: 0.84,
+              activation_threshold: 0.6,
+              is_active: true,
+              matched_rule_id: 'trend-positive',
+              evidence: {}
+            }
+          ],
           halt_flag: false
         },
         {
@@ -517,8 +529,19 @@ describe('PortfolioWorkspacePage', () => {
           model_version: 1,
           as_of_date: '2026-04-18',
           effective_from_date: '2026-04-18',
-          regime_code: 'trending_bull',
-          regime_status: 'confirmed',
+          active_regimes: ['trending_up'],
+          signals: [
+            {
+              regime_code: 'trending_up',
+              display_name: 'Trending Up',
+              signal_state: 'active',
+              score: 0.88,
+              activation_threshold: 0.6,
+              is_active: true,
+              matched_rule_id: 'trend-positive',
+              evidence: {}
+            }
+          ],
           halt_flag: false
         }
       ]
@@ -531,7 +554,7 @@ describe('PortfolioWorkspacePage', () => {
 
     expect(await screen.findByText(/desk verdict/i)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /overview/i })).toHaveAttribute('data-state', 'active');
-    expect(screen.getByText(/trending bull/i)).toBeInTheDocument();
+    expect(screen.getByText(/trending up/i)).toBeInTheDocument();
     expect(screen.getByText(/current allocation/i)).toBeInTheDocument();
   });
 

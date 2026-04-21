@@ -1,7 +1,5 @@
-// Temporary adoption bridge for unpublished broker-account contracts.
-// Replace these mirrors with direct `@asset-allocation/contracts` imports
-// after the next contracts package release that includes the account
-// operations models from `codex/account-ops-command-deck-contracts`.
+// Temporary local bridge until the published contracts package exports the
+// broker-account surface consumed by the account-operations UI.
 
 export type BrokerVendor = 'alpaca' | 'schwab' | 'etrade';
 export type BrokerHealthTone = 'healthy' | 'warning' | 'critical';
@@ -149,22 +147,22 @@ export interface BrokerAccountListResponse {
 }
 
 export interface ReconnectBrokerAccountRequest {
-  reason?: string;
+  reason: string;
 }
 
 export interface PauseBrokerSyncRequest {
   paused: boolean;
-  reason?: string;
+  reason: string;
 }
 
 export interface RefreshBrokerAccountRequest {
-  scope?: BrokerSyncScope;
-  force?: boolean;
-  reason?: string;
+  scope: BrokerSyncScope;
+  force: boolean;
+  reason: string;
 }
 
 export interface AcknowledgeBrokerAlertRequest {
-  note?: string;
+  note: string;
 }
 
 export interface BrokerAccountActionResponse {

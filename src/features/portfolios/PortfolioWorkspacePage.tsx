@@ -509,7 +509,7 @@ export function PortfolioWorkspacePage() {
   const strategiesErrorMessage = formatSystemStatusText(strategiesQuery.error);
   const benchmarkErrorMessage = formatSystemStatusText(benchmarkQuery.error);
   const regimeHistoryErrorMessage = formatSystemStatusText(regimeHistoryQuery.error);
-  const currentRegimeCode = currentRegimeQuery.data?.regime_code ?? null;
+  const currentRegimeCode = currentRegimeQuery.data?.active_regimes?.[0] ?? null;
   const benchmarkComparison = useMemo(
     () =>
       buildPortfolioBenchmarkComparison(monitorSnapshot?.history ?? [], benchmarkQuery.data ?? []),

@@ -72,17 +72,7 @@ function buildStrategyDetail(name: string, overrides: Partial<Record<string, unk
       intrabarConflictPolicy: 'stop_first',
       regimePolicy: {
         modelName: 'default-regime',
-        blockOnTransition: true,
-        blockOnUnclassified: true,
-        honorHaltFlag: true,
-        onBlocked: 'skip_entries',
-        targetGrossExposureByRegime: {
-          trending_bull: 1,
-          trending_bear: 0.5,
-          choppy_mean_reversion: 0.75,
-          high_vol: 0,
-          unclassified: 0
-        }
+        mode: 'observe_only'
       },
       exits: [
         {

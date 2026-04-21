@@ -65,23 +65,12 @@ describe('strategySummary helpers', () => {
         exits: [],
         regimePolicy: {
           modelName: 'desk-regime',
-          blockOnTransition: true,
-          blockOnUnclassified: true,
-          honorHaltFlag: false,
-          onBlocked: 'skip_entries',
-          targetGrossExposureByRegime: {
-            trending_bull: 1,
-            trending_bear: 0.5,
-            choppy_mean_reversion: 0.75,
-            high_vol: 0,
-            unclassified: 0
-          }
+          mode: 'observe_only'
         }
       }
     });
 
     expect(description).toContain('desk-regime');
-    expect(description).toContain('blocks transitions');
-    expect(description).toContain('blocked action skip_entries');
+    expect(description).toContain('observe only');
   });
 });

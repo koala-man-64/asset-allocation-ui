@@ -32,7 +32,7 @@ import type {
   ExitRulePriceField,
   ExitRuleType,
   IntrabarConflictPolicy,
-  RegimeBlockedAction,
+  RegimePolicyMode,
   StrategyDetail
 } from '@/types/strategy';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
@@ -46,8 +46,7 @@ import {
   getRuleValueLabel,
   INTRABAR_OPTIONS,
   PRICE_FIELD_OPTIONS,
-  REGIME_BLOCKED_ACTIONS,
-  REGIME_CODES,
+  REGIME_POLICY_MODES,
   toOptionalNumber,
   type StrategyEditorMode
 } from '@/features/strategies/lib/strategyDraft';
@@ -622,21 +621,21 @@ export function StrategyEditorWorkspace({
                     </div>
 
                     <div className="grid gap-2">
-                      <Label htmlFor="regime-on-blocked">Blocked Action</Label>
+                      <Label htmlFor="regime-policy-mode">Policy Mode</Label>
                       <Select
-                        value={effectiveRegimePolicy.onBlocked}
+                        value={effectiveRegimePolicy.mode}
                         onValueChange={(value) =>
-                          setValue('config.regimePolicy.onBlocked', value as RegimeBlockedAction, {
+                          setValue('config.regimePolicy.mode', value as RegimePolicyMode, {
                             shouldDirty: true,
                             shouldTouch: true
                           })
                         }
                       >
-                        <SelectTrigger id="regime-on-blocked">
-                          <SelectValue placeholder="Select blocked action" />
+                        <SelectTrigger id="regime-policy-mode">
+                          <SelectValue placeholder="Select policy mode" />
                         </SelectTrigger>
                         <SelectContent>
-                          {REGIME_BLOCKED_ACTIONS.map((option) => (
+                          {REGIME_POLICY_MODES.map((option) => (
                             <SelectItem key={option.value} value={option.value}>
                               {option.label}
                             </SelectItem>
@@ -646,94 +645,15 @@ export function StrategyEditorWorkspace({
                     </div>
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-foreground">Block on Transition</p>
-                          <p className="text-sm text-muted-foreground">
-                            Stop new risk while the regime is unresolved.
-                          </p>
-                        </div>
-                        <Switch
-                          aria-label="Toggle block on transition"
-                          checked={Boolean(effectiveRegimePolicy.blockOnTransition)}
-                          onCheckedChange={(checked) =>
-                            setValue('config.regimePolicy.blockOnTransition', Boolean(checked), {
-                              shouldDirty: true,
-                              shouldTouch: true
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-foreground">Block on Unclassified</p>
-                          <p className="text-sm text-muted-foreground">
-                            Keep the strategy conservative when regime inputs are missing.
-                          </p>
-                        </div>
-                        <Switch
-                          aria-label="Toggle block on unclassified"
-                          checked={Boolean(effectiveRegimePolicy.blockOnUnclassified)}
-                          onCheckedChange={(checked) =>
-                            setValue('config.regimePolicy.blockOnUnclassified', Boolean(checked), {
-                              shouldDirty: true,
-                              shouldTouch: true
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-foreground">Honor Halt Flag</p>
-                          <p className="text-sm text-muted-foreground">
-                            Apply the halt overlay before new entries are opened.
-                          </p>
-                        </div>
-                        <Switch
-                          aria-label="Toggle honor halt flag"
-                          checked={Boolean(effectiveRegimePolicy.honorHaltFlag)}
-                          onCheckedChange={(checked) =>
-                            setValue('config.regimePolicy.honorHaltFlag', Boolean(checked), {
-                              shouldDirty: true,
-                              shouldTouch: true
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div>
-                      <h4 className="font-display text-base text-foreground">Target Gross Exposure</h4>
+                  <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+                    <div className="space-y-2">
+                      <p className="font-medium text-foreground">Published Contract Scope</p>
                       <p className="text-sm text-muted-foreground">
-                        These multipliers scale gross exposure only when the regime is confirmed.
+                        The current published contracts package exposes regime policy as model
+                        selection plus mode only. Legacy transition, halt, and exposure knobs were
+                        removed from the shared schema and cannot be edited from this surface until
+                        the contracts repo publishes a richer replacement.
                       </p>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                      {REGIME_CODES.map((regime) => (
-                        <div key={regime.value} className="grid gap-2">
-                          <Label htmlFor={`regime-exposure-${regime.value}`}>{regime.label}</Label>
-                          <Input
-                            id={`regime-exposure-${regime.value}`}
-                            type="number"
-                            step="0.05"
-                            min="0"
-                            {...register(
-                              `config.regimePolicy.targetGrossExposureByRegime.${regime.value}` as const,
-                              { valueAsNumber: true }
-                            )}
-                          />
-                        </div>
-                      ))}
                     </div>
                   </div>
                 </>

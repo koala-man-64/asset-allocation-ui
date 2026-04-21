@@ -6,10 +6,13 @@ import type { PortfolioBenchmarkComparison } from './portfolioBenchmark';
 export const MODEL_OUTLOOK_HORIZONS = ['1M', '3M', '6M'] as const;
 export const MODEL_OUTLOOK_ASSUMPTIONS = [
   'current',
-  'trending_bull',
-  'trending_bear',
-  'choppy_mean_reversion',
-  'high_vol',
+  'trending_up',
+  'trending_down',
+  'mean_reverting',
+  'low_volatility',
+  'high_volatility',
+  'liquidity_stress',
+  'macro_alignment',
   'unclassified'
 ] as const;
 
@@ -48,9 +51,10 @@ function normalizeRegimeCode(value?: string | null): string {
     .trim()
     .toLowerCase()
     .replaceAll(' ', '_');
-  if (normalized === 'choppy') {
-    return 'choppy_mean_reversion';
-  }
+  if (normalized === 'trending_bull') return 'trending_up';
+  if (normalized === 'trending_bear') return 'trending_down';
+  if (normalized === 'choppy_mean_reversion' || normalized === 'choppy') return 'mean_reverting';
+  if (normalized === 'high_vol') return 'high_volatility';
   return normalized || 'unclassified';
 }
 
@@ -95,7 +99,7 @@ function buildRegimeLookup(regimeHistory: readonly RegimeSnapshot[]) {
     let resolved = 'unclassified';
     for (const row of sortedRows) {
       if (Date.parse(getRegimeDate(row)) <= Date.parse(date)) {
-        resolved = normalizeRegimeCode(row.regime_code);
+        resolved = normalizeRegimeCode(row.active_regimes[0]);
       } else {
         break;
       }

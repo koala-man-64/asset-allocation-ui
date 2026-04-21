@@ -32,26 +32,35 @@ import { toast } from 'sonner';
 
 const DEFAULT_MODEL_CONFIG_JSON = JSON.stringify(
   {
-    trendPositiveThreshold: 0.02,
-    trendNegativeThreshold: -0.02,
-    curveContangoThreshold: 0.5,
-    curveInvertedThreshold: -0.5,
-    highVolEnterThreshold: 28.0,
-    highVolExitThreshold: 25.0,
-    bearVolMin: 15.0,
-    bearVolMaxExclusive: 25.0,
-    bullVolMaxExclusive: 15.0,
-    choppyVolMin: 10.0,
-    choppyVolMaxExclusive: 18.0,
+    activationThreshold: 0.6,
     haltVixThreshold: 32.0,
     haltVixStreakDays: 2,
-    precedence: [
-      'high_vol',
-      'trending_bear',
-      'trending_bull',
-      'choppy_mean_reversion',
-      'unclassified'
-    ]
+    signalConfigs: {
+      trending_up: {
+        displayName: 'Trending Up',
+        requiredMetrics: ['return_20d'],
+        rules: [
+          {
+            metric: 'return_20d',
+            comparison: 'gte',
+            lower: 0.02,
+            description: '20-day return confirms a positive trend.'
+          }
+        ]
+      },
+      high_volatility: {
+        displayName: 'High Volatility',
+        requiredMetrics: ['vix_spot_close'],
+        rules: [
+          {
+            metric: 'vix_spot_close',
+            comparison: 'gte',
+            lower: 28,
+            description: 'Spot VIX remains elevated versus the desk threshold.'
+          }
+        ]
+      }
+    }
   },
   null,
   2
@@ -81,13 +90,36 @@ function formatMetric(value?: number | null, digits: number = 2): string {
   return Number(value).toFixed(digits);
 }
 
+function formatLabel(value?: string | null): string {
+  if (!value) return 'Unclassified';
+  return value.replaceAll('_', ' ');
+}
+
+function getPrimaryRegimeCode(snapshot?: RegimeSnapshot | null): string | null {
+  return snapshot?.active_regimes[0] ?? null;
+}
+
+function getActiveSignals(snapshot?: RegimeSnapshot | null) {
+  return (snapshot?.signals ?? []).filter((signal) => signal.is_active);
+}
+
+function getMatchedRule(snapshot?: RegimeSnapshot | null): string {
+  return (
+    getActiveSignals(snapshot)
+      .map((signal) => signal.matched_rule_id)
+      .find(Boolean) ?? 'n/a'
+  );
+}
+
 function regimeTone(
   snapshot?: RegimeSnapshot | null
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (!snapshot) return 'outline';
-  if (snapshot.halt_flag || snapshot.regime_code === 'high_vol') return 'destructive';
-  if (snapshot.regime_status === 'transition' || snapshot.regime_code === 'unclassified')
-    return 'secondary';
+  const primaryRegime = getPrimaryRegimeCode(snapshot);
+  if (snapshot.halt_flag || primaryRegime === 'high_volatility' || primaryRegime === 'liquidity_stress') {
+    return 'destructive';
+  }
+  if (!snapshot.active_regimes.length || primaryRegime === 'unclassified') return 'secondary';
   return 'default';
 }
 
@@ -175,12 +207,13 @@ export function RegimeMonitorPage() {
   const currentSnapshot = currentQuery.data;
   const historyRows = historyQuery.data?.rows || [];
   const activeVersion = selectedModelDetailQuery.data?.activeRevision?.version;
+  const activationThreshold = selectedModelDetailQuery.data?.activeRevision?.config.activationThreshold;
   const latestRevisionVersion = useMemo(() => {
     const revisions = selectedModelDetailQuery.data?.revisions || [];
     return revisions.length ? revisions[0].version : undefined;
   }, [selectedModelDetailQuery.data?.revisions]);
   const currentRegimeLabel = currentSnapshot
-    ? currentSnapshot.regime_code.replaceAll('_', ' ')
+    ? formatLabel(getPrimaryRegimeCode(currentSnapshot))
     : 'Unavailable';
 
   return (
@@ -193,7 +226,7 @@ export function RegimeMonitorPage() {
             Regime Monitor
           </span>
         }
-        subtitle="Track the active gold regime model, inspect confirmed and transition states, and activate new model revisions without leaving the control plane."
+        subtitle="Track the active gold regime model, inspect live signal activations and halt posture, and activate new model revisions without leaving the control plane."
         actions={
           <div className="w-full max-w-sm rounded-2xl border border-mcm-walnut/25 bg-mcm-paper/85 p-4">
             <Label htmlFor="regime-model-selector">Selected Model</Label>
@@ -220,7 +253,7 @@ export function RegimeMonitorPage() {
             label: 'Current Regime',
             value: currentRegimeLabel,
             detail: currentSnapshot
-              ? `Status: ${currentSnapshot.regime_status}.`
+              ? `${getActiveSignals(currentSnapshot).length} active signals in the current snapshot.`
               : 'No current snapshot is available.'
           },
           {
@@ -252,13 +285,15 @@ export function RegimeMonitorPage() {
                 ) : currentSnapshot ? (
                   <>
                     <Badge variant={regimeTone(currentSnapshot)} className="capitalize">
-                      {currentSnapshot.regime_code.replaceAll('_', ' ')}
+                      {formatLabel(getPrimaryRegimeCode(currentSnapshot))}
                     </Badge>
                     <div className="space-y-1 text-sm">
                       <div>
-                        Status:{' '}
+                        Active regimes:{' '}
                         <span className="font-medium capitalize">
-                          {currentSnapshot.regime_status}
+                          {currentSnapshot.active_regimes.length
+                            ? currentSnapshot.active_regimes.map((code) => formatLabel(code)).join(', ')
+                            : 'Unclassified'}
                         </span>
                       </div>
                       <div>
@@ -272,6 +307,10 @@ export function RegimeMonitorPage() {
                         <span className="font-medium">
                           {formatDate(currentSnapshot.effective_from_date)}
                         </span>
+                      </div>
+                      <div>
+                        Active signals:{' '}
+                        <span className="font-medium">{getActiveSignals(currentSnapshot).length}</span>
                       </div>
                     </div>
                   </>
@@ -290,38 +329,43 @@ export function RegimeMonitorPage() {
               <CardHeader className="border-b border-border/40">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <Gauge className="h-5 w-5 text-mcm-rust" />
-                  Inputs
+                  Signal Deck
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid gap-3 pt-6 text-sm">
-                <div>
-                  SPY 20d:{' '}
-                  <span className="font-medium">
-                    {formatMetric(currentSnapshot?.spy_return_20d, 4)}
-                  </span>
-                </div>
-                <div>
-                  Realized Vol:{' '}
-                  <span className="font-medium">
-                    {formatMetric(currentSnapshot?.rvol_10d_ann, 2)}
-                  </span>
-                </div>
-                <div>
-                  VIX Spot:{' '}
-                  <span className="font-medium">
-                    {formatMetric(currentSnapshot?.vix_spot_close, 2)}
-                  </span>
-                </div>
-                <div>
-                  VIX 3M:{' '}
-                  <span className="font-medium">
-                    {formatMetric(currentSnapshot?.vix3m_close, 2)}
-                  </span>
-                </div>
-                <div>
-                  Curve Slope:{' '}
-                  <span className="font-medium">{formatMetric(currentSnapshot?.vix_slope, 2)}</span>
-                </div>
+                {currentSnapshot?.signals.length ? (
+                  currentSnapshot.signals
+                    .slice()
+                    .sort((left, right) => Number(right.is_active) - Number(left.is_active) || right.score - left.score)
+                    .slice(0, 5)
+                    .map((signal) => (
+                      <div
+                        key={`${signal.regime_code}-${signal.display_name}`}
+                        className="rounded-[1.2rem] border border-mcm-walnut/18 bg-mcm-paper/85 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-medium text-foreground">{signal.display_name}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {formatLabel(signal.regime_code)}
+                            </div>
+                          </div>
+                          <Badge variant={signal.is_active ? 'default' : 'outline'}>
+                            {signal.is_active ? 'Active' : signal.signal_state}
+                          </Badge>
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          Score {formatMetric(signal.score)} vs threshold {formatMetric(signal.activation_threshold)}
+                        </div>
+                      </div>
+                    ))
+                ) : (
+                  <StatePanel
+                    tone="empty"
+                    title="No signal evidence"
+                    message="The current snapshot does not include any regime signal rows."
+                  />
+                )}
               </CardContent>
             </Card>
 
@@ -341,8 +385,12 @@ export function RegimeMonitorPage() {
                   <span className="font-medium">{currentSnapshot?.halt_reason || 'n/a'}</span>
                 </div>
                 <div>
-                  VIX Streak:{' '}
-                  <span className="font-medium">{currentSnapshot?.vix_gt_32_streak ?? 'n/a'}</span>
+                  Activation Threshold:{' '}
+                  <span className="font-medium">{formatMetric(activationThreshold)}</span>
+                </div>
+                <div>
+                  Matched Rule:{' '}
+                  <span className="font-medium">{getMatchedRule(currentSnapshot)}</span>
                 </div>
                 <div>
                   Computed:{' '}
@@ -361,7 +409,7 @@ export function RegimeMonitorPage() {
                 History
               </CardTitle>
               <CardDescription>
-                Recent confirmed, transition, and unclassified states for the selected model.
+                Recent active-regime snapshots for the selected model.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
@@ -379,8 +427,8 @@ export function RegimeMonitorPage() {
                     <TableRow>
                       <TableHead>As Of</TableHead>
                       <TableHead>Effective</TableHead>
-                      <TableHead>Regime</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Active Regimes</TableHead>
+                      <TableHead>Signals</TableHead>
                       <TableHead>Rule</TableHead>
                       <TableHead className="text-right">Halt</TableHead>
                     </TableRow>
@@ -391,10 +439,12 @@ export function RegimeMonitorPage() {
                         <TableCell>{formatDate(row.as_of_date)}</TableCell>
                         <TableCell>{formatDate(row.effective_from_date)}</TableCell>
                         <TableCell className="capitalize">
-                          {row.regime_code.replaceAll('_', ' ')}
+                          {row.active_regimes.length
+                            ? row.active_regimes.map((code) => formatLabel(code)).join(', ')
+                            : 'Unclassified'}
                         </TableCell>
-                        <TableCell className="capitalize">{row.regime_status}</TableCell>
-                        <TableCell>{row.matched_rule_id || 'n/a'}</TableCell>
+                        <TableCell>{getActiveSignals(row).length}</TableCell>
+                        <TableCell>{getMatchedRule(row)}</TableCell>
                         <TableCell className="text-right">{row.halt_flag ? 'Yes' : 'No'}</TableCell>
                       </TableRow>
                     ))}

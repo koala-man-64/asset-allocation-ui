@@ -68,12 +68,23 @@ describe('portfolio helper layer', () => {
           model_version: 1,
           as_of_date: '2026-04-10',
           effective_from_date: '2026-04-10',
-          regime_code: 'trending_bull',
-          regime_status: 'confirmed',
+          active_regimes: ['trending_up'],
+          signals: [
+            {
+              regime_code: 'trending_up',
+              display_name: 'Trending Up',
+              signal_state: 'active',
+              score: 0.88,
+              activation_threshold: 0.6,
+              is_active: true,
+              matched_rule_id: 'trend-positive',
+              evidence: {}
+            }
+          ],
           halt_flag: false
         }
       ],
-      currentRegimeCode: 'trending_bull',
+      currentRegimeCode: 'trending_up',
       horizon: '1M',
       assumption: 'current',
       costDragOverrideBps: 10
