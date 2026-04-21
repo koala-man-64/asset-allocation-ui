@@ -43,6 +43,16 @@ function logRealtimeAuth(event: string, detail: Record<string, unknown> = {}): v
   console.info(`[RealtimeAuth] ${event}`, detail);
 }
 
+function buildMissingRealtimeBearerTokenMessage(
+  requestId: string,
+  options: { forceRefresh?: boolean } = {}
+): string {
+  const prefix = options.forceRefresh
+    ? 'OIDC token refresh did not produce a bearer token'
+    : 'OIDC token acquisition did not produce a bearer token';
+  return `${prefix} [requestId=${requestId}] - /realtime/ticket. The UI refused to send the protected API call without authorization.`;
+}
+
 type RealtimeEvent = {
   type?: unknown;
   payload?: unknown;
@@ -194,6 +204,25 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
               recoveryAttempt: 1,
               error: error instanceof Error ? error.message : String(error ?? 'Unknown error')
             });
+          }
+          throw error;
+        }
+
+        if (config.oidcEnabled && !headers.has('Authorization')) {
+          const error = new Error(
+            buildMissingRealtimeBearerTokenMessage(requestId, { forceRefresh })
+          );
+          logRealtimeAuth(
+            forceRefresh ? 'silent-recovery-missing-token' : 'request-missing-bearer-token',
+            {
+              endpoint: '/realtime/ticket',
+              requestId,
+              recoveryAttempt: forceRefresh ? 1 : 0,
+              error: error.message
+            }
+          );
+          if (!forceRefresh) {
+            continue;
           }
           throw error;
         }

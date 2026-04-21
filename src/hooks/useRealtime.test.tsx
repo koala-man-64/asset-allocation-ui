@@ -14,6 +14,7 @@ vi.mock('sonner', () => ({
 }));
 
 import { useRealtime } from './useRealtime';
+import { config } from '@/config';
 import {
   resetAuthTransportForTests,
   setAccessTokenProvider,
@@ -101,6 +102,7 @@ describe('useRealtime', () => {
     vi.useRealTimers();
     mockToastError.mockReset();
     resetAuthTransportForTests();
+    config.oidcEnabled = false;
     delete (window as Window & { __API_UI_CONFIG__?: Record<string, unknown> }).__API_UI_CONFIG__;
   });
 
@@ -236,6 +238,31 @@ describe('useRealtime', () => {
     expect(MockWebSocket.instances[0]?.url).toBe(
       'ws://localhost:3000/api/ws/updates?ticket=ticket-123'
     );
+  });
+
+  it('does not send the realtime ticket request without a bearer token when OIDC is enabled', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    config.oidcEnabled = true;
+    const provider = vi.fn(async () => null);
+    setAccessTokenProvider(provider);
+
+    const queryClient = createQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(provider).toHaveBeenCalledTimes(2);
+      expect(mockToastError).toHaveBeenCalledWith(
+        expect.stringContaining('OIDC token refresh did not produce a bearer token')
+      );
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(MockWebSocket.instances).toHaveLength(0);
   });
 
   it('invalidates the unified status view and metadata snapshot on metadata change events', async () => {
