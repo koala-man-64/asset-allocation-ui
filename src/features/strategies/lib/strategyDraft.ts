@@ -14,9 +14,14 @@ export type StrategyEditorMode = 'create' | 'edit' | 'duplicate';
 
 type StrategyDetailDraftInput = Omit<StrategyDetail, 'config'> & {
   config: Omit<StrategyDetail['config'], 'regimePolicy'> & {
-    regimePolicy?: Omit<NonNullable<StrategyDetail['config']['regimePolicy']>, 'targetGrossExposureByRegime'> & {
-      targetGrossExposureByRegime?: Partial<TargetGrossExposureByRegime>;
-    };
+    regimePolicy?:
+      | (Omit<
+          NonNullable<StrategyDetail['config']['regimePolicy']>,
+          'targetGrossExposureByRegime'
+        > & {
+          targetGrossExposureByRegime?: Partial<TargetGrossExposureByRegime>;
+        })
+      | null;
   };
 };
 

@@ -19,7 +19,6 @@ export type {
   RankingDirection,
   RankingFactor,
   RankingGroup,
-  RankingMaterializationSummary,
   RankingMissingValuePolicy,
   RankingSchemaConfig,
   RankingTransform,
@@ -234,6 +233,14 @@ export interface RankingPreviewResponse {
   rowCount: number;
   rows: RankingPreviewRow[];
   warnings: string[];
+}
+
+export interface RankingMaterializationSummary {
+  strategyName: string;
+  outputTableName: string;
+  rowCount: number;
+  dateCount: number;
+  warnings?: string[];
 }
 
 export interface AuditTrail {
