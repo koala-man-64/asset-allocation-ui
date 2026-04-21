@@ -1,6 +1,7 @@
 import type { UiRuntimeConfig } from '@asset-allocation/contracts';
 
 import { normalizeApiBaseUrl } from '@/utils/apiBaseUrl';
+import { logUiDiagnostic, summarizeUrlForLogs } from '@/services/uiDiagnostics';
 
 type RuntimeUiConfigSource = Partial<UiRuntimeConfig> & {
   oidcScopes?: string[] | string;
@@ -137,6 +138,21 @@ if (typeof window !== 'undefined') {
     nextRuntimeConfig.oidcPostLogoutRedirectUri = oidcPostLogoutRedirectUri;
   }
   window.__API_UI_CONFIG__ = nextRuntimeConfig;
+  logUiDiagnostic('Config', 'runtime-config-resolved', {
+    origin: window.location.origin,
+    apiBaseUrl,
+    apiBaseUrlMode: /^https?:\/\//i.test(apiBaseUrl) ? 'absolute' : 'same-origin',
+    apiBaseUrlDetails: summarizeUrlForLogs(apiBaseUrl),
+    uiAuthEnabled,
+    oidcEnabled,
+    authRequired,
+    oidcAuthority: oidcAuthority || null,
+    oidcClientIdConfigured: Boolean(oidcClientId),
+    oidcScopes,
+    oidcAudience,
+    oidcRedirectUri: oidcRedirectUri || null,
+    oidcPostLogoutRedirectUri: oidcPostLogoutRedirectUri || null
+  });
 }
 
 export const config = {

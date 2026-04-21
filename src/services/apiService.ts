@@ -9,6 +9,12 @@ import {
   requestInteractiveReauth
 } from '@/services/authTransport';
 import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
+import {
+  clipTextForLogs,
+  logUiDiagnostic,
+  summarizeHeadersForLogs,
+  summarizeUrlForLogs
+} from '@/services/uiDiagnostics';
 
 const API_WARMUP_PATH = '/healthz';
 const API_COLD_START_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -27,7 +33,31 @@ const apiWarmupInFlight = new Map<string, Promise<void>>();
 let lastSuccessfulAuthSessionValidationAt = 0;
 
 function logAuthRecovery(event: string, detail: Record<string, unknown> = {}): void {
-  console.info(`[AuthRecovery] ${event}`, detail);
+  logUiDiagnostic('AuthRecovery', event, detail);
+}
+
+function logApiRequest(
+  event: string,
+  detail: Record<string, unknown> = {},
+  level: 'info' | 'warn' | 'error' = 'info'
+): void {
+  logUiDiagnostic('API', event, detail, level);
+}
+
+function summarizeResponseForLogs(response: Response): Record<string, unknown> {
+  return {
+    status: response.status,
+    statusText: response.statusText,
+    responseUrl: response.url || null,
+    redirected: response.redirected,
+    type: response.type,
+    server: response.headers.get('Server') ?? null,
+    wwwAuthenticate: response.headers.get('Www-Authenticate') ?? null,
+    accessControlAllowOrigin: response.headers.get('Access-Control-Allow-Origin') ?? null,
+    accessControlAllowCredentials:
+      response.headers.get('Access-Control-Allow-Credentials') ?? null,
+    vary: response.headers.get('Vary') ?? null
+  };
 }
 
 function noteAuthSessionValidation(endpoint: string, ok: boolean): void {
@@ -174,6 +204,13 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
     const warmupPromise = (async () => {
       let delayMs = API_WARMUP_BASE_DELAY_MS;
       const warmupUrl = resolveWarmupUrl(apiBaseUrl);
+      const warmupRequestId = createRequestId();
+
+      logApiRequest('warmup-start', {
+        apiBaseUrl,
+        warmupUrl: summarizeUrlForLogs(warmupUrl),
+        requestId: warmupRequestId
+      });
 
       try {
         for (let attempt = 1; attempt <= API_WARMUP_MAX_ATTEMPTS; attempt += 1) {
@@ -183,7 +220,7 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
               warmupUrl,
               {
                 method: 'GET',
-                headers: new Headers({ 'X-Request-ID': createRequestId() }),
+                headers: new Headers({ 'X-Request-ID': warmupRequestId }),
                 cache: 'no-store'
               },
               {
@@ -193,6 +230,18 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
                 timeoutMessagePrefix: 'API timeout after'
               }
             );
+            logApiRequest(
+              'warmup-response',
+              {
+                apiBaseUrl,
+                warmupUrl: summarizeUrlForLogs(warmupUrl),
+                requestId: warmupRequestId,
+                attempt,
+                shouldRetry,
+                ...summarizeResponseForLogs(response)
+              },
+              response.status < 400 ? 'info' : 'warn'
+            );
             if (response.status < 400) {
               return;
             }
@@ -200,15 +249,39 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
               return;
             }
           } catch (error) {
+            logApiRequest(
+              'warmup-error',
+              {
+                apiBaseUrl,
+                warmupUrl: summarizeUrlForLogs(warmupUrl),
+                requestId: warmupRequestId,
+                attempt,
+                shouldRetry,
+                error
+              },
+              'warn'
+            );
             if (!shouldRetry || !isRetryableFetchError(error)) {
               return;
             }
           }
 
+          logApiRequest('warmup-retry-scheduled', {
+            apiBaseUrl,
+            warmupUrl: summarizeUrlForLogs(warmupUrl),
+            requestId: warmupRequestId,
+            attempt,
+            delayMs
+          });
           await wait(delayMs);
           delayMs = Math.min(API_WARMUP_MAX_DELAY_MS, Math.max(delayMs * 2, 100));
         }
       } finally {
+        logApiRequest('warmup-complete', {
+          apiBaseUrl,
+          warmupUrl: summarizeUrlForLogs(warmupUrl),
+          requestId: warmupRequestId
+        });
         apiWarmupAttempted.add(apiBaseUrl);
         apiWarmupInFlight.delete(apiBaseUrl);
       }
@@ -298,6 +371,21 @@ async function performRequest<T>(
   }
   let authHeaders = await appendAuthHeaders(requestHeaders);
   const requestId = authHeaders.get('X-Request-ID') || '';
+  logApiRequest('request-prepared', {
+    endpoint,
+    method: requestMethod,
+    requestId,
+    apiBaseUrl,
+    apiBaseUrlMode: /^https?:\/\//i.test(apiBaseUrl) ? 'absolute' : 'same-origin',
+    url: summarizeUrlForLogs(url),
+    allowSilentAuthRecovery,
+    retryAttempts: maxAttempts,
+    retryOnStatusCodes: Array.from(retryableStatusCodes.values()),
+    timeoutMs: timeoutMs ?? null,
+    hasBody,
+    requestHeaders: summarizeHeadersForLogs(requestHeaders),
+    outboundHeaders: summarizeHeadersForLogs(authHeaders)
+  });
   await warmUpApiOnce(apiBaseUrl);
 
   let retryDelayMs = API_REQUEST_RETRY_BASE_DELAY_MS;
@@ -305,8 +393,22 @@ async function performRequest<T>(
   let attemptedSilentAuthRecovery = false;
   let attemptedBrowserSessionReplay = false;
   const startedAt = performance.now();
+  let completedAttempts = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    completedAttempts = attempt;
     const shouldRetry = attempt < maxAttempts;
+    const attemptStartedAt = performance.now();
+    logApiRequest('request-attempt', {
+      endpoint,
+      method: requestMethod,
+      requestId,
+      attempt,
+      shouldRetry,
+      url: summarizeUrlForLogs(url),
+      headers: summarizeHeadersForLogs(authHeaders),
+      attemptedSilentAuthRecovery,
+      attemptedBrowserSessionReplay
+    });
     try {
       response = await fetchWithOptionalTimeout(
         url,
@@ -321,10 +423,44 @@ async function performRequest<T>(
           timeoutMessagePrefix: 'API timeout after'
         }
       );
+      logApiRequest(
+        'request-response',
+        {
+          endpoint,
+          method: requestMethod,
+          requestId,
+          attempt,
+          attemptDurationMs: Math.max(0, Math.round(performance.now() - attemptStartedAt)),
+          ...summarizeResponseForLogs(response)
+        },
+        response.ok ? 'info' : response.status >= 500 ? 'error' : 'warn'
+      );
     } catch (error) {
-      if (!shouldRetry || !isRetryableFetchError(error, customConfig.signal)) {
+      const retryable = shouldRetry && isRetryableFetchError(error, customConfig.signal);
+      logApiRequest(
+        'request-network-error',
+        {
+          endpoint,
+          method: requestMethod,
+          requestId,
+          attempt,
+          attemptDurationMs: Math.max(0, Math.round(performance.now() - attemptStartedAt)),
+          retryable,
+          retryDelayMs,
+          error
+        },
+        retryable ? 'warn' : 'error'
+      );
+      if (!retryable) {
         throw error;
       }
+      logApiRequest('request-retry-scheduled', {
+        endpoint,
+        method: requestMethod,
+        requestId,
+        attempt,
+        retryDelayMs
+      });
       await wait(retryDelayMs);
       retryDelayMs = Math.min(API_REQUEST_RETRY_MAX_DELAY_MS, Math.max(retryDelayMs * 2, 100));
       continue;
@@ -408,6 +544,14 @@ async function performRequest<T>(
       break;
     }
 
+    logApiRequest('request-retry-scheduled', {
+      endpoint,
+      method: requestMethod,
+      requestId,
+      attempt,
+      retryDelayMs,
+      status: response.status
+    });
     await wait(retryDelayMs);
     retryDelayMs = Math.min(API_REQUEST_RETRY_MAX_DELAY_MS, Math.max(retryDelayMs * 2, 100));
   }
@@ -466,6 +610,21 @@ async function performRequest<T>(
         recoveryAttempt
       });
     }
+    logApiRequest(
+      'request-failed',
+      {
+        endpoint,
+        method: requestMethod,
+        requestId,
+        attempts: completedAttempts,
+        durationMs,
+        attemptedSilentAuthRecovery,
+        attemptedBrowserSessionReplay,
+        errorBodyPreview: clipTextForLogs(errorBody, 400),
+        ...summarizeResponseForLogs(response)
+      },
+      response.status >= 500 ? 'error' : 'warn'
+    );
     throw new ApiError(
       response.status,
       `API Error: ${response.status} ${response.statusText} [requestId=${requestId}] - ${errorBody}`
@@ -478,6 +637,17 @@ async function performRequest<T>(
   } else {
     data = (await response.json()) as T;
   }
+
+  logApiRequest('request-succeeded', {
+    endpoint,
+    method: requestMethod,
+    requestId,
+    attempts: completedAttempts,
+    durationMs,
+    cacheHint: response.headers.get('X-System-Health-Cache') || null,
+    cacheDegraded: response.headers.get('X-System-Health-Cache-Degraded') === '1',
+    ...summarizeResponseForLogs(response)
+  });
 
   return {
     data,

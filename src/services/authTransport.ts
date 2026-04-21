@@ -1,5 +1,7 @@
 type HeadersInit = Headers | [string, string][] | Record<string, string>;
 
+import { logUiDiagnostic } from '@/services/uiDiagnostics';
+
 export type AccessTokenRequestOptions = {
   forceRefresh?: boolean;
 };
@@ -73,24 +75,32 @@ function normalizeInteractiveAuthRequest(request: InteractiveAuthRequest = {}): 
   };
 }
 
-function logAuthTransport(event: string, request?: InteractiveAuthRequest): void {
-  console.info(`[AuthTransport] ${event}`, {
+function logAuthTransport(
+  event: string,
+  request?: InteractiveAuthRequest,
+  detail: Record<string, unknown> = {},
+  level: 'info' | 'warn' | 'error' = 'info'
+): void {
+  logUiDiagnostic('AuthTransport', event, {
     source: request?.source ?? null,
     reason: request?.reason ?? null,
     returnPath: request?.returnPath ?? null,
     endpoint: request?.endpoint ?? null,
     status: request?.status ?? null,
     requestId: request?.requestId ?? null,
-    recoveryAttempt: request?.recoveryAttempt ?? null
-  });
+    recoveryAttempt: request?.recoveryAttempt ?? null,
+    ...detail
+  }, level);
 }
 
 export function setAccessTokenProvider(provider: AccessTokenProvider | null): void {
   accessTokenProvider = provider;
+  logAuthTransport(provider ? 'access-token-provider-registered' : 'access-token-provider-cleared');
 }
 
 export function setInteractiveAuthHandler(handler: InteractiveAuthHandler | null): void {
   interactiveAuthHandler = handler;
+  logAuthTransport(handler ? 'interactive-auth-handler-registered' : 'interactive-auth-handler-cleared');
 }
 
 export function hasInteractiveAuthHandler(): boolean {
@@ -117,6 +127,7 @@ export async function requestInteractiveReauth(
   request: InteractiveAuthRequest = {}
 ): Promise<never> {
   if (!interactiveAuthHandler) {
+    logAuthTransport('reauth-handler-missing', request, {}, 'error');
     throw new Error('Interactive auth state handler is not registered.');
   }
 
@@ -136,22 +147,79 @@ async function appendAuthHeadersWithOptions(
   headers: Headers,
   options: AccessTokenRequestOptions
 ): Promise<Headers> {
-  if (accessTokenProvider && !headers.has('Authorization')) {
+  logAuthTransport('append-auth-headers-start', undefined, {
+    forceRefresh: Boolean(options.forceRefresh),
+    hasAccessTokenProvider: Boolean(accessTokenProvider),
+    hasAuthorizationHeader: headers.has('Authorization'),
+    requestId: headers.get('X-Request-ID') ?? null,
+    headerNames: Array.from(headers.keys())
+  });
+
+  if (!accessTokenProvider) {
+    logAuthTransport('append-auth-headers-no-provider', undefined, {
+      requestId: headers.get('X-Request-ID') ?? null
+    });
+    return headers;
+  }
+
+  if (headers.has('Authorization')) {
+    logAuthTransport('append-auth-headers-existing-authorization', undefined, {
+      requestId: headers.get('X-Request-ID') ?? null
+    });
+    return headers;
+  }
+
+  if (accessTokenProvider) {
     let token: string | null = null;
     try {
       token = await accessTokenProvider(options);
     } catch (error) {
       if (isAuthInteractionRequiredError(error)) {
+        logAuthTransport(
+          'append-auth-headers-interaction-required',
+          undefined,
+          {
+            forceRefresh: Boolean(options.forceRefresh),
+            requestId: headers.get('X-Request-ID') ?? null,
+            error
+          },
+          'warn'
+        );
         await requestInteractiveReauth({
           reason: error.message,
           source: 'access-token-provider',
           recoveryAttempt: options.forceRefresh ? 1 : 0
         });
       }
+      logAuthTransport(
+        'append-auth-headers-provider-failed',
+        undefined,
+        {
+          forceRefresh: Boolean(options.forceRefresh),
+          requestId: headers.get('X-Request-ID') ?? null,
+          error
+        },
+        'error'
+      );
       throw error;
     }
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
+      logAuthTransport('append-auth-headers-token-attached', undefined, {
+        forceRefresh: Boolean(options.forceRefresh),
+        requestId: headers.get('X-Request-ID') ?? null,
+        tokenLength: token.length
+      });
+    } else {
+      logAuthTransport(
+        'append-auth-headers-provider-returned-null',
+        undefined,
+        {
+          forceRefresh: Boolean(options.forceRefresh),
+          requestId: headers.get('X-Request-ID') ?? null
+        },
+        'warn'
+      );
     }
   }
 
