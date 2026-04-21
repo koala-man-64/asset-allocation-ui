@@ -48,6 +48,51 @@ function summarizeAccountForLogs(account: AccountInfo | null | undefined): Recor
   };
 }
 
+function decodeBase64UrlJsonSegment(segment: string): Record<string, unknown> | null {
+  const normalized = segment.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+
+  try {
+    return JSON.parse(atob(padded)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function summarizeJwtClaimsForLogs(token: string | null | undefined): Record<string, unknown> | null {
+  const raw = String(token ?? '').trim();
+  if (!raw) {
+    return null;
+  }
+
+  const parts = raw.split('.');
+  if (parts.length < 2) {
+    return null;
+  }
+
+  const claims = decodeBase64UrlJsonSegment(parts[1] ?? '');
+  if (!claims) {
+    return null;
+  }
+
+  const roles = Array.isArray(claims.roles)
+    ? claims.roles.map((role) => String(role ?? '').trim()).filter(Boolean)
+    : [];
+
+  return {
+    iss: claims.iss ?? null,
+    aud: claims.aud ?? null,
+    azp: claims.azp ?? claims.appid ?? null,
+    tid: claims.tid ?? null,
+    oid: claims.oid ?? null,
+    sub: claims.sub ?? null,
+    scp: claims.scp ?? null,
+    roles,
+    exp: claims.exp ?? null,
+    nbf: claims.nbf ?? null
+  };
+}
+
 function logAuthTransition(
   event: string,
   detail: Record<string, unknown> = {},
@@ -467,7 +512,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           scopes: result.scopes ?? oidcScopes,
           expiresOn: result.expiresOn?.toISOString() ?? null,
           forceRefresh: Boolean(options.forceRefresh),
-          hasAccessToken: Boolean(result.accessToken)
+          hasAccessToken: Boolean(result.accessToken),
+          tokenClaims: summarizeJwtClaimsForLogs(result.accessToken)
         });
         return result.accessToken || null;
       } catch (err) {
