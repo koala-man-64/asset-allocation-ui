@@ -7,6 +7,7 @@ import { cn } from '@/app/components/ui/utils';
 import { config } from '@/config';
 import {
   consumePostLoginRedirectPath,
+  consumePostLogoutRestartPath,
   peekPostLoginRedirectPath,
   useAuth
 } from '@/contexts/AuthContext';
@@ -594,10 +595,12 @@ export function OidcCallbackPage() {
       layout="fullscreen"
       nextSteps={['Use Try again to restart sign-in and return to the saved route.']}
       onAction={() => auth.signIn(peekPostLoginRedirectPath())}
+      onSecondaryAction={() => auth.signOutAndRestart(peekPostLoginRedirectPath())}
       recoveryItems={[
         'Held the application on a safe callback screen instead of loading protected routes.',
         'Preserved the deep link so the retry can send you back to the same page.'
       ]}
+      secondaryActionLabel="Sign out and try again"
       helperMessage={auth.error || undefined}
       statusLabel="The Microsoft Entra redirect did not finish successfully."
       title="Sign-in could not be completed"
@@ -620,6 +623,32 @@ export function OidcLogoutCompletePage() {
       navigate('/', { replace: true });
     }
   }, [navigate, config.oidcEnabled]);
+
+  useEffect(() => {
+    if (
+      !config.oidcEnabled ||
+      !config.authRequired ||
+      !auth.ready ||
+      auth.phase === 'signing-out' ||
+      auth.authenticated
+    ) {
+      return;
+    }
+
+    const restartReturnPath = consumePostLogoutRestartPath();
+    if (!restartReturnPath) {
+      return;
+    }
+
+    auth.signIn(restartReturnPath);
+  }, [
+    auth.authenticated,
+    auth.phase,
+    auth.ready,
+    auth.signIn,
+    config.authRequired,
+    config.oidcEnabled
+  ]);
 
   if (!config.oidcEnabled) {
     return null;
@@ -1003,14 +1032,19 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
           diagnostics={sessionExpiredDiagnostics}
           errorStep="sign-in"
           layout="inline"
-          nextSteps={['Use Continue sign-in to restore protected access and return to this route.']}
+          nextSteps={[
+            'Use Continue sign-in to restore protected access and return to this route.',
+            'If this browser keeps reusing a bad session, use Sign out and try again to clear it completely first.'
+          ]}
           onAction={() => auth.signIn(`${location.pathname}${location.search}${location.hash}`)}
+          onSecondaryAction={() => auth.signOutAndRestart(route)}
           recoveryItems={[
             auth.interactionRequest?.recoveryAttempt
               ? 'Retried the protected request once with a forced silent token refresh.'
               : 'Checked whether the current browser session could be restored silently.',
             'Held protected queries until a fresh interactive sign-in can be completed.'
           ]}
+          secondaryActionLabel="Sign out and try again"
           helperMessage={auth.interactionReason || undefined}
           statusLabel="The protected session needs a fresh sign-in before data can load."
           title="Session expired"
@@ -1104,20 +1138,23 @@ export function OidcAccessGate({ children }: { children: ReactNode }) {
         diagnostics={accessErrorDiagnostics}
         errorStep="access"
         layout="inline"
-        nextSteps={['Use Retry to run the access check again, or sign out to start a new session.']}
+        nextSteps={[
+          'Use Retry to run the access check again.',
+          'If this browser session looks stale, use Sign out and try again to clear it and restart sign-in.'
+        ]}
         onAction={() => {
           setAccessState('idle');
           setRetryNonce((value) => value + 1);
         }}
-        onSecondaryAction={auth.signOut}
+        onSecondaryAction={() => auth.signOutAndRestart(route)}
         recoveryItems={[
           'Stopped automatic access recovery after the probe failed.',
           'Kept the current route in place without loading protected data.'
         ]}
-        secondaryActionLabel="Sign out"
+        secondaryActionLabel="Sign out and try again"
         helperMessage={
           errorMessage ||
-          'The application could not verify your access against the control plane. Retry the check or sign out.'
+          'The application could not verify your access against the control plane. Retry the check or clear the browser session and restart sign-in.'
         }
         statusLabel="The control-plane access check failed before protected data could load."
         title="Access check failed"

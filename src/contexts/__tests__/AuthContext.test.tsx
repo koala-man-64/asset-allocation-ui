@@ -12,6 +12,7 @@ import {
 } from '@/services/authTransport';
 
 const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
+const POST_LOGOUT_RESTART_PATH_STORAGE_KEY = 'asset-allocation.post-logout-restart-path';
 
 const mockMsal = vi.hoisted(() => ({
   initialize: vi.fn(),
@@ -60,6 +61,7 @@ function Harness() {
       <div data-testid="interaction-endpoint">{auth.interactionRequest?.endpoint ?? ''}</div>
       <button onClick={() => auth.signIn('/system-status')}>Sign in</button>
       <button onClick={() => auth.signOut()}>Sign out</button>
+      <button onClick={() => auth.signOutAndRestart('/system-status')}>Sign out and restart</button>
     </div>
   );
 }
@@ -201,6 +203,36 @@ describe('AuthProvider', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(screen.getByTestId('phase')).toHaveTextContent('signing-out');
     expect(screen.getByTestId('busy')).toHaveTextContent('true');
+
+    await waitFor(() => {
+      expect(mockMsal.logoutRedirect).toHaveBeenCalledWith({
+        account,
+        postLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
+      });
+    });
+  });
+
+  it('queues a clean restart path before starting logout', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockMsal.getAllAccounts.mockReturnValue([account]);
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out and restart' }));
+
+    expect(window.sessionStorage.getItem(POST_LOGOUT_RESTART_PATH_STORAGE_KEY)).toBe(
+      '/system-status'
+    );
+    expect(screen.getByTestId('phase')).toHaveTextContent('signing-out');
 
     await waitFor(() => {
       expect(mockMsal.logoutRedirect).toHaveBeenCalledWith({

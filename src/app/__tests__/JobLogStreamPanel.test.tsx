@@ -589,6 +589,31 @@ describe('JobLogStreamPanel', () => {
     expect(DataService.getJobLogs).toHaveBeenCalledTimes(1);
   });
 
+  it('uses an auto-fit summary grid so panel metrics wrap inside the available width', async () => {
+    vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
+      jobName: 'beta-job',
+      runsRequested: 1,
+      runsReturned: 1,
+      tailLines: 10,
+      runs: [
+        {
+          tail: ['beta snapshot']
+        }
+      ]
+    });
+
+    renderWithProviders(<JobLogStreamPanel jobs={[JOBS[1]]} />);
+
+    expect(await screen.findByText('beta snapshot')).toBeInTheDocument();
+
+    const summaryGrid = screen.getByTestId('job-log-stream-summary-grid');
+    expect(summaryGrid.className).toContain(
+      '[grid-template-columns:repeat(auto-fit,minmax(10rem,1fr))]'
+    );
+    expect(summaryGrid.className).not.toContain('xl:grid-cols-5');
+    expect(screen.getByRole('combobox', { name: /monitored job/i }).className).toContain('min-w-0');
+  });
+
   it('auto-scrolls while at bottom and pauses when manually scrolled up', async () => {
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',

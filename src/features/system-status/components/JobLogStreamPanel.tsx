@@ -638,9 +638,9 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4 pt-6">
+      <CardContent className="space-y-4 overflow-hidden pt-6">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,340px)_1fr]">
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2">
             <label
               htmlFor="job-log-stream-select"
               className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground"
@@ -648,7 +648,7 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
               Monitored Job
             </label>
             <Select value={selectedJobName} onValueChange={setSelectedJobName}>
-              <SelectTrigger id="job-log-stream-select" aria-label="Monitored job">
+              <SelectTrigger id="job-log-stream-select" aria-label="Monitored job" className="min-w-0">
                 <SelectValue placeholder="Select a job" />
               </SelectTrigger>
               <SelectContent>
@@ -661,25 +661,28 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
             </Select>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
+          <div
+            data-testid="job-log-stream-summary-grid"
+            className="grid min-w-0 gap-3 [grid-template-columns:repeat(auto-fit,minmax(10rem,1fr))]"
+          >
+            <div className="min-w-0 rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
               <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
                 Status
               </div>
-              <div className="mt-2 flex items-center gap-2 text-sm">
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                 {getStatusIcon(status)}
                 {getStatusBadge(status)}
               </div>
             </div>
-            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
+            <div className="min-w-0 rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
               <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
                 Layer / Domain
               </div>
-              <div className="mt-2 text-sm">
+              <div className="mt-2 break-words text-sm leading-5">
                 {selectedJob?.layerName || '-'} / {selectedJob?.domainName || '-'}
               </div>
             </div>
-            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
+            <div className="min-w-0 rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
               <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
                 Run Start
               </div>
@@ -687,13 +690,13 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
                 {selectedJob?.startTime ? `${formatTimeAgo(selectedJob.startTime)} ago` : '-'}
               </div>
             </div>
-            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
+            <div className="min-w-0 rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
               <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
                 CPU Usage
               </div>
               <div className="mt-2 text-sm font-medium">{formatUsageValue(cpuSignal, 'cpu')}</div>
             </div>
-            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
+            <div className="min-w-0 rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-3">
               <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
                 Memory Usage
               </div>

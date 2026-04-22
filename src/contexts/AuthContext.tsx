@@ -15,6 +15,7 @@ import {
 import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
 const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
+const POST_LOGOUT_RESTART_PATH_STORAGE_KEY = 'asset-allocation.post-logout-restart-path';
 const DEFAULT_POST_LOGIN_PATH = '/system-status';
 const CALLBACK_PATH = '/auth/callback';
 const LOGOUT_COMPLETE_PATH = '/auth/logout-complete';
@@ -113,6 +114,7 @@ export interface AuthContextType {
   interactionRequest: InteractiveAuthRequest | null;
   signIn: (returnPath?: string) => void;
   signOut: () => void;
+  signOutAndRestart: (returnPath?: string) => void;
 }
 
 function isCallbackPath(pathname: string): boolean {
@@ -183,6 +185,37 @@ function clearPostLoginRedirectPath(): void {
   removeStoredPostLoginRedirectPath();
 }
 
+function removeStoredPostLogoutRestartPath(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(POST_LOGOUT_RESTART_PATH_STORAGE_KEY);
+  } catch {
+    // Ignore sessionStorage failures; they do not block auth state transitions.
+  }
+}
+
+function storePostLogoutRestartPath(path: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      POST_LOGOUT_RESTART_PATH_STORAGE_KEY,
+      resolveReturnPath(path)
+    );
+  } catch {
+    // Ignore sessionStorage failures and fall back to a normal signed-out screen.
+  }
+}
+
+function clearPostLogoutRestartPath(): void {
+  removeStoredPostLogoutRestartPath();
+}
+
 export function peekPostLoginRedirectPath(): string {
   if (consumedPostLoginRedirectPath) {
     return consumedPostLoginRedirectPath;
@@ -209,6 +242,22 @@ export function consumePostLoginRedirectPath(): string {
   consumedPostLoginRedirectPath = stored;
   removeStoredPostLoginRedirectPath();
   return stored;
+}
+
+export function consumePostLogoutRestartPath(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const stored = String(
+      window.sessionStorage.getItem(POST_LOGOUT_RESTART_PATH_STORAGE_KEY) ?? ''
+    ).trim();
+    removeStoredPostLogoutRestartPath();
+    return stored || null;
+  } catch {
+    return null;
+  }
 }
 
 function resolvePostLogoutRedirectUri(
@@ -621,7 +670,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void beginLoginRedirect(returnPath).catch(() => undefined);
   };
 
-  const signOut = () => {
+  const beginSignOut = (restartReturnPath?: string | null) => {
     if (!msalSession || phase === 'redirecting' || phase === 'signing-out') {
       logAuthTransition(
         'sign-out-ignored',
@@ -635,6 +684,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    if (restartReturnPath) {
+      storePostLogoutRestartPath(restartReturnPath);
+    } else {
+      clearPostLogoutRestartPath();
+    }
     clearReauthRequestState();
     msalSession.setRedirectInFlight(false);
     clearPostLoginRedirectPath();
@@ -643,7 +697,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     setPhase('signing-out');
     logAuthTransition('sign-out-start', {
-      user: account?.username ?? null
+      user: account?.username ?? null,
+      restartReturnPath: restartReturnPath ?? null
     });
 
     void msalSession
@@ -651,7 +706,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then((instance) => {
         logAuthTransition('sign-out-redirect-dispatched', {
           user: account?.username ?? null,
-          postLogoutRedirectUri: oidcPostLogoutRedirectUri || null
+          postLogoutRedirectUri: oidcPostLogoutRedirectUri || null,
+          restartReturnPath: restartReturnPath ?? null
         });
         return instance.logoutRedirect({
           account: account ?? undefined,
@@ -664,13 +720,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           'sign-out-failed',
           {
             user: account?.username ?? null,
+            restartReturnPath: restartReturnPath ?? null,
             error: err
           },
           'error'
         );
+        clearPostLogoutRestartPath();
         setPhase(account ? 'authenticated' : 'signed-out');
         setError(describeAuthError('OIDC sign-out could not be completed.', err));
       });
+  };
+
+  const signOut = () => {
+    beginSignOut(null);
+  };
+
+  const signOutAndRestart = (returnPath?: string) => {
+    beginSignOut(resolveReturnPath(returnPath));
   };
 
   const userLabel = account?.name || account?.username || null;
@@ -689,7 +755,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         interactionReason,
         interactionRequest,
         signIn,
-        signOut
+        signOut,
+        signOutAndRestart
       }}
     >
       {children}

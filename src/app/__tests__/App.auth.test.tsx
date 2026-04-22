@@ -36,10 +36,12 @@ const mockAuth = vi.hoisted(() => ({
       }
     | null,
   signIn: vi.fn(),
-  signOut: vi.fn()
+  signOut: vi.fn(),
+  signOutAndRestart: vi.fn()
 }));
 
 const consumePostLoginRedirectPath = vi.hoisted(() => vi.fn(() => '/system-status'));
+const consumePostLogoutRestartPath = vi.hoisted(() => vi.fn<() => string | null>(() => null));
 const peekPostLoginRedirectPath = vi.hoisted(() => vi.fn(() => '/postgres-explorer?foo=1#bar'));
 
 vi.mock('@/hooks/useRealtime', () => ({
@@ -50,6 +52,7 @@ vi.mock('@/contexts/AuthContext', () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
   useAuth: () => mockAuth,
   consumePostLoginRedirectPath,
+  consumePostLogoutRestartPath,
   peekPostLoginRedirectPath
 }));
 
@@ -95,8 +98,11 @@ describe('App OIDC access flow', () => {
     mockUseRealtime.mockReset();
     mockAuth.signIn.mockReset();
     mockAuth.signOut.mockReset();
+    mockAuth.signOutAndRestart.mockReset();
     consumePostLoginRedirectPath.mockReset();
     consumePostLoginRedirectPath.mockReturnValue('/system-status');
+    consumePostLogoutRestartPath.mockReset();
+    consumePostLogoutRestartPath.mockReturnValue(null);
     peekPostLoginRedirectPath.mockReset();
     peekPostLoginRedirectPath.mockReturnValue('/postgres-explorer?foo=1#bar');
     vi.mocked(DataService.getAuthSessionStatusWithMeta).mockReset();
@@ -196,6 +202,8 @@ describe('App OIDC access flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue sign-in' }));
     expect(mockAuth.signIn).toHaveBeenCalledWith('/system-status');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out and try again' }));
+    expect(mockAuth.signOutAndRestart).toHaveBeenCalledWith('/system-status');
   });
 
   it('shows a deployment misconfiguration screen when auth is required but browser OIDC is unavailable', async () => {
@@ -301,8 +309,11 @@ describe('App OIDC access flow', () => {
     expect(screen.getByText(/Gateway timeout/i)).toBeInTheDocument();
     expect(screen.getByTestId('auth-diagnostic-route')).toHaveTextContent('/system-status');
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out and try again' })).toBeInTheDocument();
     expect(screen.getByTestId('auth-step-access')).toHaveAttribute('data-state', 'error');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out and try again' }));
+    expect(mockAuth.signOutAndRestart).toHaveBeenCalledWith('/system-status');
   });
 
   it('shows the callback route as an in-progress Microsoft redirect while auth settles', async () => {
@@ -373,6 +384,17 @@ describe('App OIDC access flow', () => {
     expect(screen.getByRole('button', { name: 'Sign in again' })).toHaveFocus();
   });
 
+  it('restarts sign-in automatically on the logout-complete route when a clean retry was queued', async () => {
+    consumePostLogoutRestartPath.mockReturnValue('/system-status');
+    window.history.pushState({}, 'Logout Complete', '/auth/logout-complete');
+
+    renderWithProviders(<App />);
+
+    await waitFor(() => {
+      expect(mockAuth.signIn).toHaveBeenCalledWith('/system-status');
+    });
+  });
+
   it('retries callback sign-in with the preserved deep link', async () => {
     mockAuth.ready = true;
     mockAuth.phase = 'signed-out';
@@ -384,5 +406,18 @@ describe('App OIDC access flow', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
     expect(peekPostLoginRedirectPath).toHaveBeenCalled();
     expect(mockAuth.signIn).toHaveBeenCalledWith('/postgres-explorer?foo=1#bar');
+  });
+
+  it('offers a clean sign-out restart on the callback failure screen', async () => {
+    mockAuth.ready = true;
+    mockAuth.phase = 'signed-out';
+    mockAuth.error = 'OIDC sign-in could not be completed. correlation-id=123';
+    window.history.pushState({}, 'Callback', '/auth/callback');
+
+    renderWithProviders(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign out and try again' }));
+    expect(peekPostLoginRedirectPath).toHaveBeenCalled();
+    expect(mockAuth.signOutAndRestart).toHaveBeenCalledWith('/postgres-explorer?foo=1#bar');
   });
 });
