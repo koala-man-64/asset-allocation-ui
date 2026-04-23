@@ -266,6 +266,8 @@ describe('SystemStatusPage', () => {
     await screen.findByTestId('mock-domain-layer-coverage-panel');
 
     expect(screen.getByText(/VIEW UPDATED/i)).toBeInTheDocument();
+    expect(screen.queryByText(/operations brief/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/desk verdict/i)).not.toBeInTheDocument();
     expect(await screen.findByTestId('mock-container-apps-panel')).toBeInTheDocument();
     expect(await screen.findByTestId('mock-job-log-stream-panel')).toBeInTheDocument();
   });
