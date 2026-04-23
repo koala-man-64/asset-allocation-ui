@@ -1,10 +1,12 @@
 import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
-import { afterEach } from 'vitest';
+import { afterEach, vi } from 'vitest';
 
 // Cleanup after each test case (e.g. clearing jsdom)
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 Object.defineProperty(window, 'matchMedia', {
