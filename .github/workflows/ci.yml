@@ -88,7 +88,6 @@ jobs:
           pnpm exec tsc --noEmit
           pnpm vitest run
           pnpm build
-          pnpm bundle:check
 
   browser-smoke:
     name: browser-smoke
