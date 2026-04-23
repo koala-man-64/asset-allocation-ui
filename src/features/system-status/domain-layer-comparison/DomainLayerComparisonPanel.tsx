@@ -2,8 +2,8 @@ import {
   useCallback,
   useMemo,
   useState,
-  type ComponentType,
   type CSSProperties,
+  type ElementType,
   type ReactNode
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -174,7 +174,7 @@ type CoverageMetricChipProps = {
 };
 
 type CoverageStatusBadgeProps = {
-  icon: ComponentType<{ className?: string }>;
+  icon: ElementType;
   label: string;
   title?: string | null;
   backgroundColor: string;
