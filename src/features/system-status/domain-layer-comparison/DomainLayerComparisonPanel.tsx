@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
   type CSSProperties,
@@ -619,6 +620,8 @@ export function DomainLayerComparisonPanel({
   const queryClient = useQueryClient();
   const { triggeringJob, triggerJob } = useJobTrigger();
   const { jobControl, setJobSuspended, stopJob } = useJobSuspend();
+  const [localMetadataSnapshot, setLocalMetadataSnapshot] =
+    useState<DomainMetadataSnapshotResponse | undefined>(metadataSnapshot);
   const [refreshingCells, setRefreshingCells] = useState<Set<string>>(new Set());
   const [triggeringLayerKeys, setTriggeringLayerKeys] = useState<Set<LayerKey>>(new Set());
   const [isRefreshingPanelCounts, setIsRefreshingPanelCounts] = useState(false);
@@ -653,6 +656,15 @@ export function DomainLayerComparisonPanel({
   const [resettingCellKey, setResettingCellKey] = useState<string | null>(null);
   const [resettingCheckpointCellKey, setResettingCheckpointCellKey] = useState<string | null>(null);
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (onMetadataSnapshotChange) return;
+    setLocalMetadataSnapshot(metadataSnapshot);
+  }, [metadataSnapshot, onMetadataSnapshotChange]);
+
+  const resolvedMetadataSnapshot = onMetadataSnapshotChange
+    ? metadataSnapshot
+    : localMetadataSnapshot;
 
   const layersByKey = useMemo(() => {
     const index = new Map<LayerKey, DataLayer>();
@@ -766,6 +778,7 @@ export function DomainLayerComparisonPanel({
         onMetadataSnapshotChange(updater);
         return;
       }
+      setLocalMetadataSnapshot((previous) => updater(previous));
       queryClient.setQueryData(queryKeys.domainMetadataSnapshot('all', 'all'), updater);
     },
     [onMetadataSnapshotChange, queryClient]
@@ -786,7 +799,7 @@ export function DomainLayerComparisonPanel({
     const metadata = new Map<string, DomainMetadata>();
     const errors = new Map<string, string>();
     const pending = new Set<string>();
-    const snapshotEntries = metadataSnapshot?.entries || {};
+    const snapshotEntries = resolvedMetadataSnapshot?.entries || {};
 
     queryPairs.forEach((pair) => {
       const key = makeCellKey(pair.layerKey, pair.domainKey);
@@ -804,7 +817,7 @@ export function DomainLayerComparisonPanel({
     });
 
     return { metadataByCell: metadata, errorByCell: errors, pendingByCell: pending };
-  }, [metadataSnapshot, queryClient, queryPairs, refreshingCells]);
+  }, [queryClient, queryPairs, refreshingCells, resolvedMetadataSnapshot]);
 
   const isAnyRefreshInProgress =
     Boolean(isRefreshing) ||
@@ -1264,7 +1277,7 @@ export function DomainLayerComparisonPanel({
       let refreshedCells = 0;
       let failedCells = 0;
       let firstFailureMessage = '';
-      const previousSnapshot = metadataSnapshot || null;
+      const previousSnapshot = resolvedMetadataSnapshot || null;
       const nextEntries = { ...(previousSnapshot?.entries || {}) };
 
       refreshResults.forEach((result, index) => {
@@ -1312,9 +1325,9 @@ export function DomainLayerComparisonPanel({
     isResettingAllLists,
     isResettingCheckpoints,
     isResettingLists,
-    metadataSnapshot,
     queryClient,
     queryPairs,
+    resolvedMetadataSnapshot,
     updateMetadataSnapshot
   ]);
 
