@@ -1,4 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type ComponentType,
+  type CSSProperties,
+  type ReactNode
+} from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -158,6 +165,59 @@ const LAYER_VISUALS: Record<LayerKey, LayerVisualConfig> = {
     mutedText: 'rgba(17, 94, 89, 0.9)'
   }
 };
+
+type CoverageMetricChipProps = {
+  children: ReactNode;
+  title?: string;
+  className?: string;
+  style?: CSSProperties;
+};
+
+type CoverageStatusBadgeProps = {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  title?: string | null;
+  backgroundColor: string;
+  color: string;
+  borderColor: string;
+};
+
+function CoverageMetricChip({ children, title, className = '', style }: CoverageMetricChipProps) {
+  return (
+    <span
+      title={title}
+      className={`${StatusTypos.MONO} inline-flex max-w-full items-center rounded-full border border-mcm-walnut/12 bg-mcm-paper/78 px-2 py-1 text-[10px] leading-none text-mcm-walnut/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)] ${className}`}
+      style={style}
+    >
+      <span className="max-w-full truncate">{children}</span>
+    </span>
+  );
+}
+
+function CoverageStatusBadge({
+  icon: Icon,
+  label,
+  title,
+  backgroundColor,
+  color,
+  borderColor
+}: CoverageStatusBadgeProps) {
+  return (
+    <span
+      tabIndex={0}
+      title={title || undefined}
+      className="inline-flex min-h-7 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.16em] shadow-[inset_0_1px_0_rgba(255,255,255,0.32)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mcm-teal/50"
+      style={{
+        backgroundColor,
+        color,
+        borderColor
+      }}
+    >
+      <Icon className="h-3 w-3 shrink-0" />
+      {label}
+    </span>
+  );
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -1346,7 +1406,7 @@ export function DomainLayerComparisonPanel({
   ]);
 
   return (
-    <Card className="h-full gap-0">
+    <Card className="h-full gap-0 overflow-hidden border-mcm-walnut/15 bg-mcm-paper/72 shadow-[0_26px_60px_rgba(119,63,26,0.08)]">
       <DomainListViewerSheet
         target={listViewerTarget}
         open={Boolean(listViewerTarget)}
@@ -1514,23 +1574,43 @@ export function DomainLayerComparisonPanel({
         </AlertDialogContent>
       </AlertDialog>
 
-      <CardHeader className="gap-4 border-b border-border/40">
-        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-          Coverage Matrix
-        </p>
-        <div className="flex min-w-0 items-center gap-2">
-          <GitCompareArrows className="h-5 w-5 shrink-0" />
-          <CardTitle className="leading-tight">Domain Layer Coverage</CardTitle>
-        </div>
-        <div className="text-xs text-mcm-walnut/70">
-          {metadataSource === 'persisted-snapshot' ? 'Persisted snapshot' : 'Snapshot'}
-          {metadataUpdatedAt
-            ? ` updated ${formatMetadataTimestamp(metadataUpdatedAt)}`
-            : ' not available'}
+      <CardHeader className="gap-5 border-b border-mcm-walnut/12 bg-[linear-gradient(135deg,rgba(255,247,233,0.98),rgba(245,245,220,0.72))] pb-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+              Coverage Matrix
+            </p>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="rounded-full border border-mcm-walnut/12 bg-mcm-paper/80 p-2 text-mcm-walnut shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+                <GitCompareArrows className="h-4 w-4 shrink-0" />
+              </div>
+              <div className="min-w-0">
+                <CardTitle className="leading-tight">Domain Layer Coverage</CardTitle>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-mcm-walnut/72">
+                  Scan every domain across medallion layers, with freshness, runtime, and job state
+                  summarized directly in each cell.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[1.1rem] border border-mcm-walnut/12 bg-mcm-paper/82 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/55">
+              Snapshot
+            </div>
+            <div className="mt-1 text-sm font-semibold text-mcm-walnut">
+              {metadataSource === 'persisted-snapshot' ? 'Persisted snapshot' : 'Snapshot'}
+            </div>
+            <div className="mt-1 text-xs text-mcm-walnut/68">
+              {metadataUpdatedAt
+                ? `As of ${formatMetadataTimestamp(metadataUpdatedAt)}`
+                : 'Not available'}
+            </div>
+          </div>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-3 pt-6">
+      <CardContent className="space-y-3 pt-5">
         {layerColumns.length === 0 ? (
           <div className="rounded-xl border-2 border-mcm-walnut/15 bg-mcm-cream/40 p-4 text-sm text-mcm-walnut/70">
             No medallion layers are currently available in the system health payload.
@@ -1544,72 +1624,81 @@ export function DomainLayerComparisonPanel({
             No domains found to compare.
           </div>
         ) : (
-          <div className="rounded-[1.2rem] border border-mcm-walnut/20 bg-mcm-cream/30">
+          <div className="rounded-[1.45rem] border border-mcm-walnut/12 bg-[linear-gradient(180deg,rgba(255,247,233,0.75),rgba(245,245,220,0.42))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)]">
             <div className="overflow-x-auto overflow-y-visible rounded-[1.2rem] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              <Table className="min-w-[1280px] table-fixed border-collapse border-spacing-y-0">
+              <Table className="min-w-[1280px] table-fixed border-separate border-spacing-x-0 border-spacing-y-2.5">
                 <caption className="sr-only">
                   Compact layer-by-layer domain coverage summary with expandable details.
                 </caption>
                 <TableHeader>
-                  <TableRow className="h-14">
+                  <TableRow className="h-14 hover:[&>th]:bg-transparent">
                     <TableHead
-                      className="sticky left-0 top-0 z-30 border-b border-mcm-walnut/25 bg-mcm-cream/90"
+                      className="sticky left-0 top-0 z-30 border-b-0 bg-transparent px-2 py-0"
                       style={{ width: DOMAIN_COLUMN_WIDTH_PX, minWidth: DOMAIN_COLUMN_WIDTH_PX }}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span>Domain</span>
-                        <div className="flex items-center gap-1">
-                          {onRefresh || queryPairs.length > 0 ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 shrink-0 rounded-full border border-transparent text-mcm-walnut/70 hover:border-mcm-walnut/20 hover:bg-mcm-paper/55 hover:text-mcm-walnut"
-                                  aria-label="Refresh domain layer coverage"
-                                  onClick={() => void refreshPanelCoverage()}
-                                  disabled={isPanelActionBusy}
-                                >
-                                  <RefreshCw
-                                    className={`h-3.5 w-3.5 ${isAnyRefreshInProgress ? 'animate-spin' : ''}`}
-                                  />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">
-                                {isAnyRefreshInProgress
-                                  ? 'Refreshing domain layer coverage'
-                                  : 'Refresh domain layer coverage'}
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : null}
+                      <div className="rounded-[1.2rem] border border-mcm-walnut/12 bg-mcm-paper/92 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] backdrop-blur">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/58">
+                              Domain
+                            </div>
+                            <div className="mt-1 text-xs font-medium normal-case tracking-normal text-mcm-walnut/68">
+                              Expand a row to inspect job timing, retries, and controls.
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {onRefresh || queryPairs.length > 0 ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0 rounded-full border border-transparent text-mcm-walnut/70 hover:border-mcm-walnut/20 hover:bg-mcm-paper/55 hover:text-mcm-walnut"
+                                    aria-label="Refresh domain layer coverage"
+                                    onClick={() => void refreshPanelCoverage()}
+                                    disabled={isPanelActionBusy}
+                                  >
+                                    <RefreshCw
+                                      className={`h-3.5 w-3.5 ${isAnyRefreshInProgress ? 'animate-spin' : ''}`}
+                                    />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  {isAnyRefreshInProgress
+                                    ? 'Refreshing domain layer coverage'
+                                    : 'Refresh domain layer coverage'}
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : null}
 
-                          {queryPairs.length > 0 ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 shrink-0 rounded-full border border-transparent text-destructive/80 hover:border-destructive/20 hover:bg-destructive/10 hover:text-destructive"
-                                  aria-label="Reset lists for all configured domains"
-                                  onClick={() => setIsResetAllDialogOpen(true)}
-                                  disabled={isPanelActionBusy}
-                                >
-                                  {isResettingAllLists ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  )}
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">
-                                {isResettingAllLists
-                                  ? 'Resetting all configured lists'
-                                  : 'Reset lists for all configured domains'}
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : null}
+                            {queryPairs.length > 0 ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0 rounded-full border border-transparent text-destructive/80 hover:border-destructive/20 hover:bg-destructive/10 hover:text-destructive"
+                                    aria-label="Reset lists for all configured domains"
+                                    onClick={() => setIsResetAllDialogOpen(true)}
+                                    disabled={isPanelActionBusy}
+                                  >
+                                    {isResettingAllLists ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    )}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  {isResettingAllLists
+                                    ? 'Resetting all configured lists'
+                                    : 'Reset lists for all configured domains'}
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     </TableHead>
@@ -1637,84 +1726,124 @@ export function DomainLayerComparisonPanel({
                       return (
                         <TableHead
                           key={`compact-head-${layer.key}`}
-                          className="sticky top-0 z-20 min-w-[190px] border-b border-mcm-walnut/25"
-                          style={{
-                            backgroundColor: layerVisual.strongBg,
-                            boxShadow: `inset 0 2px 0 ${layerVisual.border}, inset 2px 0 0 ${layerVisual.border}, inset -1px 0 0 ${layerVisual.border}`
-                          }}
+                          className="sticky top-0 z-20 min-w-[190px] border-b-0 bg-transparent px-2 py-0"
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <span
-                                className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-widest"
-                                style={{
-                                  backgroundColor: layerVisual.strongBg,
-                                  color: layerVisual.accent,
-                                  borderColor: layerVisual.border
-                                }}
-                              >
-                                {layer.label}
-                              </span>
-                              {aggregate ? (
-                                <span
-                                  className={`${StatusTypos.MONO} truncate text-[10px] font-semibold uppercase tracking-wider`}
-                                  style={{ color: layerVisual.mutedText }}
-                                >
-                                  ok {aggregate.ok} • warn {aggregate.warn} • fail {aggregate.fail}
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 shrink-0 rounded-full border border-transparent text-mcm-walnut/70 hover:border-mcm-walnut/20 hover:bg-mcm-paper/55 hover:text-mcm-walnut"
-                                    aria-label={`Trigger ${layer.label} layer jobs`}
-                                    disabled={isLayerTriggerDisabled}
-                                    onClick={() => {
-                                      void triggerLayerJobs(layer.key);
+                          <div
+                            className="rounded-[1.2rem] border px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.38)] backdrop-blur"
+                            style={{
+                              backgroundColor: layerVisual.strongBg,
+                              borderColor: layerVisual.border
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span
+                                    className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-widest"
+                                    style={{
+                                      backgroundColor: layerVisual.strongBg,
+                                      color: layerVisual.accent,
+                                      borderColor: layerVisual.border
                                     }}
                                   >
-                                    {isLayerTriggering ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <Play className="h-3.5 w-3.5" />
-                                    )}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  {layerJobGroup?.jobNames.length
-                                    ? `Trigger ${layerJobGroup.jobNames.length} ${layer.label} job${layerJobGroup.jobNames.length === 1 ? '' : 's'}`
-                                    : `No configured jobs for ${layer.label}`}
-                                </TooltipContent>
-                              </Tooltip>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 shrink-0 rounded-full border border-transparent text-mcm-walnut/70 hover:border-mcm-walnut/20 hover:bg-mcm-paper/55 hover:text-mcm-walnut"
-                                    aria-label={`Refresh ${layer.label} layer`}
-                                    disabled={layerTargets.length === 0 || isLayerBusy}
-                                    onClick={() => {
-                                      void refreshLayerMetadataAndStatus(layer.key);
+                                    {layer.label}
+                                  </span>
+                                  <CoverageMetricChip
+                                    className="font-semibold uppercase tracking-[0.14em]"
+                                    style={{
+                                      backgroundColor: 'rgba(255, 247, 233, 0.72)',
+                                      borderColor: layerVisual.border,
+                                      color: layerVisual.mutedText
                                     }}
                                   >
-                                    <RefreshCw
-                                      className={`h-3.5 w-3.5 ${isLayerRefreshing ? 'animate-spin' : ''}`}
-                                    />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  {isLayerRefreshing
-                                    ? `Refreshing ${layer.label} domains`
-                                    : `Refresh all ${layer.label} domains`}
-                                </TooltipContent>
-                              </Tooltip>
+                                    {layerTargets.length} domain
+                                    {layerTargets.length === 1 ? '' : 's'}
+                                  </CoverageMetricChip>
+                                </div>
+                                {aggregate ? (
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
+                                    <CoverageMetricChip
+                                      style={{
+                                        backgroundColor: 'rgba(255, 247, 233, 0.7)',
+                                        borderColor: layerVisual.border,
+                                        color: layerVisual.mutedText
+                                      }}
+                                    >
+                                      ok {aggregate.ok}
+                                    </CoverageMetricChip>
+                                    <CoverageMetricChip
+                                      style={{
+                                        backgroundColor: 'rgba(255, 247, 233, 0.7)',
+                                        borderColor: layerVisual.border,
+                                        color: layerVisual.mutedText
+                                      }}
+                                    >
+                                      warn {aggregate.warn}
+                                    </CoverageMetricChip>
+                                    <CoverageMetricChip
+                                      style={{
+                                        backgroundColor: 'rgba(255, 247, 233, 0.7)',
+                                        borderColor: layerVisual.border,
+                                        color: layerVisual.mutedText
+                                      }}
+                                    >
+                                      fail {aggregate.fail}
+                                    </CoverageMetricChip>
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 shrink-0 rounded-full border border-transparent text-mcm-walnut/70 hover:border-mcm-walnut/20 hover:bg-mcm-paper/55 hover:text-mcm-walnut"
+                                      aria-label={`Trigger ${layer.label} layer jobs`}
+                                      disabled={isLayerTriggerDisabled}
+                                      onClick={() => {
+                                        void triggerLayerJobs(layer.key);
+                                      }}
+                                    >
+                                      {isLayerTriggering ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <Play className="h-3.5 w-3.5" />
+                                      )}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    {layerJobGroup?.jobNames.length
+                                      ? `Trigger ${layerJobGroup.jobNames.length} ${layer.label} job${layerJobGroup.jobNames.length === 1 ? '' : 's'}`
+                                      : `No configured jobs for ${layer.label}`}
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 shrink-0 rounded-full border border-transparent text-mcm-walnut/70 hover:border-mcm-walnut/20 hover:bg-mcm-paper/55 hover:text-mcm-walnut"
+                                      aria-label={`Refresh ${layer.label} layer`}
+                                      disabled={layerTargets.length === 0 || isLayerBusy}
+                                      onClick={() => {
+                                        void refreshLayerMetadataAndStatus(layer.key);
+                                      }}
+                                    >
+                                      <RefreshCw
+                                        className={`h-3.5 w-3.5 ${isLayerRefreshing ? 'animate-spin' : ''}`}
+                                      />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    {isLayerRefreshing
+                                      ? `Refreshing ${layer.label} domains`
+                                      : `Refresh all ${layer.label} domains`}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
                             </div>
                           </div>
                         </TableHead>
@@ -1942,6 +2071,7 @@ export function DomainLayerComparisonPanel({
                     });
 
                     const configuredModels = layerModels.filter((model) => model.isConfigured);
+                    const configuredLayerCount = configuredModels.length;
                     const isDomainRefreshing = configuredModels.some(
                       (model) => model.isCellRefreshing
                     );
@@ -1958,7 +2088,7 @@ export function DomainLayerComparisonPanel({
                     return (
                       <TableRow
                         key={`summary-${row.key}`}
-                        className="cursor-pointer even:[&>td]:bg-mcm-cream/20"
+                        className="group/coverage cursor-pointer even:[&>td]:bg-transparent hover:[&>td]:bg-transparent"
                         onClick={(event) => {
                           const target = event.target as HTMLElement | null;
                           if (
@@ -1972,47 +2102,68 @@ export function DomainLayerComparisonPanel({
                         }}
                       >
                         <TableCell
-                          className="sticky left-0 z-10 border-b border-mcm-walnut/20 bg-mcm-paper/95 py-1.5 align-top"
+                          className="sticky left-0 z-10 bg-transparent px-2 py-0 align-top border-y-0 first:border-l-0 last:border-r-0"
                           style={{
                             width: DOMAIN_COLUMN_WIDTH_PX,
                             minWidth: DOMAIN_COLUMN_WIDTH_PX
                           }}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex flex-col gap-0.5">
-                              <span className="truncate font-semibold text-mcm-walnut">
-                                {row.label}
-                              </span>
-                              <span
-                                className={`${StatusTypos.MONO} truncate text-[11px] text-mcm-walnut/75`}
-                              >
-                                {row.key}
-                              </span>
-                              {isDomainRefreshing ? (
-                                <span
-                                  data-testid={`domain-refresh-indicator-${row.key}`}
-                                  className={`${StatusTypos.MONO} inline-flex w-fit items-center gap-1 rounded-full border border-mcm-teal/35 bg-mcm-teal/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-mcm-teal`}
-                                >
-                                  <RefreshCw className="h-3 w-3 animate-spin" />
-                                  refreshing
+                          <div
+                            className={`flex min-h-[152px] flex-col rounded-[1.2rem] border bg-mcm-paper/95 px-4 py-3 shadow-[0_10px_24px_rgba(119,63,26,0.08)] transition-[transform,box-shadow] duration-150 ${isExpanded ? 'border-mcm-walnut/24 shadow-[0_14px_28px_rgba(119,63,26,0.12)]' : 'border-mcm-walnut/12 group-hover/coverage:-translate-y-[1px]'}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 space-y-1">
+                                <span className="block truncate text-base font-semibold text-mcm-walnut">
+                                  {row.label}
                                 </span>
+                                <span
+                                  className={`${StatusTypos.MONO} block truncate text-[11px] text-mcm-walnut/72`}
+                                >
+                                  {row.key}
+                                </span>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 shrink-0 rounded-full border border-transparent text-mcm-walnut/70 hover:border-mcm-walnut/20 hover:bg-mcm-paper/55 hover:text-mcm-walnut"
+                                aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.label} details`}
+                                aria-expanded={isExpanded}
+                                aria-controls={detailRegionControls || undefined}
+                                data-no-row-toggle="true"
+                                onClick={() => toggleRowExpanded()}
+                              >
+                                <ChevronDown
+                                  className={`h-4 w-4 transition-transform motion-reduce:transition-none ${isExpanded ? 'rotate-180' : ''}`}
+                                />
+                              </Button>
+                            </div>
+
+                            <div className="mt-auto flex flex-wrap gap-1.5 pt-4">
+                              <CoverageMetricChip>
+                                {configuredLayerCount} configured
+                              </CoverageMetricChip>
+                              <CoverageMetricChip>
+                                {layerColumns.length - configuredLayerCount} empty
+                              </CoverageMetricChip>
+                              {isDomainRefreshing ? (
+                                <CoverageMetricChip
+                                  className="font-semibold uppercase tracking-[0.14em] text-mcm-teal"
+                                  style={{
+                                    backgroundColor: 'rgba(0, 128, 128, 0.1)',
+                                    borderColor: 'rgba(0, 128, 128, 0.25)'
+                                  }}
+                                >
+                                  <span
+                                    data-testid={`domain-refresh-indicator-${row.key}`}
+                                    className="inline-flex items-center gap-1"
+                                  >
+                                    <RefreshCw className="h-3 w-3 animate-spin" />
+                                    refreshing
+                                  </span>
+                                </CoverageMetricChip>
                               ) : null}
                             </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 shrink-0 rounded-full border border-transparent text-mcm-walnut/70 hover:border-mcm-walnut/20 hover:bg-mcm-paper/55 hover:text-mcm-walnut"
-                              aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.label} details`}
-                              aria-expanded={isExpanded}
-                              aria-controls={detailRegionControls || undefined}
-                              data-no-row-toggle="true"
-                              onClick={() => toggleRowExpanded()}
-                            >
-                              <ChevronDown
-                                className={`h-4 w-4 transition-transform motion-reduce:transition-none ${isExpanded ? 'rotate-180' : ''}`}
-                              />
-                            </Button>
                           </div>
                         </TableCell>
 
@@ -2021,17 +2172,19 @@ export function DomainLayerComparisonPanel({
                             return (
                               <TableCell
                                 key={`summary-${row.key}-${model.layerColumn.key}`}
-                                className={`${StatusTypos.MONO} border-b border-mcm-walnut/20 py-1.5 text-center text-[12px] text-mcm-walnut/65 align-top whitespace-normal`}
-                                style={{
-                                  backgroundColor: model.layerVisual.softBg,
-                                  boxShadow: `inset 3px 0 0 ${model.layerVisual.border}, inset -1px 0 0 ${model.layerVisual.border}`
-                                }}
+                                className={`${StatusTypos.MONO} bg-transparent px-2 py-0 text-center text-[12px] text-mcm-walnut/65 align-top whitespace-normal border-y-0 first:border-l-0 last:border-r-0`}
                               >
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <span className="inline-flex cursor-default items-center justify-center">
-                                      —
-                                    </span>
+                                    <div
+                                      className="flex min-h-[152px] cursor-default flex-col items-center justify-center rounded-[1.2rem] border border-dashed bg-mcm-paper/34 px-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
+                                      style={{ borderColor: model.layerVisual.border }}
+                                    >
+                                      <span className="text-base leading-none">—</span>
+                                      <span className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-mcm-walnut/52">
+                                        not configured
+                                      </span>
+                                    </div>
                                   </TooltipTrigger>
                                   <TooltipContent side="top">
                                     {model.layerColumn.label} is not configured for {row.label}
@@ -2051,119 +2204,106 @@ export function DomainLayerComparisonPanel({
                           return (
                             <TableCell
                               key={`summary-${row.key}-${model.layerColumn.key}`}
-                              className="border-b border-mcm-walnut/20 py-1.5 align-top whitespace-normal"
-                              style={{
-                                backgroundColor: model.layerVisual.softBg,
-                                boxShadow: `inset 3px 0 0 ${model.layerVisual.border}, inset -1px 0 0 ${model.layerVisual.border}`
-                              }}
+                              className="bg-transparent px-2 py-0 align-top whitespace-normal border-y-0 first:border-l-0 last:border-r-0"
                             >
-                              <div className="flex h-full flex-col">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
+                              <div
+                                className="flex min-h-[152px] h-full flex-col rounded-[1.2rem] border px-3 py-3 shadow-[0_10px_24px_rgba(119,63,26,0.08)] transition-[transform,box-shadow] duration-150 group-hover/coverage:-translate-y-[1px]"
+                                style={{
+                                  background: `linear-gradient(180deg, rgba(255, 247, 233, 0.9), ${model.layerVisual.softBg})`,
+                                  borderColor: model.layerVisual.border,
+                                  boxShadow: `inset 3px 0 0 ${model.layerVisual.border}, 0 10px 24px rgba(119, 63, 26, 0.08)`
+                                }}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 space-y-2">
                                     <span
-                                      className={`${StatusTypos.MONO} tabular-nums text-sm font-bold text-mcm-walnut`}
+                                      className={`${StatusTypos.MONO} block tabular-nums text-base font-bold text-mcm-walnut`}
                                     >
                                       {formatSymbolCount(model.metadata?.symbolCount)}
                                     </span>
-                                    {model.columnStorageSummary ? (
-                                      <div
-                                        className={`${StatusTypos.MONO} mt-0.5 text-[10px] text-mcm-walnut/70`}
-                                      >
-                                        {model.columnStorageSummary}
-                                      </div>
-                                    ) : null}
-                                    {model.dateRangeDisplay ? (
-                                      <div
-                                        className={`${StatusTypos.MONO} mt-0.5 text-[10px] text-mcm-walnut/70`}
-                                        title={model.dateRangeTooltip || undefined}
-                                      >
-                                        range {model.dateRangeDisplay}
-                                      </div>
-                                    ) : null}
-                                    {model.metadataUpdatedAt ? (
-                                      <div
-                                        className={`${StatusTypos.MONO} mt-0.5 text-[10px] text-mcm-walnut/65`}
-                                        title={model.metadataUpdatedAt}
-                                      >
-                                        updated {formatMetadataTimestamp(model.metadataUpdatedAt)}
-                                      </div>
-                                    ) : null}
-                                    {model.averageRuntimeSummary ? (
-                                      <div
-                                        className={`${StatusTypos.MONO} mt-0.5 text-[10px] text-mcm-walnut/65`}
-                                        title={model.averageRuntimeTitle}
-                                      >
-                                        {model.averageRuntimeSummary}
-                                      </div>
-                                    ) : null}
-                                    {model.isRunning && model.liveUsageDisplay?.compactText ? (
-                                      <div
-                                        className={`${StatusTypos.MONO} mt-0.5 text-[10px] text-mcm-walnut/70`}
-                                        title="Live job resource usage"
-                                      >
-                                        {model.liveUsageDisplay.compactText}
-                                      </div>
-                                    ) : null}
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {model.columnStorageSummary ? (
+                                        <CoverageMetricChip>
+                                          {model.columnStorageSummary}
+                                        </CoverageMetricChip>
+                                      ) : null}
+                                      {model.dateRangeDisplay ? (
+                                        <CoverageMetricChip
+                                          title={model.dateRangeTooltip || undefined}
+                                        >
+                                          {`range ${model.dateRangeDisplay}`}
+                                        </CoverageMetricChip>
+                                      ) : null}
+                                      {model.metadataUpdatedAt ? (
+                                        <CoverageMetricChip title={model.metadataUpdatedAt}>
+                                          {`updated ${formatMetadataTimestamp(model.metadataUpdatedAt)}`}
+                                        </CoverageMetricChip>
+                                      ) : null}
+                                      {model.averageRuntimeSummary ? (
+                                        <CoverageMetricChip title={model.averageRuntimeTitle}>
+                                          {model.averageRuntimeSummary}
+                                        </CoverageMetricChip>
+                                      ) : null}
+                                      {model.isRunning && model.liveUsageDisplay?.compactText ? (
+                                        <CoverageMetricChip title="Live job resource usage">
+                                          {model.liveUsageDisplay.compactText}
+                                        </CoverageMetricChip>
+                                      ) : null}
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2 self-start">
+                                  <div className="flex items-start gap-2 self-start">
                                     {model.isCellRefreshing ? (
                                       <span
                                         data-testid={`cell-refresh-icon-summary-${row.key}-${model.layerColumn.key}`}
                                         aria-label={`${model.layerColumn.label} ${row.label} refreshing`}
                                         title="Refreshing metadata and job state"
-                                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-mcm-teal/35 bg-mcm-teal/10 text-mcm-teal shadow-[0_0_0_1px_rgba(34,138,126,0.08)]"
+                                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-mcm-teal/35 bg-mcm-teal/10 text-mcm-teal shadow-[0_0_0_1px_rgba(34,138,126,0.08)]"
                                       >
                                         <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                                       </span>
                                     ) : null}
-                                    <div className="flex flex-col items-end gap-1">
-                                      <span
-                                        tabIndex={0}
-                                        className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-black uppercase tracking-widest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mcm-teal/50"
-                                        style={{
-                                          backgroundColor: model.dataConfig.bg,
-                                          color: model.dataConfig.text,
-                                          borderColor: model.dataConfig.border
-                                        }}
-                                      >
-                                        <DataIcon className="h-3 w-3" />
-                                        {model.dataLabel}
-                                      </span>
-                                      <span
-                                        tabIndex={0}
+                                    <div className="flex max-w-[8.5rem] flex-wrap justify-end gap-1.5">
+                                      <CoverageStatusBadge
+                                        icon={DataIcon}
+                                        label={model.dataLabel}
+                                        backgroundColor={model.dataConfig.bg}
+                                        color={model.dataConfig.text}
+                                        borderColor={model.dataConfig.border}
+                                      />
+                                      <CoverageStatusBadge
+                                        icon={JobIcon}
+                                        label={model.jobLabel}
                                         title={model.jobStatusCode || undefined}
-                                        className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-black uppercase tracking-widest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mcm-teal/50"
-                                        style={{
-                                          backgroundColor: model.jobConfig.bg,
-                                          color: model.jobConfig.text,
-                                          borderColor: model.jobConfig.border
-                                        }}
-                                      >
-                                        <JobIcon className="h-3 w-3" />
-                                        {model.jobLabel}
-                                      </span>
+                                        backgroundColor={model.jobConfig.bg}
+                                        color={model.jobConfig.text}
+                                        borderColor={model.jobConfig.border}
+                                      />
                                     </div>
                                   </div>
                                 </div>
-                                {model.isPending ? (
-                                  <div
-                                    className={`${StatusTypos.MONO} mt-1 text-[11px] text-mcm-walnut/70`}
-                                  >
-                                    loading metadata...
-                                  </div>
-                                ) : null}
-                                {model.error ? (
-                                  <div
-                                    className={`${StatusTypos.MONO} mt-1 text-[11px] text-destructive/90`}
-                                  >
-                                    metadata warning
+                                {model.isPending || model.error ? (
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
+                                    {model.isPending ? (
+                                      <CoverageMetricChip>loading metadata...</CoverageMetricChip>
+                                    ) : null}
+                                    {model.error ? (
+                                      <CoverageMetricChip
+                                        className="text-destructive/90"
+                                        style={{
+                                          backgroundColor: 'rgba(180, 35, 24, 0.08)',
+                                          borderColor: 'rgba(180, 35, 24, 0.18)'
+                                        }}
+                                      >
+                                        metadata warning
+                                      </CoverageMetricChip>
+                                    ) : null}
                                   </div>
                                 ) : null}
                                 {isExpanded ? (
                                   <div
                                     id={detailRegionId}
                                     data-no-row-toggle="true"
-                                    className="mt-2 flex flex-1 flex-col gap-2 border-t border-mcm-walnut/15 pt-2"
+                                    className="mt-3 flex flex-1 flex-col gap-3 rounded-[1rem] border border-mcm-walnut/12 bg-mcm-paper/60 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]"
                                   >
                                     {model.symbolComparison ? (
                                       <div
@@ -2190,7 +2330,7 @@ export function DomainLayerComparisonPanel({
                                       </div>
                                     )}
                                     <dl
-                                      className={`${StatusTypos.MONO} grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[10.5px]`}
+                                      className={`${StatusTypos.MONO} grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[10.5px]`}
                                     >
                                       <dt className="text-mcm-walnut/70">last start:</dt>
                                       <dd
@@ -2261,7 +2401,7 @@ export function DomainLayerComparisonPanel({
                                       </dd>
                                     </dl>
                                     {model.showFinanceSubfolders ? (
-                                      <div className="grid grid-cols-2 gap-x-2 gap-y-1 rounded-md border border-mcm-walnut/12 bg-mcm-paper/25 px-2 py-1.5">
+                                      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-xl border border-mcm-walnut/12 bg-mcm-paper/38 px-3 py-2">
                                         {model.financeSubfolderCounts.map((item) => (
                                           <div
                                             key={`finance-detail-${row.key}-${model.layerColumn.key}-${item.key}`}
@@ -2277,62 +2417,67 @@ export function DomainLayerComparisonPanel({
                                         ))}
                                       </div>
                                     ) : null}
-                                    <div className="mt-auto flex items-center justify-end gap-1 border-t border-mcm-walnut/15 pt-2">
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-7 px-2 text-[11px]"
-                                        disabled={
-                                          !model.actionJobName ||
-                                          model.isJobControlBlocked ||
-                                          model.isRunning
-                                        }
-                                        onClick={() => {
-                                          if (!model.actionJobName) return;
-                                          void triggerJob(
-                                            model.actionJobName,
-                                            statusInvalidationKeys
-                                          );
-                                        }}
-                                      >
-                                        {model.isTriggeringThisJob ? (
-                                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                                        ) : (
-                                          <Play className="mr-1 h-3.5 w-3.5" />
-                                        )}
-                                        Run
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-7 px-2 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                        aria-label={`Stop all running ${model.actionJobName || model.layerColumn.label} runs`}
-                                        disabled={
-                                          !model.actionJobName ||
-                                          model.isJobControlBlocked ||
-                                          !model.isRunning
-                                        }
-                                        onClick={() => {
-                                          if (!model.actionJobName) return;
-                                          void stopJob(model.actionJobName, statusInvalidationKeys);
-                                        }}
-                                      >
-                                        {jobControlAction === 'stop' ? (
-                                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                                        ) : (
-                                          <Square className="mr-1 h-3.5 w-3.5" />
-                                        )}
-                                        Stop all runs
-                                      </Button>
+                                    <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-mcm-walnut/12 pt-3">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-8 rounded-full px-3 text-[11px]"
+                                          disabled={
+                                            !model.actionJobName ||
+                                            model.isJobControlBlocked ||
+                                            model.isRunning
+                                          }
+                                          onClick={() => {
+                                            if (!model.actionJobName) return;
+                                            void triggerJob(
+                                              model.actionJobName,
+                                              statusInvalidationKeys
+                                            );
+                                          }}
+                                        >
+                                          {model.isTriggeringThisJob ? (
+                                            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                          ) : (
+                                            <Play className="mr-1 h-3.5 w-3.5" />
+                                          )}
+                                          Run
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-8 rounded-full px-3 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                          aria-label={`Stop all running ${model.actionJobName || model.layerColumn.label} runs`}
+                                          disabled={
+                                            !model.actionJobName ||
+                                            model.isJobControlBlocked ||
+                                            !model.isRunning
+                                          }
+                                          onClick={() => {
+                                            if (!model.actionJobName) return;
+                                            void stopJob(
+                                              model.actionJobName,
+                                              statusInvalidationKeys
+                                            );
+                                          }}
+                                        >
+                                          {jobControlAction === 'stop' ? (
+                                            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                          ) : (
+                                            <Square className="mr-1 h-3.5 w-3.5" />
+                                          )}
+                                          Stop all runs
+                                        </Button>
+                                      </div>
                                       <DropdownMenu>
                                         <DropdownMenuTrigger asChild>
                                           <Button
                                             type="button"
                                             variant="ghost"
                                             size="icon"
-                                            className="h-7 w-7"
+                                            className="h-8 w-8 rounded-full"
                                             aria-label={`More ${model.layerColumn.label} actions for ${row.label}`}
                                           >
                                             <EllipsisVertical className="h-4 w-4" />

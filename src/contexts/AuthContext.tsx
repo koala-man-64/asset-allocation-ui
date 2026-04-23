@@ -19,6 +19,7 @@ const POST_LOGOUT_RESTART_PATH_STORAGE_KEY = 'asset-allocation.post-logout-resta
 const DEFAULT_POST_LOGIN_PATH = '/system-status';
 const CALLBACK_PATH = '/auth/callback';
 const LOGOUT_COMPLETE_PATH = '/auth/logout-complete';
+const SILENT_AUTH_REDIRECT_PATH = '/auth/silent-callback.html';
 
 let consumedPostLoginRedirectPath: string | null = null;
 
@@ -281,6 +282,19 @@ function resolvePostLogoutRedirectUri(
   }
 }
 
+function resolveSilentRedirectUri(redirectUri: string): string {
+  const normalizedRedirectUri = String(redirectUri ?? '').trim();
+  if (!normalizedRedirectUri) {
+    return '';
+  }
+
+  try {
+    return new URL(SILENT_AUTH_REDIRECT_PATH, normalizedRedirectUri).toString();
+  } catch {
+    return '';
+  }
+}
+
 function resolveInteractionReason(request?: InteractiveAuthRequest): string {
   const reason = String(request?.reason ?? '').trim();
   return reason || 'Your secure session needs to be refreshed before protected data can load.';
@@ -298,6 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     config.oidcPostLogoutRedirectUri,
     oidcRedirectUri
   );
+  const oidcSilentRedirectUri = resolveSilentRedirectUri(oidcRedirectUri);
 
   const enabled =
     config.oidcEnabled &&
@@ -311,6 +326,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authority: oidcAuthority,
         redirectUri: oidcRedirectUri,
         postLogoutRedirectUri: oidcPostLogoutRedirectUri || oidcRedirectUri,
+        silentRedirectUri: oidcSilentRedirectUri,
         scopes: oidcScopes
       }),
     [
@@ -319,6 +335,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       oidcClientId,
       oidcPostLogoutRedirectUri,
       oidcRedirectUri,
+      oidcSilentRedirectUri,
       oidcScopes
     ]
   );
@@ -345,6 +362,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authority: oidcAuthority || null,
       redirectUri: oidcRedirectUri || null,
       postLogoutRedirectUri: oidcPostLogoutRedirectUri || null,
+      silentRedirectUri: oidcSilentRedirectUri || null,
       scopes: oidcScopes
     });
   }, [
@@ -353,6 +371,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     oidcAuthority,
     oidcPostLogoutRedirectUri,
     oidcRedirectUri,
+    oidcSilentRedirectUri,
     oidcScopes
   ]);
 

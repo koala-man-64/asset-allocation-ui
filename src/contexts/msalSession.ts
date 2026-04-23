@@ -12,6 +12,7 @@ type MsalSessionConfig = {
   authority: string;
   redirectUri: string;
   postLogoutRedirectUri: string;
+  silentRedirectUri: string;
   scopes: string[];
 };
 
@@ -36,6 +37,7 @@ type MsalSessionRecord = {
   bootstrapPromise: Promise<MsalBootstrapResult> | null;
   bootstrapKey: string | null;
   completedBootstrapKeys: Set<string>;
+  silentRedirectUri: string;
   scopes: string[];
 };
 
@@ -76,6 +78,7 @@ function buildSessionKey(config: MsalSessionConfig): string {
     authority: config.authority,
     redirectUri: config.redirectUri,
     postLogoutRedirectUri: config.postLogoutRedirectUri,
+    silentRedirectUri: config.silentRedirectUri,
     scopes: config.scopes
   });
 }
@@ -116,6 +119,7 @@ function createSessionRecord(config: MsalSessionConfig): MsalSessionRecord {
     clientIdConfigured: Boolean(config.clientId),
     redirectUri: config.redirectUri,
     postLogoutRedirectUri: config.postLogoutRedirectUri,
+    silentRedirectUri: config.silentRedirectUri,
     scopes: config.scopes
   });
 
@@ -156,6 +160,7 @@ function createSessionRecord(config: MsalSessionConfig): MsalSessionRecord {
     bootstrapPromise: null,
     bootstrapKey: null,
     completedBootstrapKeys: new Set<string>(),
+    silentRedirectUri: config.silentRedirectUri,
     scopes: [...config.scopes]
   };
 }
@@ -249,10 +254,12 @@ export function getMsalSession(config: MsalSessionConfig): MsalSessionHandle | n
         try {
           logMsalSession('bootstrap-sso-silent-start', {
             pathname: request.pathname,
-            scopes: record.scopes
+            scopes: record.scopes,
+            silentRedirectUri: record.silentRedirectUri || null
           });
           const silentResult = await instance.ssoSilent({
-            scopes: record.scopes
+            scopes: record.scopes,
+            redirectUri: record.silentRedirectUri || undefined
           });
           const account = chooseAccount(instance, silentResult);
           logMsalSession('bootstrap-sso-silent-success', {

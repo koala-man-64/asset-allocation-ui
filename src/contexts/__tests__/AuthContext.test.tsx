@@ -256,7 +256,8 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
-        scopes: ['api://asset-allocation-api/user_impersonation']
+        scopes: ['api://asset-allocation-api/user_impersonation'],
+        redirectUri: 'https://asset-allocation.example.com/auth/silent-callback.html'
       });
       expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
       expect(screen.getByTestId('ready')).toHaveTextContent('true');
@@ -279,7 +280,8 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
-        scopes: ['api://asset-allocation-api/user_impersonation']
+        scopes: ['api://asset-allocation-api/user_impersonation'],
+        redirectUri: 'https://asset-allocation.example.com/auth/silent-callback.html'
       });
       expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
       expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
@@ -302,7 +304,8 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
-        scopes: ['api://asset-allocation-api/user_impersonation']
+        scopes: ['api://asset-allocation-api/user_impersonation'],
+        redirectUri: 'https://asset-allocation.example.com/auth/silent-callback.html'
       });
       expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
       expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
