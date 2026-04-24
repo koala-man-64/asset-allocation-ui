@@ -103,6 +103,7 @@ describe('AuthProvider', () => {
 
   it('initializes msal before starting the redirect flow', async () => {
     const { PublicClientApplication } = await import('@azure/msal-browser');
+    window.history.pushState({}, 'Login', '/login');
 
     render(
       <AuthProvider>
@@ -187,6 +188,7 @@ describe('AuthProvider', () => {
 
   it('marks sign-out as busy as soon as the redirect starts', async () => {
     const account = { username: 'analyst@example.com', name: 'Analyst' };
+    window.history.pushState({}, 'Login', '/login');
     mockMsal.getAllAccounts.mockReturnValue([account]);
 
     render(
@@ -214,6 +216,7 @@ describe('AuthProvider', () => {
 
   it('queues a clean restart path before starting logout', async () => {
     const account = { username: 'analyst@example.com', name: 'Analyst' };
+    window.history.pushState({}, 'Login', '/login');
     mockMsal.getAllAccounts.mockReturnValue([account]);
 
     render(
@@ -245,7 +248,7 @@ describe('AuthProvider', () => {
   it('does not auto-redirect after a silent SSO interaction-required response', async () => {
     const { InteractionRequiredAuthError } = await import('@azure/msal-browser');
     mockConfig.authRequired = true;
-    window.history.pushState({}, 'System Status', '/system-status');
+    window.history.pushState({}, 'Login', '/login');
     mockMsal.ssoSilent.mockRejectedValueOnce(new InteractionRequiredAuthError('interaction required'));
 
     render(
@@ -269,7 +272,7 @@ describe('AuthProvider', () => {
   it('restores the session silently when ssoSilent returns an account', async () => {
     const account = { username: 'analyst@example.com', name: 'Analyst' };
     mockConfig.authRequired = true;
-    window.history.pushState({}, 'System Status', '/system-status');
+    window.history.pushState({}, 'Login', '/login');
     mockMsal.ssoSilent.mockResolvedValueOnce({ account });
 
     render(
@@ -315,7 +318,7 @@ describe('AuthProvider', () => {
   it('switches into session-expired when background reauth is requested', async () => {
     const account = { username: 'analyst@example.com', name: 'Analyst' };
     mockConfig.authRequired = true;
-    window.history.pushState({}, 'System Status', '/system-status');
+    window.history.pushState({}, 'Login', '/login');
     mockMsal.getAllAccounts.mockReturnValue([account]);
 
     render(
@@ -348,10 +351,54 @@ describe('AuthProvider', () => {
     });
   });
 
+  it('logs out and restarts login when background reauth requires an OIDC reset', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'Login', '/login');
+    mockMsal.getAllAccounts.mockReturnValue([account]);
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+    });
+
+    await act(async () => {
+      await expect(
+        requestInteractiveReauth({
+          reason: 'OIDC token refresh did not produce a bearer token.',
+          source: 'silent-auth-recovery-missing-token',
+          endpoint: '/auth/session',
+          status: 401,
+          requestId: 'req-1',
+          recoveryAttempt: 1,
+          returnPath: '/system-status',
+          resetOidcSession: true
+        })
+      ).rejects.toBeInstanceOf(AuthReauthRequiredError);
+    });
+
+    expect(window.sessionStorage.getItem(POST_LOGOUT_RESTART_PATH_STORAGE_KEY)).toBe(
+      '/system-status'
+    );
+    expect(screen.getByTestId('phase')).toHaveTextContent('signing-out');
+
+    await waitFor(() => {
+      expect(mockMsal.logoutRedirect).toHaveBeenCalledWith({
+        account,
+        postLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
+      });
+    });
+  });
+
   it('passes forceRefresh to acquireTokenSilent when a caller requests a fresh token', async () => {
     const account = { username: 'analyst@example.com', name: 'Analyst' };
     mockConfig.authRequired = true;
-    window.history.pushState({}, 'System Status', '/system-status');
+    window.history.pushState({}, 'Login', '/login');
     mockMsal.getAllAccounts.mockReturnValue([account]);
     mockMsal.acquireTokenSilent.mockResolvedValueOnce({ accessToken: 'fresh-token' });
 
@@ -382,7 +429,7 @@ describe('AuthProvider', () => {
     const account = { username: 'analyst@example.com', name: 'Analyst' };
     const { InteractionRequiredAuthError } = await import('@azure/msal-browser');
     mockConfig.authRequired = true;
-    window.history.pushState({}, 'System Status', '/system-status');
+    window.history.pushState({}, 'Login', '/login');
     mockMsal.getAllAccounts.mockReturnValue([account]);
     mockMsal.acquireTokenSilent.mockRejectedValueOnce(
       new InteractionRequiredAuthError('refresh interaction required')
@@ -415,7 +462,7 @@ describe('AuthProvider', () => {
   it('fails fast when silent token acquisition fails unexpectedly', async () => {
     const account = { username: 'analyst@example.com', name: 'Analyst' };
     mockConfig.authRequired = true;
-    window.history.pushState({}, 'System Status', '/system-status');
+    window.history.pushState({}, 'Login', '/login');
     mockMsal.getAllAccounts.mockReturnValue([account]);
     mockMsal.acquireTokenSilent.mockRejectedValueOnce(new Error('cache failure'));
 
@@ -440,7 +487,7 @@ describe('AuthProvider', () => {
 
   it('dedupes bootstrap work across strict-mode remounts', async () => {
     mockConfig.authRequired = true;
-    window.history.pushState({}, 'System Status', '/system-status');
+    window.history.pushState({}, 'Login', '/login');
     mockMsal.ssoSilent.mockImplementation(() => new Promise(() => {}));
 
     render(

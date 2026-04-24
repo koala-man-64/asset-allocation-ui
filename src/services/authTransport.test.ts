@@ -108,6 +108,42 @@ describe('authTransport bearer auth support', () => {
     );
   });
 
+  it('upgrades a pending reauth request when an OIDC session reset is required', async () => {
+    const handler = vi.fn();
+    setInteractiveAuthHandler(handler);
+
+    await expect(
+      requestInteractiveReauth({
+        reason: 'API /system/status returned 401.',
+        source: 'api:/system/status',
+        endpoint: '/system/status',
+        status: 401
+      })
+    ).rejects.toBeInstanceOf(AuthReauthRequiredError);
+
+    await expect(
+      requestInteractiveReauth({
+        reason: 'OIDC token refresh did not produce a bearer token.',
+        source: 'silent-auth-recovery-missing-token',
+        endpoint: '/system/status',
+        status: 401,
+        recoveryAttempt: 1,
+        resetOidcSession: true
+      })
+    ).rejects.toBeInstanceOf(AuthReauthRequiredError);
+
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        source: 'silent-auth-recovery-missing-token',
+        endpoint: '/system/status',
+        status: 401,
+        recoveryAttempt: 1,
+        resetOidcSession: true
+      })
+    );
+  });
+
   it('throws when interactive reauth is requested without a registered handler', async () => {
     await expect(requestInteractiveReauth()).rejects.toThrow(
       'Interactive auth state handler is not registered.'

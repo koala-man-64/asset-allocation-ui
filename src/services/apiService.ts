@@ -581,6 +581,17 @@ async function performRequest<T>(
             recoveryAttempt: 1,
             error: error.message
           });
+          if (hasInteractiveAuthHandler()) {
+            await requestInteractiveReauth({
+              reason: error.message,
+              source: 'silent-auth-recovery-missing-token',
+              endpoint,
+              status: response.status,
+              requestId,
+              recoveryAttempt: 1,
+              resetOidcSession: true
+            });
+          }
           throw error;
         }
         logAuthRecovery('silent-recovery-success', {

@@ -1,4 +1,12 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import type { AccountInfo } from '@azure/msal-browser';
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 
@@ -359,6 +367,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [interactionReason, setInteractionReason] = useState<string | null>(null);
   const [interactionRequest, setInteractionRequest] = useState<InteractiveAuthRequest | null>(null);
+  const phaseRef = useRef<AuthPhase>(phase);
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   useEffect(() => {
     logAuthTransition('provider-config', {
@@ -557,7 +570,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [authRequired, msalSession]);
+  }, [authRequired, enabled, msalSession]);
 
   const getAccessToken = useCallback(
     async (options: AccessTokenRequestOptions = {}) => {
@@ -650,6 +663,86 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [account, getAccessToken, msalSession, oidcScopes]);
 
+  const beginSignOut = useCallback(
+    (restartReturnPath?: string | null) => {
+      const currentPhase = phaseRef.current;
+      if (!msalSession || currentPhase === 'redirecting' || currentPhase === 'signing-out') {
+        logAuthTransition(
+          'sign-out-ignored',
+          {
+            user: account?.username ?? null,
+            phase: currentPhase,
+            hasMsalSession: Boolean(msalSession)
+          },
+          'warn'
+        );
+        return;
+      }
+
+      if (restartReturnPath) {
+        storePostLogoutRestartPath(restartReturnPath);
+      } else {
+        clearPostLogoutRestartPath();
+      }
+      clearReauthRequestState();
+      msalSession.setRedirectInFlight(false);
+      clearPostLoginRedirectPath();
+      setInteractionReason(null);
+      setInteractionRequest(null);
+      setError(null);
+      setPhase('signing-out');
+      logAuthTransition('sign-out-start', {
+        user: account?.username ?? null,
+        restartReturnPath: restartReturnPath ?? null
+      });
+
+      void msalSession
+        .ensureInitialized()
+        .then(async (instance) => {
+          if (config.authSessionMode === 'cookie') {
+            await DataService.deleteAuthSession().catch((err) => {
+              logAuthTransition(
+                'api-session-delete-failed',
+                {
+                  restartReturnPath: restartReturnPath ?? null,
+                  error: err
+                },
+                'warn'
+              );
+            });
+          }
+          return instance;
+        })
+        .then((instance) => {
+          logAuthTransition('sign-out-redirect-dispatched', {
+            user: account?.username ?? null,
+            postLogoutRedirectUri: oidcPostLogoutRedirectUri || null,
+            restartReturnPath: restartReturnPath ?? null
+          });
+          return instance.logoutRedirect({
+            account: account ?? undefined,
+            postLogoutRedirectUri: oidcPostLogoutRedirectUri || undefined
+          });
+        })
+        .catch((err) => {
+          console.error('OIDC sign-out failed', err);
+          logAuthTransition(
+            'sign-out-failed',
+            {
+              user: account?.username ?? null,
+              restartReturnPath: restartReturnPath ?? null,
+              error: err
+            },
+            'error'
+          );
+          clearPostLogoutRestartPath();
+          setPhase(account ? 'authenticated' : 'signed-out');
+          setError(describeAuthError('OIDC sign-out could not be completed.', err));
+        });
+    },
+    [account, msalSession, oidcPostLogoutRedirectUri]
+  );
+
   useEffect(() => {
     if (!enabled || !authRequired) {
       logAuthTransition('interactive-auth-handler-cleared', {
@@ -673,6 +766,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const nextReturnPath = resolveReturnPath(request.returnPath);
+      if (request.resetOidcSession) {
+        logAuthTransition('reauth-reset-session-requested', {
+          source: request.source ?? null,
+          reason: request.reason ?? null,
+          returnPath: nextReturnPath,
+          endpoint: request.endpoint ?? null,
+          status: request.status ?? null,
+          requestId: request.requestId ?? null,
+          recoveryAttempt: request.recoveryAttempt ?? null
+        });
+        beginSignOut(nextReturnPath);
+        return;
+      }
+
       storePostLoginRedirectPath(nextReturnPath);
       msalSession?.setRedirectInFlight(false);
       setAccount(null);
@@ -698,7 +805,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       setInteractiveAuthHandler(null);
     };
-  }, [authRequired, enabled, msalSession]);
+  }, [authRequired, beginSignOut, enabled, msalSession]);
 
   const signIn = (returnPath?: string) => {
     if (!beginLoginRedirect) {
@@ -714,82 +821,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     void beginLoginRedirect(returnPath).catch(() => undefined);
-  };
-
-  const beginSignOut = (restartReturnPath?: string | null) => {
-    if (!msalSession || phase === 'redirecting' || phase === 'signing-out') {
-      logAuthTransition(
-        'sign-out-ignored',
-        {
-          user: account?.username ?? null,
-          phase,
-          hasMsalSession: Boolean(msalSession)
-        },
-        'warn'
-      );
-      return;
-    }
-
-    if (restartReturnPath) {
-      storePostLogoutRestartPath(restartReturnPath);
-    } else {
-      clearPostLogoutRestartPath();
-    }
-    clearReauthRequestState();
-    msalSession.setRedirectInFlight(false);
-    clearPostLoginRedirectPath();
-    setInteractionReason(null);
-    setInteractionRequest(null);
-    setError(null);
-    setPhase('signing-out');
-    logAuthTransition('sign-out-start', {
-      user: account?.username ?? null,
-      restartReturnPath: restartReturnPath ?? null
-    });
-
-    void msalSession
-      .ensureInitialized()
-      .then(async (instance) => {
-        if (config.authSessionMode === 'cookie') {
-          await DataService.deleteAuthSession().catch((err) => {
-            logAuthTransition(
-              'api-session-delete-failed',
-              {
-                restartReturnPath: restartReturnPath ?? null,
-                error: err
-              },
-              'warn'
-            );
-          });
-        }
-        return instance;
-      })
-      .then((instance) => {
-        logAuthTransition('sign-out-redirect-dispatched', {
-          user: account?.username ?? null,
-          postLogoutRedirectUri: oidcPostLogoutRedirectUri || null,
-          restartReturnPath: restartReturnPath ?? null
-        });
-        return instance.logoutRedirect({
-          account: account ?? undefined,
-          postLogoutRedirectUri: oidcPostLogoutRedirectUri || undefined
-        });
-      })
-      .catch((err) => {
-        console.error('OIDC sign-out failed', err);
-        logAuthTransition(
-          'sign-out-failed',
-          {
-            user: account?.username ?? null,
-            restartReturnPath: restartReturnPath ?? null,
-            error: err
-          },
-          'error'
-        );
-        clearPostLogoutRestartPath();
-        setPhase(account ? 'authenticated' : 'signed-out');
-        setError(describeAuthError('OIDC sign-out could not be completed.', err));
-      });
   };
 
   const signOut = () => {

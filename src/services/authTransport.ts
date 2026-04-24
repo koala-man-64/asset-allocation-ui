@@ -17,6 +17,7 @@ export type InteractiveAuthRequest = {
   status?: number;
   requestId?: string;
   recoveryAttempt?: number;
+  resetOidcSession?: boolean;
 };
 export type InteractiveAuthHandler = (request?: InteractiveAuthRequest) => void;
 
@@ -63,6 +64,7 @@ function normalizeInteractiveAuthRequest(request: InteractiveAuthRequest = {}): 
     typeof request.recoveryAttempt === 'number' && Number.isFinite(request.recoveryAttempt)
       ? Math.max(0, Math.floor(request.recoveryAttempt))
       : undefined;
+  const resetOidcSession = Boolean(request.resetOidcSession);
 
   return {
     reason: reason || undefined,
@@ -71,7 +73,8 @@ function normalizeInteractiveAuthRequest(request: InteractiveAuthRequest = {}): 
     endpoint: endpoint || undefined,
     status,
     requestId: requestId || undefined,
-    recoveryAttempt
+    recoveryAttempt,
+    resetOidcSession
   };
 }
 
@@ -89,6 +92,7 @@ function logAuthTransport(
     status: request?.status ?? null,
     requestId: request?.requestId ?? null,
     recoveryAttempt: request?.recoveryAttempt ?? null,
+    resetOidcSession: Boolean(request?.resetOidcSession),
     ...detail
   }, level);
 }
@@ -132,15 +136,22 @@ export async function requestInteractiveReauth(
   }
 
   const normalizedRequest = normalizeInteractiveAuthRequest(request);
+  let rejectionRequest: InteractiveAuthRequest = pendingReauthRequest ?? normalizedRequest;
   if (!pendingReauthRequest) {
     pendingReauthRequest = normalizedRequest;
+    rejectionRequest = normalizedRequest;
     logAuthTransport('reauth-required', normalizedRequest);
+    interactiveAuthHandler(normalizedRequest);
+  } else if (normalizedRequest.resetOidcSession && !pendingReauthRequest.resetOidcSession) {
+    pendingReauthRequest = normalizedRequest;
+    rejectionRequest = normalizedRequest;
+    logAuthTransport('reauth-required-upgraded', normalizedRequest);
     interactiveAuthHandler(normalizedRequest);
   } else {
     logAuthTransport('reauth-required-suppressed', normalizedRequest);
   }
 
-  throw new AuthReauthRequiredError(pendingReauthRequest);
+  throw new AuthReauthRequiredError(rejectionRequest);
 }
 
 async function appendAuthHeadersWithOptions(
