@@ -2,6 +2,7 @@ import type { ComponentType, ElementType } from 'react';
 import {
   Activity,
   BarChart3,
+  BadgeDollarSign,
   Briefcase,
   Bug,
   Database,
@@ -232,6 +233,19 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Account Operations',
       icon: Landmark,
+      sectionKey: 'live-operations'
+    }
+  },
+  {
+    key: 'trade-desk',
+    path: '/trade-desk',
+    load: () =>
+      import('@/features/trade-desk/TradeDeskPage').then((module) => ({
+        default: module.TradeDeskPage
+      })),
+    nav: {
+      label: 'Trade Desk',
+      icon: BadgeDollarSign,
       sectionKey: 'live-operations'
     }
   },
