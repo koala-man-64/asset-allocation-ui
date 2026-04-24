@@ -14,6 +14,9 @@ type RuntimeUiConfigSource = Omit<
   uiAuthEnabled?: boolean | string;
 };
 
+type RuntimeUiConfigSource = Omit<Partial<UiRuntimeConfig>, keyof RuntimeUiConfigOverrides> &
+  RuntimeUiConfigOverrides;
+
 export type AuthSessionMode = 'bearer' | 'cookie';
 
 declare global {
