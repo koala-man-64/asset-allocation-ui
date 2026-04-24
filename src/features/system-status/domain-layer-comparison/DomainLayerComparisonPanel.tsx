@@ -16,7 +16,6 @@ import {
   EllipsisVertical,
   ExternalLink,
   FolderOpen,
-  GitCompareArrows,
   Loader2,
   Play,
   RefreshCw,
@@ -76,7 +75,7 @@ import {
   DomainListViewerSheet,
   type DomainListViewerTarget
 } from '@/features/system-status/components/DomainListViewerSheet';
-import type { ManagedContainerJob } from '@/features/system-status/components/JobKillSwitchPanel';
+import type { ManagedContainerJob } from '@/features/system-status/types';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
 import { useJobTrigger } from '@/hooks/useJobTrigger';
 import {
@@ -99,7 +98,7 @@ import { formatMetadataTimestamp } from '@/features/system-status/lib/systemStat
 const LAYER_ORDER = ['bronze', 'silver', 'gold', 'platinum'] as const;
 type LayerKey = (typeof LAYER_ORDER)[number];
 const CHECKPOINT_RESET_LAYERS = new Set<LayerKey>(['silver', 'gold']);
-const DOMAIN_COLUMN_WIDTH_PX = 320;
+const DOMAIN_COLUMN_WIDTH_PX = 280;
 const PURGE_POLL_INTERVAL_MS = 1000;
 const PURGE_POLL_TIMEOUT_MS = 5 * 60_000;
 const CPU_USAGE_PERCENT_SIGNAL_NAMES = [
@@ -187,7 +186,7 @@ function CoverageMetricChip({ children, title, className = '', style }: Coverage
   return (
     <span
       title={title}
-      className={`${StatusTypos.MONO} inline-flex max-w-full items-center rounded-full border border-mcm-walnut/12 bg-mcm-paper/78 px-2 py-1 text-[10px] leading-none text-mcm-walnut/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)] ${className}`}
+      className={`${StatusTypos.MONO} inline-flex max-w-full items-center rounded-full border border-mcm-walnut/12 bg-mcm-paper/70 px-2 py-1 text-[10px] leading-none text-mcm-walnut/72 ${className}`}
       style={style}
     >
       <span className="max-w-full truncate">{children}</span>
@@ -207,7 +206,7 @@ function CoverageStatusBadge({
     <span
       tabIndex={0}
       title={title || undefined}
-      className="inline-flex min-h-7 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.16em] shadow-[inset_0_1px_0_rgba(255,255,255,0.32)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mcm-teal/50"
+      className="inline-flex min-h-6 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mcm-teal/50"
       style={{
         backgroundColor,
         color,
@@ -1587,34 +1586,26 @@ export function DomainLayerComparisonPanel({
         </AlertDialogContent>
       </AlertDialog>
 
-      <CardHeader className="gap-5 border-b border-mcm-walnut/12 bg-[linear-gradient(135deg,rgba(255,247,233,0.98),rgba(245,245,220,0.72))] pb-5">
+      <CardHeader className="gap-4 border-b border-mcm-walnut/12 bg-mcm-paper/72 pb-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-2">
+          <div className="min-w-0 space-y-1.5">
             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
               Coverage Matrix
             </p>
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="rounded-full border border-mcm-walnut/12 bg-mcm-paper/80 p-2 text-mcm-walnut shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
-                <GitCompareArrows className="h-4 w-4 shrink-0" />
-              </div>
-              <div className="min-w-0">
-                <CardTitle className="leading-tight">Domain Layer Coverage</CardTitle>
-                <p className="mt-1 max-w-3xl text-sm leading-6 text-mcm-walnut/72">
-                  Scan every domain across medallion layers, with freshness, runtime, and job state
-                  summarized directly in each cell.
-                </p>
-              </div>
-            </div>
+            <CardTitle className="leading-tight">Domain Layer Coverage</CardTitle>
+            <p className="max-w-3xl text-sm leading-6 text-mcm-walnut/72">
+              Medallion-domain coverage with freshness, job state, and row-level controls.
+            </p>
           </div>
 
-          <div className="rounded-[1.1rem] border border-mcm-walnut/12 bg-mcm-paper/82 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+          <div className="rounded-[0.9rem] border border-mcm-walnut/12 bg-mcm-cream/45 px-3 py-2">
             <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/55">
               Snapshot
             </div>
-            <div className="mt-1 text-sm font-semibold text-mcm-walnut">
+            <div className="mt-0.5 text-sm font-semibold text-mcm-walnut">
               {metadataSource === 'persisted-snapshot' ? 'Persisted snapshot' : 'Snapshot'}
             </div>
-            <div className="mt-1 text-xs text-mcm-walnut/68">
+            <div className="mt-0.5 text-xs text-mcm-walnut/68">
               {metadataUpdatedAt
                 ? `As of ${formatMetadataTimestamp(metadataUpdatedAt)}`
                 : 'Not available'}
@@ -1623,7 +1614,7 @@ export function DomainLayerComparisonPanel({
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-3 pt-5">
+      <CardContent className="space-y-3 pt-4">
         {layerColumns.length === 0 ? (
           <div className="rounded-xl border-2 border-mcm-walnut/15 bg-mcm-cream/40 p-4 text-sm text-mcm-walnut/70">
             No medallion layers are currently available in the system health payload.
@@ -1637,9 +1628,9 @@ export function DomainLayerComparisonPanel({
             No domains found to compare.
           </div>
         ) : (
-          <div className="rounded-[1.45rem] border border-mcm-walnut/12 bg-[linear-gradient(180deg,rgba(255,247,233,0.75),rgba(245,245,220,0.42))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)]">
-            <div className="overflow-x-auto overflow-y-visible rounded-[1.2rem] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              <Table className="min-w-[1280px] table-fixed border-separate border-spacing-x-0 border-spacing-y-2.5">
+          <div className="rounded-[1.15rem] border border-mcm-walnut/10 bg-mcm-cream/28 p-1.5">
+            <div className="overflow-x-auto overflow-y-visible rounded-[0.95rem] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              <Table className="min-w-[1160px] table-fixed border-separate border-spacing-x-0 border-spacing-y-2">
                 <caption className="sr-only">
                   Compact layer-by-layer domain coverage summary with expandable details.
                 </caption>
@@ -1649,14 +1640,14 @@ export function DomainLayerComparisonPanel({
                       className="sticky left-0 top-0 z-30 border-b-0 bg-transparent px-2 py-0"
                       style={{ width: DOMAIN_COLUMN_WIDTH_PX, minWidth: DOMAIN_COLUMN_WIDTH_PX }}
                     >
-                      <div className="rounded-[1.2rem] border border-mcm-walnut/12 bg-mcm-paper/92 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] backdrop-blur">
+                      <div className="rounded-[0.95rem] border border-mcm-walnut/12 bg-mcm-paper/86 px-3 py-2.5 backdrop-blur">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/58">
                               Domain
                             </div>
-                            <div className="mt-1 text-xs font-medium normal-case tracking-normal text-mcm-walnut/68">
-                              Expand a row to inspect job timing, retries, and controls.
+                            <div className="mt-1 text-xs font-medium normal-case tracking-normal text-mcm-walnut/65">
+                              Expand for timing, retries, and controls.
                             </div>
                           </div>
                           <div className="flex items-center gap-1">
@@ -1686,30 +1677,46 @@ export function DomainLayerComparisonPanel({
                             ) : null}
 
                             {queryPairs.length > 0 ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 shrink-0 rounded-full border border-transparent text-destructive/80 hover:border-destructive/20 hover:bg-destructive/10 hover:text-destructive"
-                                    aria-label="Reset lists for all configured domains"
-                                    onClick={() => setIsResetAllDialogOpen(true)}
+                              <DropdownMenu>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 shrink-0 rounded-full border border-transparent text-mcm-walnut/70 hover:border-mcm-walnut/20 hover:bg-mcm-paper/55 hover:text-mcm-walnut"
+                                        aria-label="More domain coverage actions"
+                                        disabled={isPanelActionBusy}
+                                      >
+                                        {isResettingAllLists ? (
+                                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                          <EllipsisVertical className="h-3.5 w-3.5" />
+                                        )}
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">More coverage actions</TooltipContent>
+                                </Tooltip>
+                                <DropdownMenuContent align="end" className="w-56">
+                                  <DropdownMenuLabel>Coverage actions</DropdownMenuLabel>
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
                                     disabled={isPanelActionBusy}
+                                    onSelect={() => setIsResetAllDialogOpen(true)}
                                   >
                                     {isResettingAllLists ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      <Loader2 className="h-4 w-4 animate-spin" />
                                     ) : (
-                                      <Trash2 className="h-3.5 w-3.5" />
+                                      <Trash2 className="h-4 w-4" />
                                     )}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  {isResettingAllLists
-                                    ? 'Resetting all configured lists'
-                                    : 'Reset lists for all configured domains'}
-                                </TooltipContent>
-                              </Tooltip>
+                                    {isResettingAllLists
+                                      ? 'Resetting all lists...'
+                                      : 'Reset all configured lists'}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             ) : null}
                           </div>
                         </div>
@@ -1739,10 +1746,10 @@ export function DomainLayerComparisonPanel({
                       return (
                         <TableHead
                           key={`compact-head-${layer.key}`}
-                          className="sticky top-0 z-20 min-w-[190px] border-b-0 bg-transparent px-2 py-0"
+                          className="sticky top-0 z-20 min-w-[180px] border-b-0 bg-transparent px-2 py-0"
                         >
                           <div
-                            className="rounded-[1.2rem] border px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.38)] backdrop-blur"
+                            className="rounded-[0.95rem] border px-3 py-2.5 backdrop-blur"
                             style={{
                               backgroundColor: layerVisual.strongBg,
                               borderColor: layerVisual.border
@@ -2122,7 +2129,7 @@ export function DomainLayerComparisonPanel({
                           }}
                         >
                           <div
-                            className={`flex min-h-[152px] flex-col rounded-[1.2rem] border bg-mcm-paper/95 px-4 py-3 shadow-[0_10px_24px_rgba(119,63,26,0.08)] transition-[transform,box-shadow] duration-150 ${isExpanded ? 'border-mcm-walnut/24 shadow-[0_14px_28px_rgba(119,63,26,0.12)]' : 'border-mcm-walnut/12 group-hover/coverage:-translate-y-[1px]'}`}
+                            className={`flex min-h-[132px] flex-col rounded-[0.95rem] border bg-mcm-paper/88 px-4 py-3 transition-colors duration-150 ${isExpanded ? 'border-mcm-walnut/28 bg-mcm-paper/95' : 'border-mcm-walnut/12'}`}
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0 space-y-1">
@@ -2185,16 +2192,16 @@ export function DomainLayerComparisonPanel({
                             return (
                               <TableCell
                                 key={`summary-${row.key}-${model.layerColumn.key}`}
-                                className={`${StatusTypos.MONO} bg-transparent px-2 py-0 text-center text-[12px] text-mcm-walnut/65 align-top whitespace-normal border-y-0 first:border-l-0 last:border-r-0`}
+                                className={`${StatusTypos.MONO} bg-transparent px-2 py-0 text-center text-[12px] text-mcm-walnut/55 align-top whitespace-normal border-y-0 first:border-l-0 last:border-r-0`}
                               >
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <div
-                                      className="flex min-h-[152px] cursor-default flex-col items-center justify-center rounded-[1.2rem] border border-dashed bg-mcm-paper/34 px-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
-                                      style={{ borderColor: model.layerVisual.border }}
+                                      className="flex h-full min-h-[132px] cursor-default flex-col items-center justify-center rounded-[0.95rem] border border-dashed border-mcm-walnut/10 bg-mcm-paper/18 px-3 text-center opacity-70"
+                                      aria-label={`${model.layerColumn.label} ${row.label} not configured`}
                                     >
                                       <span className="text-base leading-none">—</span>
-                                      <span className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-mcm-walnut/52">
+                                      <span className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-mcm-walnut/45">
                                         not configured
                                       </span>
                                     </div>
@@ -2220,11 +2227,11 @@ export function DomainLayerComparisonPanel({
                               className="bg-transparent px-2 py-0 align-top whitespace-normal border-y-0 first:border-l-0 last:border-r-0"
                             >
                               <div
-                                className="flex min-h-[152px] h-full flex-col rounded-[1.2rem] border px-3 py-3 shadow-[0_10px_24px_rgba(119,63,26,0.08)] transition-[transform,box-shadow] duration-150 group-hover/coverage:-translate-y-[1px]"
+                                className="flex h-full min-h-[132px] flex-col rounded-[0.95rem] border px-3 py-3 transition-colors duration-150"
                                 style={{
                                   background: `linear-gradient(180deg, rgba(255, 247, 233, 0.9), ${model.layerVisual.softBg})`,
                                   borderColor: model.layerVisual.border,
-                                  boxShadow: `inset 3px 0 0 ${model.layerVisual.border}, 0 10px 24px rgba(119, 63, 26, 0.08)`
+                                  boxShadow: `inset 3px 0 0 ${model.layerVisual.border}`
                                 }}
                               >
                                 <div className="flex items-start justify-between gap-3">
@@ -2316,8 +2323,11 @@ export function DomainLayerComparisonPanel({
                                   <div
                                     id={detailRegionId}
                                     data-no-row-toggle="true"
-                                    className="mt-3 flex flex-1 flex-col gap-3 rounded-[1rem] border border-mcm-walnut/12 bg-mcm-paper/60 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]"
+                                    className="mt-3 flex flex-1 flex-col gap-3 rounded-[0.85rem] border border-mcm-walnut/12 bg-mcm-paper/55 p-3"
                                   >
+                                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/58">
+                                      Data freshness
+                                    </div>
                                     {model.symbolComparison ? (
                                       <div
                                         className={`${StatusTypos.MONO} flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10.5px]`}
@@ -2342,6 +2352,9 @@ export function DomainLayerComparisonPanel({
                                         </span>
                                       </div>
                                     )}
+                                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/58">
+                                      Job state
+                                    </div>
                                     <dl
                                       className={`${StatusTypos.MONO} grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[10.5px]`}
                                     >
@@ -2431,6 +2444,9 @@ export function DomainLayerComparisonPanel({
                                       </div>
                                     ) : null}
                                     <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-mcm-walnut/12 pt-3">
+                                      <div className="basis-full text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/58">
+                                        Controls
+                                      </div>
                                       <div className="flex flex-wrap items-center gap-2">
                                         <Button
                                           type="button"

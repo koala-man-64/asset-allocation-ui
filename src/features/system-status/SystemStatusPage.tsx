@@ -1,14 +1,12 @@
 import React, { useCallback, useMemo, useState, lazy, Suspense } from 'react';
 import {
   Activity,
-  ArrowUpRight,
   Layers3,
   RefreshCw,
   ShieldCheck,
   TriangleAlert
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { useSystemStatusViewQuery } from '@/hooks/useSystemStatusView';
 import type {
@@ -20,7 +18,7 @@ import { Skeleton } from '@/app/components/ui/skeleton';
 import { PageLoader } from '@/app/components/common/PageLoader';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
-import type { ManagedContainerJob } from '@/features/system-status/components/JobKillSwitchPanel';
+import type { ManagedContainerJob } from '@/features/system-status/types';
 import type { JobLogStreamTarget } from '@/features/system-status/components/JobLogStreamPanel';
 import type { ResourceSignal } from '@/types/strategy';
 
@@ -69,13 +67,13 @@ function pluralize(count: number, singular: string, plural = `${singular}s`) {
 function getSummaryToneClasses(tone: SummaryTone): string {
   switch (tone) {
     case 'good':
-      return 'border-mcm-teal/35 bg-mcm-paper/85 text-foreground';
+      return 'border-mcm-teal/35 bg-mcm-paper/80 text-foreground';
     case 'watch':
-      return 'border-mcm-mustard/45 bg-mcm-paper/85 text-foreground';
+      return 'border-mcm-mustard/60 bg-mcm-mustard/10 text-foreground';
     case 'risk':
-      return 'border-destructive/35 bg-destructive/5 text-foreground';
+      return 'border-destructive/55 bg-destructive/10 text-foreground shadow-[inset_4px_0_0_rgba(180,35,24,0.55)]';
     default:
-      return 'border-mcm-walnut/20 bg-mcm-paper/78 text-foreground';
+      return 'border-mcm-walnut/14 bg-mcm-paper/62 text-foreground';
   }
 }
 
@@ -132,20 +130,20 @@ function SummaryCard({
 }) {
   return (
     <div
-      className={`rounded-[1.6rem] border px-4 py-4 shadow-[6px_6px_0px_0px_rgba(119,63,26,0.06)] ${getSummaryToneClasses(tone)}`}
+      className={`rounded-[1.15rem] border px-4 py-4 ${getSummaryToneClasses(tone)}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-2">
           <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
             {label}
           </div>
-          <div className="font-display text-2xl tracking-[0.04em] text-foreground">{value}</div>
+          <div className="font-display text-xl tracking-[0.04em] text-foreground">{value}</div>
         </div>
-        <div className="rounded-full border border-mcm-walnut/15 bg-mcm-cream/70 p-2 text-mcm-walnut">
+        <div className="rounded-full border border-mcm-walnut/12 bg-mcm-cream/55 p-2 text-mcm-walnut">
           {icon}
         </div>
       </div>
-      <div className="mt-3 text-sm leading-6 text-muted-foreground">{detail}</div>
+      <div className="mt-3 text-sm leading-5 text-muted-foreground">{detail}</div>
     </div>
   );
 }
@@ -371,14 +369,21 @@ export function SystemStatusPage() {
   const headerRefreshLabel = systemStatusView?.generatedAt
     ? `Updated ${formatTimeAgo(systemStatusView.generatedAt)} ago`
     : 'Link established';
-  const generatedAtLabel = systemStatusView?.generatedAt
-    ? `VIEW UPDATED ${formatTimeAgo(systemStatusView.generatedAt)} AGO`
-    : 'LINK ESTABLISHED';
   const layerCount = displayDataLayers.length;
   const domainCount = displayDataLayers.reduce(
     (total, layer) => total + (layer.domains?.length || 0),
     0
   );
+  const configuredDomainKeys = new Set<string>();
+  for (const layer of displayDataLayers) {
+    for (const domain of layer.domains || []) {
+      const domainKey = normalizeDomainKey(String(domain?.name || ''));
+      if (domainKey) {
+        configuredDomainKeys.add(domainKey);
+      }
+    }
+  }
+  const configuredDomainCount = configuredDomainKeys.size;
   const alertCount = systemHealth.alerts?.length || 0;
   const stressedLayerCount = displayDataLayers.filter((layer) => {
     const status = String(layer.status || '')
@@ -411,9 +416,8 @@ export function SystemStatusPage() {
           <p className="page-kicker">System Status</p>
           <h1 className="page-title">Operations Command Deck</h1>
           <p className="page-subtitle">
-            Professional line-of-sight across medallion health, managed jobs, and runtime controls.
-            The page now follows the same desk-grade structure as the strategy workspace instead of
-            reading like a raw telemetry dump.
+            Live medallion coverage, job state, runtime controls, and console tails for the current
+            operating session.
           </p>
         </div>
 
@@ -425,12 +429,6 @@ export function SystemStatusPage() {
             {overall.toUpperCase()}
           </Badge>
           <Badge variant="outline">{isFetching ? 'Receiving telemetry' : headerRefreshLabel}</Badge>
-          <Button variant="outline" asChild className="gap-2">
-            <Link to="/strategies">
-              Strategy Workspace
-              <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </Button>
           <Button
             className="gap-2"
             onClick={() => void handleRefresh()}
@@ -450,23 +448,11 @@ export function SystemStatusPage() {
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
                   Command Summary
                 </p>
-                <h2 className="font-display text-xl text-foreground">Session Readout</h2>
+                <h2 className="font-display text-xl text-foreground">Risk Readout</h2>
                 <p className="text-sm text-muted-foreground">
-                  Front-load the operational numbers a lead would scan before drilling into domain
-                  cells, runtime controls, or job logs.
+                  Scan failures, warnings, configured coverage, and open alerts before drilling into
+                  the matrix.
                 </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">
-                  {systemStatusView?.sources.systemHealth === 'live-refresh'
-                    ? 'Live refresh feed'
-                    : 'Cached feed'}
-                </Badge>
-                <Badge variant="outline">
-                  {systemStatusView?.sources.metadataSnapshot === 'persisted-snapshot'
-                    ? 'Persisted metadata snapshot'
-                    : 'Snapshot feed'}
-                </Badge>
               </div>
             </div>
           </div>
@@ -477,41 +463,41 @@ export function SystemStatusPage() {
               value={overall.toUpperCase()}
               detail={
                 overallTone === 'risk'
-                  ? 'Operational risk is already showing up in the current tape.'
+                  ? 'Do not treat green downstream cells as reliable until failures clear.'
                   : overallTone === 'watch'
-                    ? 'Stable enough to operate, but not clean enough to ignore.'
-                    : 'Current telemetry is orderly across the primary control surface.'
+                    ? 'Usable, but there is enough friction to keep this page open.'
+                    : 'No blocking risk is visible in the current status view.'
               }
               icon={<OverallIcon className="h-5 w-5" />}
               tone={overallTone}
             />
             <SummaryCard
-              label="Medallion Coverage"
-              value={`${layerCount} / ${domainCount}`}
-              detail={`${pluralize(layerCount, 'layer')} and ${pluralize(domainCount, 'domain')} currently mapped into the status matrix.`}
+              label="Configured Coverage"
+              value={`${domainCount} cells`}
+              detail={`${pluralize(configuredDomainCount, 'domain')} mapped across ${pluralize(layerCount, 'layer')}; ${pluralize(stressedLayerCount, 'layer')} under watch.`}
               icon={<Layers3 className="h-5 w-5" />}
               tone={stressedLayerCount > 0 ? 'watch' : 'neutral'}
             />
             <SummaryCard
-              label="Managed Jobs"
-              value={`${runningJobCount} / ${jobLogStreamJobs.length}`}
+              label="Job Risk"
+              value={`${failedJobCount} fail / ${warningJobCount} warn`}
               detail={
                 failedJobCount > 0
-                  ? `${pluralize(failedJobCount, 'failure')} visible. Resolve those before trusting green surface metrics.`
+                  ? `${pluralize(failedJobCount, 'failure')} visible across ${pluralize(jobLogStreamJobs.length, 'tracked job')}.`
                   : warningJobCount > 0
-                    ? `${pluralize(warningJobCount, 'warning')} visible in current job telemetry.`
-                    : 'No failed jobs visible in the current monitored set.'
+                    ? `${pluralize(warningJobCount, 'warning')} visible; ${pluralize(runningJobCount, 'job')} currently running.`
+                    : `${pluralize(runningJobCount, 'job')} running; no failed jobs visible.`
               }
               icon={<Activity className="h-5 w-5" />}
               tone={failedJobCount > 0 ? 'risk' : warningJobCount > 0 ? 'watch' : 'neutral'}
             />
             <SummaryCard
-              label="Resource Watch"
-              value={String((systemHealth.resources || []).length)}
+              label="Open Alerts"
+              value={String(alertCount)}
               detail={
                 alertCount > 0
                   ? `${pluralize(alertCount, 'alert')} remain open across tracked system signals.`
-                  : 'No open alerts are visible in the current system-health payload.'
+                  : `${pluralize((systemHealth.resources || []).length, 'resource')} checked with no open alert.`
               }
               icon={
                 alertCount > 0 ? (
@@ -558,16 +544,6 @@ export function SystemStatusPage() {
             <JobLogStreamPanel jobs={jobLogStreamJobs} />
           </Suspense>
         </ErrorBoundary>
-      </div>
-
-      {/* Footer Status Line */}
-      <div className="flex justify-end border-t border-dashed border-zinc-800 pt-2 opacity-50">
-        <div className="flex items-center gap-2 font-mono text-[10px]">
-          <span
-            className={`h-2 w-2 rounded-full ${isFetching ? 'bg-cyan-500 animate-pulse' : 'bg-zinc-600'}`}
-          />
-          {isFetching ? 'RECEIVING TELEMETRY...' : generatedAtLabel}
-        </div>
       </div>
     </div>
   );

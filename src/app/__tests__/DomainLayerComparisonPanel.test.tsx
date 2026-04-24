@@ -680,6 +680,19 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     expect(screen.queryByText('Platinum')).not.toBeInTheDocument();
   });
 
+  it('keeps unconfigured cells quiet while configured cells carry the row', async () => {
+    renderPanel({
+      dataLayers: makeLayerTriggerLayers()
+    });
+
+    const emptyCell = await screen.findByLabelText('Silver earnings not configured');
+
+    expect(emptyCell).toHaveTextContent('not configured');
+    expect(emptyCell).toHaveClass('opacity-70');
+    expect(screen.getByText('2 configured')).toBeInTheDocument();
+    expect(screen.getByText('1 empty')).toBeInTheDocument();
+  });
+
   it('triggers all configured jobs for a layer from the medallion header', async () => {
     const user = userEvent.setup();
 

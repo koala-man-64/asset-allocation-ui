@@ -265,9 +265,15 @@ describe('SystemStatusPage', () => {
 
     await screen.findByTestId('mock-domain-layer-coverage-panel');
 
-    expect(screen.getByText(/VIEW UPDATED/i)).toBeInTheDocument();
-    expect(screen.queryByText(/operations brief/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/desk verdict/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Risk Readout')).toBeInTheDocument();
+    expect(screen.getByText('Configured Coverage')).toBeInTheDocument();
+    expect(screen.getByText('Job Risk')).toBeInTheDocument();
+    expect(screen.getByText('Open Alerts')).toBeInTheDocument();
+    expect(screen.queryByText(/VIEW UPDATED/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Session Readout')).not.toBeInTheDocument();
+    expect(screen.queryByText('Live refresh feed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Persisted metadata snapshot')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Strategy Workspace/i })).not.toBeInTheDocument();
     expect(await screen.findByTestId('mock-container-apps-panel')).toBeInTheDocument();
     expect(await screen.findByTestId('mock-job-log-stream-panel')).toBeInTheDocument();
   });
