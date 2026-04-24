@@ -10,6 +10,7 @@ import { useUIStore, UI_STORAGE_KEY } from '@/stores/useUIStore';
 
 vi.mock('lucide-react', () => ({
   Activity: () => <div data-testid="icon-activity" />,
+  BadgeDollarSign: () => <div data-testid="icon-badge-dollar-sign" />,
   Briefcase: () => <div data-testid="icon-briefcase" />,
   Database: () => <div data-testid="icon-database" />,
   Layers3: () => <div data-testid="icon-layers-3" />,
@@ -161,7 +162,8 @@ describe('LeftNavigation', () => {
             '/accounts',
             '/portfolios',
             '/universes',
-            '/rankings'
+            '/rankings',
+            '/trade-desk'
           ]
         }
       });
@@ -191,6 +193,7 @@ describe('LeftNavigation', () => {
         '/portfolios',
         '/universes',
         '/rankings',
+        '/trade-desk',
         '/login'
       ])
     );

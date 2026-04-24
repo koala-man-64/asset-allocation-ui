@@ -287,6 +287,113 @@ const backtestRunsPayload = {
   offset: 0
 };
 
+const tradeFreshnessPayload = {
+  balancesState: 'fresh',
+  positionsState: 'fresh',
+  ordersState: 'fresh',
+  balancesAsOf: NOW,
+  positionsAsOf: NOW,
+  ordersAsOf: NOW,
+  maxAgeSeconds: 300,
+  staleReason: null
+};
+
+const tradeAccountPayload = {
+  accountId: 'acct-paper',
+  name: 'Core Paper',
+  provider: 'alpaca',
+  environment: 'paper',
+  accountNumberMasked: '****1234',
+  baseCurrency: 'USD',
+  readiness: 'ready',
+  readinessReason: null,
+  capabilities: {
+    canReadAccount: true,
+    canReadPositions: true,
+    canReadOrders: true,
+    canReadHistory: true,
+    canPreview: true,
+    canSubmitPaper: true,
+    canSubmitSandbox: false,
+    canSubmitLive: false,
+    canCancel: true,
+    supportsMarketOrders: true,
+    supportsLimitOrders: true,
+    supportsStopOrders: false,
+    supportsFractionalQuantity: false,
+    supportsNotionalOrders: true,
+    supportsEquities: true,
+    supportsEtfs: true,
+    readOnly: false,
+    unsupportedReason: null
+  },
+  cash: 100000,
+  buyingPower: 100000,
+  equity: 125000,
+  openOrderCount: 1,
+  positionCount: 1,
+  unresolvedAlertCount: 0,
+  killSwitchActive: false,
+  lastSyncedAt: NOW,
+  snapshotAsOf: NOW,
+  freshness: tradeFreshnessPayload
+};
+
+const tradeOrderPayload = {
+  orderId: 'order-1',
+  accountId: 'acct-paper',
+  provider: 'alpaca',
+  environment: 'paper',
+  status: 'accepted',
+  symbol: 'MSFT',
+  side: 'buy',
+  orderType: 'market',
+  timeInForce: 'day',
+  assetClass: 'equity',
+  clientRequestId: 'client-1',
+  idempotencyKey: 'idem-1',
+  correlationId: null,
+  providerOrderId: 'alpaca-paper-1',
+  providerCorrelationId: null,
+  quantity: 1,
+  notional: null,
+  limitPrice: null,
+  stopPrice: null,
+  estimatedPrice: null,
+  estimatedNotional: null,
+  filledQuantity: 0,
+  averageFillPrice: null,
+  submittedAt: NOW,
+  acceptedAt: NOW,
+  filledAt: null,
+  cancelledAt: null,
+  expiresAt: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+  statusReason: null,
+  riskChecks: [],
+  reconciliationRequired: false
+};
+
+const tradePreviewPayload = {
+  previewId: 'preview-1',
+  accountId: 'acct-paper',
+  provider: 'alpaca',
+  environment: 'paper',
+  order: { ...tradeOrderPayload, status: 'previewed', providerOrderId: null },
+  generatedAt: NOW,
+  expiresAt: '2026-04-18T14:35:00Z',
+  estimatedCost: null,
+  estimatedFees: 0,
+  cashAfter: null,
+  buyingPowerAfter: null,
+  riskChecks: [],
+  warnings: [],
+  blocked: false,
+  blockReason: null,
+  freshness: tradeFreshnessPayload
+};
+
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({
     status,
@@ -357,6 +464,106 @@ async function handleApiRoute(route: Route) {
 
   if (apiPath === '/data/gold/profile') {
     return json(route, dataProfilePayload);
+  }
+
+  if (apiPath === '/trade-accounts') {
+    return json(route, { accounts: [tradeAccountPayload], generatedAt: NOW });
+  }
+
+  if (apiPath === '/trade-accounts/acct-paper') {
+    return json(route, {
+      account: tradeAccountPayload,
+      restrictions: [],
+      riskLimits: {
+        maxOrderNotional: 50000,
+        maxDailyNotional: 100000,
+        maxShareQuantity: 1000,
+        allowedAssetClasses: ['equity'],
+        allowedOrderTypes: ['market', 'limit'],
+        liveTradingAllowed: false,
+        liveTradingReason: null
+      },
+      unresolvedAlerts: [],
+      recentAuditEvents: [
+        {
+          eventId: 'audit-1',
+          accountId: 'acct-paper',
+          provider: 'alpaca',
+          environment: 'paper',
+          eventType: 'preview',
+          severity: 'info',
+          occurredAt: NOW,
+          actor: 'playwright',
+          orderId: 'order-1',
+          providerOrderId: null,
+          clientRequestId: 'client-1',
+          idempotencyKey: null,
+          statusBefore: null,
+          statusAfter: 'previewed',
+          summary: 'Manual order preview generated.',
+          sanitizedError: null,
+          details: {}
+        }
+      ]
+    });
+  }
+
+  if (apiPath === '/trade-accounts/acct-paper/positions') {
+    return json(route, {
+      accountId: 'acct-paper',
+      positions: [
+        {
+          accountId: 'acct-paper',
+          symbol: 'MSFT',
+          assetClass: 'equity',
+          quantity: 10,
+          marketValue: 1000,
+          averageEntryPrice: 90,
+          lastPrice: 100,
+          costBasis: 900,
+          unrealizedPnl: 100,
+          unrealizedPnlPercent: 0.11,
+          dayPnl: 5,
+          weight: 0.01,
+          asOf: NOW
+        }
+      ],
+      generatedAt: NOW,
+      freshness: tradeFreshnessPayload
+    });
+  }
+
+  if (apiPath === '/trade-accounts/acct-paper/orders') {
+    if (route.request().method() === 'POST') {
+      return json(route, {
+        order: tradeOrderPayload,
+        submitted: true,
+        replayed: false,
+        reconciliationRequired: false,
+        auditEventId: 'audit-2',
+        message: 'accepted'
+      });
+    }
+    return json(route, { accountId: 'acct-paper', orders: [tradeOrderPayload], generatedAt: NOW });
+  }
+
+  if (apiPath === '/trade-accounts/acct-paper/history') {
+    return json(route, { accountId: 'acct-paper', orders: [tradeOrderPayload], generatedAt: NOW });
+  }
+
+  if (apiPath === '/trade-accounts/acct-paper/orders/preview') {
+    return json(route, tradePreviewPayload);
+  }
+
+  if (apiPath === '/trade-accounts/acct-paper/orders/order-1/cancel') {
+    return json(route, {
+      order: { ...tradeOrderPayload, status: 'cancel_pending' },
+      cancelAccepted: true,
+      replayed: false,
+      reconciliationRequired: false,
+      auditEventId: 'audit-3',
+      message: 'cancel accepted'
+    });
   }
 
   return json(route, {}, 404);
