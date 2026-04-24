@@ -32,6 +32,10 @@ import { useJobSuspend } from '@/hooks/useJobSuspend';
 interface Job {
   jobName: string;
   jobType: string;
+  jobCategory?: string;
+  jobKey?: string;
+  jobRole?: string;
+  metadataStatus?: string;
   status: string;
   startTime: string;
   duration?: number;
@@ -149,9 +153,14 @@ export function JobExecutionHistory({ recentJobs }: JobExecutionHistoryProps) {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {getJobTypeIcon(job.jobType)}
-                      <span className="text-sm">{job.jobType}</span>
+                      {getJobTypeIcon(job.jobCategory || job.jobType)}
+                      <span className="text-sm">{job.jobCategory || job.jobType}</span>
                     </div>
+                    {job.jobKey || job.jobRole || job.metadataStatus ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {[job.jobKey, job.jobRole, job.metadataStatus].filter(Boolean).join(' / ')}
+                      </div>
+                    ) : null}
                   </TableCell>
                   <TableCell>{getStatusBadge(job.status)}</TableCell>
                   <TableCell className="font-mono text-sm">

@@ -145,10 +145,15 @@ export function JobMonitor({ recentJobs, jobLinks = {} }: JobMonitorProps) {
                             </Tooltip>
                           )}
                         </div>
-                        <span className="text-xs text-muted-foreground">{job.jobType}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {job.jobCategory || job.jobType}
+                        </span>
                         <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                           <span>Trigger: {job.triggeredBy || 'schedule'}</span>
                           <span>Duration: {formatDuration(job.duration)}</span>
+                          {job.jobKey ? <span>Key: {job.jobKey}</span> : null}
+                          {job.jobRole ? <span>Role: {job.jobRole}</span> : null}
+                          {job.metadataStatus ? <span>Metadata: {job.metadataStatus}</span> : null}
                           {job.recordsProcessed !== undefined && (
                             <span>Records: {formatRecordCount(job.recordsProcessed)}</span>
                           )}

@@ -322,6 +322,9 @@ export const deriveManagedJobName = (layerName?: string | null, domainName?: str
   if (!normalizedLayer || !normalizedDomain || normalizedLayer === 'platinum') {
     return '';
   }
+  if (normalizedLayer === 'gold' && normalizedDomain === 'regime') {
+    return '';
+  }
   return `${normalizedLayer}-${normalizedDomain}-job`;
 };
 
@@ -441,7 +444,7 @@ export const normalizeJobStatus = (value?: string | null): NormalizedJobStatus =
 
 export const hasActiveJobRunningState = (value?: string | null): boolean => {
   const state = normalizeJobStateToken(value);
-  return ACTIVE_JOB_RUNNING_STATE_TOKENS.some((token) => state.includes(token));
+  return ACTIVE_JOB_RUNNING_STATE_TOKENS.some((token) => state === token);
 };
 
 export const isSuspendedJobRunningState = (value?: string | null): boolean =>

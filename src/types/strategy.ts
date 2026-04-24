@@ -35,6 +35,10 @@ export type UniverseConditionOperator = ContractUniverseConditionOperator;
 
 export type UniverseGroupOperator = 'and' | 'or';
 
+export type JobCategory = 'data-pipeline' | 'strategy-compute' | 'operational-support';
+export type JobMetadataSource = 'tags' | 'legacy-catalog' | 'unknown';
+export type JobMetadataStatus = 'valid' | 'fallback' | 'invalid';
+
 export interface UniverseCondition {
   kind: 'condition';
   field: string;
@@ -345,7 +349,14 @@ export interface JobRunMetadata {
 
 export interface JobRun {
   jobName: string;
-  jobType: 'backtest' | 'data-ingest' | 'attribution' | 'risk-calc' | 'portfolio-build';
+  jobType: string;
+  jobCategory?: JobCategory;
+  jobKey?: string;
+  jobRole?: string;
+  triggerOwner?: string;
+  metadataSource?: JobMetadataSource;
+  metadataStatus?: JobMetadataStatus;
+  metadataErrors?: string[];
   status: 'success' | 'warning' | 'failed' | 'running' | 'pending';
   statusCode?: string;
   startTime: string;
@@ -371,6 +382,13 @@ export interface ResourceHealth {
   name: string;
   resourceType: string;
   status: 'healthy' | 'warning' | 'error' | 'unknown';
+  jobCategory?: JobCategory;
+  jobKey?: string;
+  jobRole?: string;
+  triggerOwner?: string;
+  metadataSource?: JobMetadataSource;
+  metadataStatus?: JobMetadataStatus;
+  metadataErrors?: string[];
   lastChecked: string;
   details?: string;
   azureId?: string;

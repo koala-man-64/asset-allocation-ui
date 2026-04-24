@@ -14,7 +14,12 @@ import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import type { ManagedContainerJob } from '@/features/system-status/types';
 import type { JobLogStreamTarget } from '@/features/system-status/components/JobLogStreamPanel';
-import type { ResourceSignal } from '@/types/strategy';
+import type {
+  JobCategory,
+  JobMetadataSource,
+  JobMetadataStatus,
+  ResourceSignal
+} from '@/types/strategy';
 
 // Lazy load components to reduce initial bundle size of the page
 const DomainLayerComparisonPanel = lazy(() =>
@@ -56,12 +61,25 @@ import { normalizeDomainKey } from '@/features/system-status/components/SystemPu
 
 type JobResourceSummary = {
   name: string;
+  jobCategory?: JobCategory | null;
+  jobKey?: string | null;
+  jobRole?: string | null;
+  triggerOwner?: string | null;
+  metadataSource?: JobMetadataSource | null;
+  metadataStatus?: JobMetadataStatus | null;
+  metadataErrors?: string[] | null;
   runningState?: string | null;
   lastModifiedAt?: string | null;
   signals?: ResourceSignal[] | null;
 };
 
 type SummaryTone = 'good' | 'watch' | 'risk' | 'neutral';
+
+const JOB_CATEGORY_LABELS = new Map<JobCategory, string>([
+  ['data-pipeline', 'Data Pipelines'],
+  ['strategy-compute', 'Strategy Compute'],
+  ['operational-support', 'Operational Support']
+]);
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
@@ -185,6 +203,13 @@ export function SystemStatusPage() {
       if (resources.has(jobKey)) continue;
       resources.set(jobKey, {
         name: rawName,
+        jobCategory: resource.jobCategory || null,
+        jobKey: resource.jobKey || null,
+        jobRole: resource.jobRole || null,
+        triggerOwner: resource.triggerOwner || null,
+        metadataSource: resource.metadataSource || null,
+        metadataStatus: resource.metadataStatus || null,
+        metadataErrors: resource.metadataErrors || null,
         runningState: resource.runningState || null,
         lastModifiedAt: resource.lastModifiedAt || null,
         signals: resource.signals || null
@@ -209,6 +234,13 @@ export function SystemStatusPage() {
     for (const resource of jobResourcesByKey.values()) {
       items.push({
         name: resource.name,
+        jobCategory: resource.jobCategory || null,
+        jobKey: resource.jobKey || null,
+        jobRole: resource.jobRole || null,
+        triggerOwner: resource.triggerOwner || null,
+        metadataSource: resource.metadataSource || null,
+        metadataStatus: resource.metadataStatus || null,
+        metadataErrors: resource.metadataErrors || null,
         runningState: resource.runningState || null,
         lastModifiedAt: resource.lastModifiedAt || null,
         signals: resource.signals || null
@@ -263,6 +295,61 @@ export function SystemStatusPage() {
           sortLayerName: layer.name
         });
       }
+    }
+
+    for (const resource of jobResourcesByKey.values()) {
+      const hasStructuredMetadata = Boolean(
+        resource.jobCategory ||
+          resource.jobKey ||
+          resource.jobRole ||
+          resource.metadataSource ||
+          resource.metadataStatus ||
+          resource.metadataErrors?.length
+      );
+      if (!hasStructuredMetadata) continue;
+      const rawJobName = String(resource.name || '').trim();
+      if (!rawJobName) continue;
+      const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();
+      if (items.has(key)) continue;
+      const metadataLabel = [
+        resource.jobCategory ? JOB_CATEGORY_LABELS.get(resource.jobCategory) : '',
+        resource.jobKey,
+        resource.jobRole
+      ]
+        .filter(Boolean)
+        .join(' / ');
+      items.set(key, {
+        name: rawJobName,
+        label: metadataLabel ? `${rawJobName} - ${metadataLabel}` : rawJobName,
+        layerName: null,
+        domainName: null,
+        jobUrl: null,
+        sortLayerName: ''
+      });
+    }
+
+    for (const run of anchoredJobRuns.values()) {
+      const hasStructuredMetadata = Boolean(
+        run.jobCategory ||
+          run.jobKey ||
+          run.jobRole ||
+          run.metadataSource ||
+          run.metadataStatus ||
+          run.metadataErrors?.length
+      );
+      if (!hasStructuredMetadata) continue;
+      const rawJobName = String(run.jobName || '').trim();
+      if (!rawJobName) continue;
+      const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();
+      if (items.has(key)) continue;
+      items.set(key, {
+        name: rawJobName,
+        label: rawJobName,
+        layerName: null,
+        domainName: null,
+        jobUrl: null,
+        sortLayerName: ''
+      });
     }
 
     return Array.from(items.entries())
