@@ -122,9 +122,9 @@ describe('OperationalJobMonitorPanel', () => {
     expect(
       screen.getByRole('heading', { name: /Backtests, Rankings, and Regime/i })
     ).toBeInTheDocument();
-    expect(screen.getByText('aca-job-backtest-runner')).toBeInTheDocument();
-    expect(screen.getByText('aca-job-ranking-materialize')).toBeInTheDocument();
-    expect(screen.getByText('aca-job-regime-refresh')).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /aca-job-backtest-runner/i })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /aca-job-ranking-materialize/i })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /aca-job-regime-refresh/i })).toBeInTheDocument();
     expect(screen.getByText('queued backtest')).toBeInTheDocument();
     expect(screen.getByText('insufficient bars')).toBeInTheDocument();
 
@@ -149,8 +149,8 @@ describe('OperationalJobMonitorPanel', () => {
 
     await user.click(screen.getByRole('button', { name: /Rankings/i }));
 
-    expect(screen.queryByText('aca-job-backtest-runner')).not.toBeInTheDocument();
-    expect(screen.getByText('aca-job-ranking-materialize')).toBeInTheDocument();
+    expect(screen.queryByRole('row', { name: /aca-job-backtest-runner/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /aca-job-ranking-materialize/i })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(jobLogStreamSpy.mock.calls.at(-1)?.[0]).toEqual(

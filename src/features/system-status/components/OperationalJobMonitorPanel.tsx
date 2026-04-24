@@ -58,7 +58,7 @@ const CATEGORY_ICON: Record<OperationalJobCategory, typeof Activity> = {
 };
 
 const CATEGORY_TONE: Record<OperationalJobCategory, string> = {
-  backtest: 'border-mcm-teal/45 bg-mcm-teal/10 text-mcm-teal',
+  backtest: 'border-mcm-teal/55 bg-mcm-teal/10 text-mcm-walnut',
   ranking: 'border-mcm-mustard/55 bg-mcm-mustard/14 text-mcm-walnut',
   regime: 'border-mcm-olive/45 bg-mcm-olive/10 text-mcm-olive',
   'other-operational': 'border-mcm-walnut/25 bg-mcm-paper text-mcm-walnut'
