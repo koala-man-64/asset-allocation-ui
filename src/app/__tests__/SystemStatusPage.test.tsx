@@ -313,6 +313,9 @@ describe('SystemStatusPage', () => {
     expect(screen.queryByText('Session Readout')).not.toBeInTheDocument();
     expect(screen.queryByText('Live refresh feed')).not.toBeInTheDocument();
     expect(screen.queryByText('Persisted metadata snapshot')).not.toBeInTheDocument();
+    expect(screen.queryByText('Job Taxonomy')).not.toBeInTheDocument();
+    expect(screen.queryByText('Runtime Workflow Groups')).not.toBeInTheDocument();
+    expect(screen.queryByText('Metadata Review')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Strategy Workspace/i })).not.toBeInTheDocument();
     expect(await screen.findByTestId('mock-operational-job-monitor')).toBeInTheDocument();
     expect(await screen.findByTestId('mock-container-apps-panel')).toBeInTheDocument();
