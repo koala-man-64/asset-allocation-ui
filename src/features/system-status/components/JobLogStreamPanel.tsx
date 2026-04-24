@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Activity, ExternalLink, Loader2, ScrollText } from 'lucide-react';
 
 import { Badge } from '@/app/components/ui/badge';
@@ -73,6 +73,16 @@ export type JobLogStreamTarget = {
   startTime?: string | null;
   signals?: ResourceSignal[] | null;
 };
+
+export interface JobLogStreamPanelProps {
+  jobs: JobLogStreamTarget[];
+  selectedJobName?: string;
+  onSelectedJobNameChange?: (jobName: string) => void;
+  kicker?: string;
+  title?: string;
+  description?: string;
+  emptyDescription?: string;
+}
 
 type ConsoleTailLine = {
   id: string;
@@ -389,8 +399,20 @@ function isNearBottom(
   return remaining <= thresholdPx;
 }
 
-export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
-  const [selectedJobName, setSelectedJobName] = useState('');
+export function JobLogStreamPanel({
+  jobs,
+  selectedJobName: selectedJobNameProp,
+  onSelectedJobNameChange,
+  kicker = 'Execution Tails',
+  title = 'Job Console Stream',
+  description = 'Select one job to tail live logs. Keep the stream focused on the active execution instead of spreading attention across multiple noisy feeds.',
+  emptyDescription = 'No Azure jobs are available to monitor.'
+}: JobLogStreamPanelProps) {
+  const isSelectedJobControlled = selectedJobNameProp !== undefined;
+  const [internalSelectedJobName, setInternalSelectedJobName] = useState('');
+  const selectedJobName = isSelectedJobControlled
+    ? (selectedJobNameProp ?? '')
+    : internalSelectedJobName;
   const [selectedExecutionName, setSelectedExecutionName] = useState<string | null>(null);
   const [liveSignals, setLiveSignals] = useState<ResourceSignal[] | null>(null);
   const [logState, setLogState] = useState<LogState>({
@@ -402,7 +424,17 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
   const usageRequestControllerRef = useRef<AbortController | null>(null);
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
+  const monitoredJobSelectId = useId();
   const sortedJobs = useMemo(() => sortJobsForDisplay(jobs), [jobs]);
+  const updateSelectedJobName = useCallback(
+    (jobName: string) => {
+      if (!isSelectedJobControlled) {
+        setInternalSelectedJobName(jobName);
+      }
+      onSelectedJobNameChange?.(jobName);
+    },
+    [isSelectedJobControlled, onSelectedJobNameChange]
+  );
   const runningJobCount = useMemo(
     () =>
       sortedJobs.filter(
@@ -424,7 +456,7 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
 
   useEffect(() => {
     if (!sortedJobs.length) {
-      setSelectedJobName('');
+      updateSelectedJobName('');
       setSelectedExecutionName(null);
       setLogState({ lines: [], loading: false, error: null });
       return;
@@ -435,8 +467,8 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
       return;
     }
 
-    setSelectedJobName(sortedJobs[0]?.name ?? '');
-  }, [sortedJobs, selectedJobName]);
+    updateSelectedJobName(sortedJobs[0]?.name ?? '');
+  }, [sortedJobs, selectedJobName, updateSelectedJobName]);
 
   useEffect(() => {
     return () => {
@@ -580,13 +612,13 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
       <Card className="gap-0">
         <CardHeader className="border-b border-border/40">
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-            Execution Tails
+            {kicker}
           </p>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
-            Job Console Stream
+            {title}
           </CardTitle>
-          <CardDescription>No Azure jobs are available to monitor.</CardDescription>
+          <CardDescription>{emptyDescription}</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -605,16 +637,13 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 space-y-1">
             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-              Execution Tails
+              {kicker}
             </p>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5" />
-              Job Console Stream
+              {title}
             </CardTitle>
-            <CardDescription>
-              Select one job to tail live logs. Keep the stream focused on the active execution
-              instead of spreading attention across multiple noisy feeds.
-            </CardDescription>
+            <CardDescription>{description}</CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">{sortedJobs.length} jobs tracked</Badge>
@@ -642,13 +671,17 @@ export function JobLogStreamPanel({ jobs }: { jobs: JobLogStreamTarget[] }) {
         <div className="grid gap-3 lg:grid-cols-[minmax(0,340px)_1fr]">
           <div className="min-w-0 space-y-2">
             <label
-              htmlFor="job-log-stream-select"
+              htmlFor={monitoredJobSelectId}
               className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground"
             >
               Monitored Job
             </label>
-            <Select value={selectedJobName} onValueChange={setSelectedJobName}>
-              <SelectTrigger id="job-log-stream-select" aria-label="Monitored job" className="min-w-0">
+            <Select value={selectedJobName} onValueChange={updateSelectedJobName}>
+              <SelectTrigger
+                id={monitoredJobSelectId}
+                aria-label="Monitored job"
+                className="min-w-0"
+              >
                 <SelectValue placeholder="Select a job" />
               </SelectTrigger>
               <SelectContent>

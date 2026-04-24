@@ -17,6 +17,22 @@ const systemStatusViewPayload = {
         runningState: 'Succeeded',
         lastModifiedAt: NOW,
         signals: []
+      },
+      {
+        name: 'aca-job-backtest-runner',
+        resourceType: 'Microsoft.App/jobs',
+        status: 'healthy',
+        runningState: 'Running',
+        lastModifiedAt: NOW,
+        signals: []
+      },
+      {
+        name: 'aca-job-ranking-materialize',
+        resourceType: 'Microsoft.App/jobs',
+        status: 'healthy',
+        runningState: 'Succeeded',
+        lastModifiedAt: NOW,
+        signals: []
       }
     ],
     recentJobs: [
@@ -26,6 +42,22 @@ const systemStatusViewPayload = {
         status: 'success',
         startTime: NOW,
         duration: 180,
+        triggeredBy: 'playwright'
+      },
+      {
+        jobName: 'aca-job-backtest-runner',
+        jobType: 'backtest',
+        status: 'running',
+        startTime: NOW,
+        duration: 240,
+        triggeredBy: 'playwright'
+      },
+      {
+        jobName: 'aca-job-ranking-materialize',
+        jobType: 'data-ingest',
+        status: 'success',
+        startTime: NOW,
+        duration: 120,
         triggeredBy: 'playwright'
       }
     ],
@@ -200,6 +232,21 @@ const dataProfilePayload = {
   topValues: []
 };
 
+const backtestRunsPayload = {
+  runs: [
+    {
+      run_id: 'run-playwright-queued',
+      run_name: 'playwright queued backtest',
+      status: 'queued',
+      submitted_at: NOW,
+      start_date: '2026-01-01',
+      end_date: '2026-04-18'
+    }
+  ],
+  limit: 8,
+  offset: 0
+};
+
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({
     status,
@@ -258,6 +305,10 @@ async function handleApiRoute(route: Route) {
 
   if (apiPath === '/system/health') {
     return json(route, systemStatusViewPayload.systemHealth);
+  }
+
+  if (apiPath === '/backtests') {
+    return json(route, backtestRunsPayload);
   }
 
   if (apiPath === '/data/gold/market') {
