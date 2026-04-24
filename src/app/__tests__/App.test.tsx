@@ -16,6 +16,22 @@ vi.mock('@/hooks/useRealtime', () => ({
   useRealtime: () => undefined
 }));
 
+vi.mock('@/config', () => ({
+  config: {
+    apiBaseUrl: '/api',
+    authSessionMode: 'bearer',
+    uiAuthEnabled: false,
+    oidcEnabled: false,
+    authRequired: false,
+    oidcAuthority: '',
+    oidcClientId: '',
+    oidcScopes: [],
+    oidcRedirectUri: '',
+    oidcPostLogoutRedirectUri: '',
+    oidcAudience: []
+  }
+}));
+
 vi.mock('@/hooks/useDataQueries', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/hooks/useDataQueries')>();
 
