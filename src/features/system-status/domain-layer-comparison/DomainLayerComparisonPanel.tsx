@@ -1646,9 +1646,6 @@ export function DomainLayerComparisonPanel({
                             <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/58">
                               Domain
                             </div>
-                            <div className="mt-1 text-xs font-medium normal-case tracking-normal text-mcm-walnut/65">
-                              Expand for timing, retries, and controls.
-                            </div>
                           </div>
                           <div className="flex items-center gap-1">
                             {onRefresh || queryPairs.length > 0 ? (

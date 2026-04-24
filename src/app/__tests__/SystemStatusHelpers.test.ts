@@ -19,6 +19,11 @@ describe('SystemStatusHelpers', () => {
     expect(effectiveJobStatus('success', 'Suspended')).toBe('pending');
   });
 
+  it('uses terminal live running state when no recent run is available', () => {
+    expect(effectiveJobStatus(null, 'Failed')).toBe('failed');
+    expect(effectiveJobStatus(undefined, 'Succeeded')).toBe('success');
+  });
+
   it('shares running-state detection across helpers', () => {
     expect(hasActiveJobRunningState('queued')).toBe(true);
     expect(isSuspendedJobRunningState('Suspended')).toBe(true);

@@ -457,7 +457,11 @@ export const effectiveJobStatus = (
   if (isSuspendedJobRunningState(runningState)) {
     return 'pending';
   }
-  return normalizeJobStatus(runStatus);
+  const normalizedRunStatus = normalizeJobStatus(runStatus);
+  if (normalizeJobStateToken(runStatus)) {
+    return normalizedRunStatus;
+  }
+  return normalizeJobStatus(runningState);
 };
 
 export const toJobStatusLabel = (status: string): string => {
