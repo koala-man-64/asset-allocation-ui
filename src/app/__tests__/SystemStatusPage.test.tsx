@@ -171,6 +171,12 @@ function buildSystemStatusView(
         {
           jobName: 'aca-job-market',
           jobType: 'data-ingest',
+          jobCategory: 'data-pipeline',
+          jobKey: 'market',
+          jobRole: 'load',
+          triggerOwner: 'schedule',
+          metadataSource: 'tags',
+          metadataStatus: 'valid',
           status: 'success',
           startTime: MOCK_RUN_TIMESTAMPS.latest,
           triggeredBy: 'azure'
@@ -178,6 +184,12 @@ function buildSystemStatusView(
         {
           jobName: 'aca-job-market',
           jobType: 'data-ingest',
+          jobCategory: 'data-pipeline',
+          jobKey: 'market',
+          jobRole: 'load',
+          triggerOwner: 'schedule',
+          metadataSource: 'tags',
+          metadataStatus: 'valid',
           status: 'running',
           startTime: MOCK_RUN_TIMESTAMPS.older,
           triggeredBy: 'azure'
@@ -210,6 +222,12 @@ function buildSystemStatusView(
           name: 'aca-job-market',
           resourceType: 'Microsoft.App/jobs',
           status: 'healthy',
+          jobCategory: 'data-pipeline',
+          jobKey: 'market',
+          jobRole: 'load',
+          triggerOwner: 'schedule',
+          metadataSource: 'tags',
+          metadataStatus: 'valid',
           lastChecked: MOCK_RUN_TIMESTAMPS.latest,
           runningState: 'Running',
           lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest,
@@ -236,6 +254,12 @@ function buildSystemStatusView(
           name: 'aca-job-zeta',
           resourceType: 'Microsoft.App/jobs',
           status: 'warning',
+          jobCategory: 'data-pipeline',
+          jobKey: 'zeta',
+          jobRole: 'load',
+          triggerOwner: 'schedule',
+          metadataSource: 'legacy-catalog',
+          metadataStatus: 'fallback',
           lastChecked: MOCK_RUN_TIMESTAMPS.latest,
           runningState: 'Suspended',
           lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
@@ -466,6 +490,103 @@ describe('SystemStatusPage', () => {
               unit: 'Bytes'
             })
           ])
+        })
+      ])
+    );
+  });
+
+  it('keeps metadata-only ACA jobs in the log stream without rendering taxonomy groups', async () => {
+    const payload = buildSystemStatusView();
+    vi.mocked(DataService.getSystemStatusView).mockResolvedValue(
+      buildSystemStatusView({
+        systemHealth: {
+          ...payload.systemHealth,
+          resources: [
+            ...(payload.systemHealth.resources || []),
+            {
+              name: 'gold-regime-job',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'healthy',
+              jobCategory: 'strategy-compute',
+              jobKey: 'regime',
+              jobRole: 'publish',
+              triggerOwner: 'schedule',
+              metadataSource: 'tags',
+              metadataStatus: 'valid',
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            },
+            {
+              name: 'platinum-rankings-job',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'healthy',
+              jobCategory: 'strategy-compute',
+              jobKey: 'rankings',
+              jobRole: 'materialize',
+              triggerOwner: 'control-plane',
+              metadataSource: 'tags',
+              metadataStatus: 'valid',
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            },
+            {
+              name: 'backtests-job',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'healthy',
+              jobCategory: 'strategy-compute',
+              jobKey: 'backtests',
+              jobRole: 'execute',
+              triggerOwner: 'control-plane',
+              metadataSource: 'tags',
+              metadataStatus: 'valid',
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            },
+            {
+              name: 'results-reconcile-job',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'warning',
+              jobCategory: 'strategy-compute',
+              jobKey: 'results-reconcile',
+              jobRole: 'execute',
+              triggerOwner: 'schedule',
+              metadataSource: 'tags',
+              metadataStatus: 'invalid',
+              metadataErrors: ['tag values do not match legacy catalog'],
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            }
+          ]
+        }
+      })
+    );
+
+    renderWithProviders(<SystemStatusPage />);
+
+    expect(screen.queryByText('Job Taxonomy')).not.toBeInTheDocument();
+    expect(screen.queryByText('Runtime Workflow Groups')).not.toBeInTheDocument();
+    expect(screen.queryByText('Metadata Review')).not.toBeInTheDocument();
+    expect(screen.queryByText('tag values do not match legacy catalog')).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(jobLogStreamSpy).toHaveBeenCalled();
+    });
+    const jobStreamProps = jobLogStreamSpy.mock.calls.at(-1)?.[0] as {
+      jobs: Array<{ label: string; name: string }>;
+    };
+    expect(jobStreamProps.jobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'results-reconcile-job',
+          label: 'results-reconcile-job - Strategy Compute / results-reconcile / execute'
+        }),
+        expect.objectContaining({
+          name: 'gold-regime-job',
+          label: 'gold-regime-job - Strategy Compute / regime / publish'
         })
       ])
     );

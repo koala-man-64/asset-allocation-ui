@@ -721,7 +721,7 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     ]);
   });
 
-  it('derives the managed gold regime job name when the payload omits it', async () => {
+  it('does not infer the gold regime strategy-compute job from domain rows', async () => {
     const user = userEvent.setup();
 
     renderPanel({
@@ -751,18 +751,12 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     await user.click(await screen.findByRole('button', { name: 'Expand regime details' }));
 
     const runButton = await screen.findByRole('button', { name: 'Run' });
-    await waitFor(() => {
-      expect(runButton).toBeEnabled();
-    });
-    expect(screen.getAllByText('NO RUN').length).toBeGreaterThan(0);
+    expect(runButton).toBeDisabled();
+    expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
 
-    await user.click(runButton);
-
-    await waitFor(() => {
-      expect(triggerJobMock).toHaveBeenCalledWith('gold-regime-job', [
-        ['systemStatusView'],
-        ['systemHealth']
-      ]);
-    });
+    expect(triggerJobMock).not.toHaveBeenCalledWith('gold-regime-job', [
+      ['systemStatusView'],
+      ['systemHealth']
+    ]);
   });
 });
