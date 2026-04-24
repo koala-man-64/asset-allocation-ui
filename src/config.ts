@@ -4,11 +4,14 @@ import { normalizeApiBaseUrl } from '@/utils/apiBaseUrl';
 import { logUiDiagnostic, summarizeUrlForLogs } from '@/services/uiDiagnostics';
 
 type RuntimeUiConfigSource = Partial<UiRuntimeConfig> & {
+  authSessionMode?: string;
   oidcScopes?: string[] | string;
   oidcAudience?: string[] | string;
   oidcPostLogoutRedirectUri?: string;
   uiAuthEnabled?: boolean | string;
 };
+
+export type AuthSessionMode = 'bearer' | 'cookie';
 
 declare global {
   interface Window {
@@ -63,6 +66,18 @@ function resolveScopes(raw: unknown): string[] {
   return normalized ? normalized.split(/\s+/).filter(Boolean) : [];
 }
 
+function resolveAuthSessionMode(...values: unknown[]): AuthSessionMode {
+  for (const value of values) {
+    const normalized = String(value ?? '')
+      .trim()
+      .toLowerCase();
+    if (normalized === 'cookie' || normalized === 'bearer') {
+      return normalized;
+    }
+  }
+  return 'bearer';
+}
+
 function derivePostLogoutRedirectUri(
   explicitPostLogoutRedirectUri: unknown,
   redirectUri: string
@@ -81,44 +96,81 @@ function derivePostLogoutRedirectUri(
   }
 }
 
+function deriveOidcRedirectUri(
+  explicitRedirectUri: unknown,
+  oidcAuthority: string,
+  oidcClientId: string,
+  oidcScopes: string[]
+): string {
+  const explicit = resolveString(explicitRedirectUri);
+  if (explicit) {
+    return explicit;
+  }
+  if (typeof window === 'undefined' || !oidcAuthority || !oidcClientId || oidcScopes.length === 0) {
+    return '';
+  }
+
+  try {
+    return new URL('/auth/callback', window.location.origin).toString();
+  } catch {
+    return '';
+  }
+}
+
 const runtimeConfig = typeof window === 'undefined' ? {} : window.__API_UI_CONFIG__ || {};
 
 const apiBaseUrl = normalizeApiBaseUrl(
   runtimeConfig.apiBaseUrl || import.meta.env.VITE_API_BASE_URL,
   '/api'
 );
+const authSessionMode = resolveAuthSessionMode(
+  runtimeConfig.authSessionMode,
+  import.meta.env.VITE_AUTH_SESSION_MODE
+);
 const oidcAuthority = resolveString(
   runtimeConfig.oidcAuthority,
   import.meta.env.VITE_OIDC_AUTHORITY
 );
 const oidcClientId = resolveString(runtimeConfig.oidcClientId, import.meta.env.VITE_OIDC_CLIENT_ID);
-const oidcRedirectUri = resolveString(runtimeConfig.oidcRedirectUri);
+const oidcScopes = resolveScopes(runtimeConfig.oidcScopes ?? import.meta.env.VITE_OIDC_SCOPES);
+const oidcAudience = resolveScopes(
+  runtimeConfig.oidcAudience ?? import.meta.env.VITE_OIDC_AUDIENCE
+);
+const oidcRedirectUri = deriveOidcRedirectUri(
+  runtimeConfig.oidcRedirectUri,
+  oidcAuthority,
+  oidcClientId,
+  oidcScopes
+);
 const oidcPostLogoutRedirectUri = derivePostLogoutRedirectUri(
   runtimeConfig.oidcPostLogoutRedirectUri,
   oidcRedirectUri
 );
-const oidcScopes = resolveScopes(runtimeConfig.oidcScopes ?? import.meta.env.VITE_OIDC_SCOPES);
-const oidcAudience = resolveScopes(runtimeConfig.oidcAudience ?? import.meta.env.VITE_OIDC_AUDIENCE);
 const uiAuthEnabled = resolveBoolean(
   runtimeConfig.uiAuthEnabled,
   import.meta.env.VITE_UI_AUTH_ENABLED,
   true
 );
-const oidcEnabled = uiAuthEnabled && resolveBoolean(
-  runtimeConfig.oidcEnabled,
-  Boolean(oidcAuthority && oidcClientId && oidcRedirectUri)
-);
-const authRequired = uiAuthEnabled && resolveBoolean(
-  runtimeConfig.authRequired,
-  runtimeConfig.uiAuthEnabled,
-  import.meta.env.VITE_UI_AUTH_ENABLED,
-  true
-);
+const oidcEnabled =
+  uiAuthEnabled &&
+  resolveBoolean(
+    runtimeConfig.oidcEnabled,
+    Boolean(oidcAuthority && oidcClientId && oidcRedirectUri)
+  );
+const authRequired =
+  uiAuthEnabled &&
+  resolveBoolean(
+    runtimeConfig.authRequired,
+    runtimeConfig.uiAuthEnabled,
+    import.meta.env.VITE_UI_AUTH_ENABLED,
+    true
+  );
 
 if (typeof window !== 'undefined') {
   const nextRuntimeConfig: RuntimeUiConfigSource = {
     ...(window.__API_UI_CONFIG__ || {}),
     apiBaseUrl,
+    authSessionMode,
     oidcScopes,
     oidcAudience,
     uiAuthEnabled,
@@ -143,6 +195,7 @@ if (typeof window !== 'undefined') {
     apiBaseUrl,
     apiBaseUrlMode: /^https?:\/\//i.test(apiBaseUrl) ? 'absolute' : 'same-origin',
     apiBaseUrlDetails: summarizeUrlForLogs(apiBaseUrl),
+    authSessionMode,
     uiAuthEnabled,
     oidcEnabled,
     authRequired,
@@ -157,6 +210,7 @@ if (typeof window !== 'undefined') {
 
 export const config = {
   apiBaseUrl,
+  authSessionMode,
   uiAuthEnabled,
   oidcEnabled,
   authRequired,

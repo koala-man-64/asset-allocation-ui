@@ -10,11 +10,8 @@ import { ErrorBoundary } from '@/app/components/common/ErrorBoundary';
 import { LeftNavigation } from '@/app/components/layout/LeftNavigation';
 import { RouteTransitionIndicator } from '@/app/components/layout/RouteTransitionIndicator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/app/components/ui/sidebar';
-import {
-  OidcAccessGate,
-  OidcCallbackPage,
-  OidcLogoutCompletePage
-} from '@/app/components/auth/OidcAccessGate';
+import { AuthPage } from '@/app/components/auth/AuthPage';
+import { RequireSession } from '@/app/components/auth/RequireSession';
 import { AppRoutes } from '@/app/routes';
 import { DEFAULT_APP_ROUTE_PATH } from '@/app/routeRegistry';
 import { Toaster } from '@/app/components/ui/sonner';
@@ -66,16 +63,17 @@ export default function App() {
       <QueryProvider>
         <Routes>
           <Route path="/" element={<Navigate to={DEFAULT_APP_ROUTE_PATH} replace />} />
-          <Route path="/auth/callback" element={<OidcCallbackPage />} />
-          <Route path="/auth/logout-complete" element={<OidcLogoutCompletePage />} />
+          <Route path="/login" element={<AuthPage mode="login" />} />
+          <Route path="/auth/callback" element={<AuthPage mode="callback" />} />
+          <Route path="/auth/logout-complete" element={<AuthPage mode="logout-complete" />} />
           <Route
             path="*"
             element={
               <AppShell>
                 <ErrorBoundary>
-                  <OidcAccessGate>
+                  <RequireSession>
                     <AppRoutes />
-                  </OidcAccessGate>
+                  </RequireSession>
                 </ErrorBoundary>
               </AppShell>
             }

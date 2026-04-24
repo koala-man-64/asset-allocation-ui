@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { AccountInfo } from '@azure/msal-browser';
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
 
@@ -13,10 +13,12 @@ import {
   type InteractiveAuthRequest
 } from '@/services/authTransport';
 import { logUiDiagnostic } from '@/services/uiDiagnostics';
+import { DataService } from '@/services/DataService';
 
 const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
 const POST_LOGOUT_RESTART_PATH_STORAGE_KEY = 'asset-allocation.post-logout-restart-path';
 const DEFAULT_POST_LOGIN_PATH = '/system-status';
+const LOGIN_PATH = '/login';
 const CALLBACK_PATH = '/auth/callback';
 const LOGOUT_COMPLETE_PATH = '/auth/logout-complete';
 const SILENT_AUTH_REDIRECT_PATH = '/auth/silent-callback.html';
@@ -113,6 +115,7 @@ export interface AuthContextType {
   error: string | null;
   interactionReason: string | null;
   interactionRequest: InteractiveAuthRequest | null;
+  getAccessToken: (options?: AccessTokenRequestOptions) => Promise<string | null>;
   signIn: (returnPath?: string) => void;
   signOut: () => void;
   signOutAndRestart: (returnPath?: string) => void;
@@ -120,6 +123,10 @@ export interface AuthContextType {
 
 function isCallbackPath(pathname: string): boolean {
   return pathname === CALLBACK_PATH;
+}
+
+function isLoginPath(pathname: string): boolean {
+  return pathname === LOGIN_PATH;
 }
 
 function isLogoutCompletePath(pathname: string): boolean {
@@ -345,7 +352,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<AuthPhase>(
     enabled && typeof window !== 'undefined' && isCallbackPath(window.location.pathname)
       ? 'redirecting'
-      : enabled && authRequired
+      : enabled && typeof window !== 'undefined' && isLoginPath(window.location.pathname) && authRequired
         ? 'initializing'
         : 'signed-out'
   );
@@ -449,7 +456,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     const pathname = typeof window === 'undefined' ? '' : window.location.pathname;
     const onCallbackPath = isCallbackPath(pathname);
+    const onLoginPath = isLoginPath(pathname);
     const onLogoutCompletePath = isLogoutCompletePath(pathname);
+
+    if (!onLoginPath && !onCallbackPath && !onLogoutCompletePath) {
+      setReady(true);
+      setPhase('signed-out');
+      setError(null);
+      setInteractionReason(null);
+      setInteractionRequest(null);
+      logAuthTransition('bootstrap-skipped-outside-auth-route', {
+        pathname,
+        authRequired
+      });
+      return;
+    }
 
     setReady(false);
     setError(null);
@@ -459,6 +480,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logAuthTransition('bootstrap-start', {
       pathname,
       authRequired,
+      login: onLoginPath,
       callback: onCallbackPath,
       logoutComplete: onLogoutCompletePath
     });
@@ -537,26 +559,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [authRequired, msalSession]);
 
-  useEffect(() => {
-    if (!msalSession) {
-      logAuthTransition('access-token-provider-cleared', {
-        reason: 'msal-session-unavailable'
-      });
-      setAccessTokenProvider(null);
-      return;
-    }
-
-    logAuthTransition('access-token-provider-registered', {
-      account: summarizeAccountForLogs(account),
-      scopes: oidcScopes
-    });
-    setAccessTokenProvider(async (options: AccessTokenRequestOptions = {}) => {
+  const getAccessToken = useCallback(
+    async (options: AccessTokenRequestOptions = {}) => {
       logAuthTransition('access-token-request-start', {
         account: summarizeAccountForLogs(account),
         scopes: oidcScopes,
         forceRefresh: Boolean(options.forceRefresh)
       });
-      if (!account) {
+      if (!account || !msalSession) {
         logAuthTransition(
           'access-token-request-no-account',
           {
@@ -613,7 +623,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           cause: err
         });
       }
+    },
+    [account, msalSession, oidcScopes]
+  );
+
+  useEffect(() => {
+    if (!msalSession) {
+      logAuthTransition('access-token-provider-cleared', {
+        reason: 'msal-session-unavailable'
+      });
+      setAccessTokenProvider(null);
+      return;
+    }
+
+    logAuthTransition('access-token-provider-registered', {
+      account: summarizeAccountForLogs(account),
+      scopes: oidcScopes
     });
+    setAccessTokenProvider(getAccessToken);
 
     return () => {
       logAuthTransition('access-token-provider-cleared', {
@@ -621,7 +648,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       setAccessTokenProvider(null);
     };
-  }, [account, msalSession, oidcScopes]);
+  }, [account, getAccessToken, msalSession, oidcScopes]);
 
   useEffect(() => {
     if (!enabled || !authRequired) {
@@ -722,6 +749,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     void msalSession
       .ensureInitialized()
+      .then(async (instance) => {
+        if (config.authSessionMode === 'cookie') {
+          await DataService.deleteAuthSession().catch((err) => {
+            logAuthTransition(
+              'api-session-delete-failed',
+              {
+                restartReturnPath: restartReturnPath ?? null,
+                error: err
+              },
+              'warn'
+            );
+          });
+        }
+        return instance;
+      })
       .then((instance) => {
         logAuthTransition('sign-out-redirect-dispatched', {
           user: account?.username ?? null,
@@ -773,6 +815,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error,
         interactionReason,
         interactionRequest,
+        getAccessToken,
         signIn,
         signOut,
         signOutAndRestart

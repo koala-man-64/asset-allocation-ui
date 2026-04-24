@@ -35,6 +35,7 @@ describe('apiService cold start handling', () => {
   const windowWithConfig = window as typeof window & {
     __API_UI_CONFIG__?: {
       apiBaseUrl?: string;
+      authSessionMode?: string;
       authRequired?: boolean;
       oidcEnabled?: boolean;
     };
@@ -191,7 +192,6 @@ describe('apiService cold start handling', () => {
 
   it('suppresses interactive reauth loops when /auth/session succeeded recently', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(
         jsonResponse({
           authMode: 'oidc',
@@ -200,6 +200,7 @@ describe('apiService cold start handling', () => {
           grantedRoles: ['AssetAllocation.Access']
         })
       )
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }))
       .mockResolvedValueOnce(new Response('Unauthorized again', { status: 401, statusText: 'Unauthorized' }));
 
@@ -227,6 +228,36 @@ describe('apiService cold start handling', () => {
     expect(firstAttemptHeaders.get('Authorization')).toBe('Bearer test-token');
     expect(secondAttemptHeaders.get('Authorization')).toBe('Bearer test-token');
     expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
+  });
+
+  it('uses cookie credentials and csrf without bearer headers in cookie auth mode', async () => {
+    windowWithConfig.__API_UI_CONFIG__ = {
+      apiBaseUrl: '/api',
+      authRequired: true,
+      oidcEnabled: true,
+      authSessionMode: 'cookie'
+    };
+    Object.defineProperty(document, 'cookie', {
+      configurable: true,
+      value: 'aa_csrf_dev=csrf-token'
+    });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const { request } = await importApiService();
+
+    await expect(
+      request('/auth/session', {
+        method: 'DELETE'
+      })
+    ).resolves.toEqual({});
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(mockAppendAuthHeaders).not.toHaveBeenCalled();
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = init.headers as Headers;
+    expect(init.credentials).toBe('include');
+    expect(headers.get('Authorization')).toBeNull();
+    expect(headers.get('X-CSRF-Token')).toBe('csrf-token');
   });
 
   it('refuses to replay a protected request when a forced refresh yields no bearer token', async () => {

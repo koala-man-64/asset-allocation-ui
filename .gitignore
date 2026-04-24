@@ -16,7 +16,10 @@ yarn-error.log*
 .env
 .env.*
 !.env.template
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
 .idea/
 .DS_Store
 Thumbs.db

@@ -77,6 +77,26 @@ describe('config auth overrides', () => {
     expect(config.oidcEnabled).toBe(true);
   });
 
+  it('derives the callback URI from the local origin when Vite env provides OIDC config', async () => {
+    vi.stubEnv('VITE_UI_AUTH_ENABLED', 'true');
+    vi.stubEnv('VITE_OIDC_AUTHORITY', 'https://login.microsoftonline.com/example');
+    vi.stubEnv('VITE_OIDC_CLIENT_ID', 'spa-client-id');
+    vi.stubEnv('VITE_OIDC_SCOPES', 'api://asset-allocation-api/user_impersonation openid profile');
+    window.__API_UI_CONFIG__ = {
+      apiBaseUrl: '/api'
+    };
+
+    const { config } = await import('./config');
+
+    expect(config.oidcRedirectUri).toBe(
+      new URL('/auth/callback', window.location.origin).toString()
+    );
+    expect(config.oidcPostLogoutRedirectUri).toBe(
+      new URL('/auth/logout-complete', window.location.origin).toString()
+    );
+    expect(config.oidcEnabled).toBe(true);
+  });
+
   it('reads oidcAudience from the Vite env fallback when the bootstrap omits it', async () => {
     vi.stubEnv('VITE_OIDC_AUDIENCE', 'api://asset-allocation-api');
     window.__API_UI_CONFIG__ = {
@@ -86,5 +106,27 @@ describe('config auth overrides', () => {
     const { config } = await import('./config');
 
     expect(config.oidcAudience).toEqual(['api://asset-allocation-api']);
+  });
+
+  it('defaults authSessionMode to bearer and accepts the runtime cookie mode', async () => {
+    window.__API_UI_CONFIG__ = {
+      apiBaseUrl: '/api',
+      authSessionMode: 'cookie'
+    };
+
+    const { config } = await import('./config');
+
+    expect(config.authSessionMode).toBe('cookie');
+  });
+
+  it('falls back to bearer for unknown authSessionMode values', async () => {
+    window.__API_UI_CONFIG__ = {
+      apiBaseUrl: '/api',
+      authSessionMode: 'local-storage'
+    };
+
+    const { config } = await import('./config');
+
+    expect(config.authSessionMode).toBe('bearer');
   });
 });

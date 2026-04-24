@@ -31,6 +31,7 @@ const SUBSCRIPTION_TOPICS = [
 
 const CONTAINER_APPS_QUERY_KEY = ['system', 'container-apps'] as const;
 const REALTIME_TICKET_TIMEOUT_MS = 5_000;
+const CSRF_COOKIE_NAMES = ['__Host-aa_csrf', 'aa_csrf_dev'] as const;
 
 function createRealtimeRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -51,6 +52,25 @@ function buildMissingRealtimeBearerTokenMessage(
     ? 'OIDC token refresh did not produce a bearer token'
     : 'OIDC token acquisition did not produce a bearer token';
   return `${prefix} [requestId=${requestId}] - /realtime/ticket. The UI refused to send the protected API call without authorization.`;
+}
+
+function readCookie(name: string): string {
+  const target = `${name}=`;
+  return document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(target))
+    ?.slice(target.length) ?? '';
+}
+
+function readCsrfToken(): string {
+  for (const name of CSRF_COOKIE_NAMES) {
+    const token = readCookie(name);
+    if (token) {
+      return decodeURIComponent(token);
+    }
+  }
+  return '';
 }
 
 type RealtimeEvent = {
@@ -176,8 +196,10 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
 
     async function fetchRealtimeTicket(): Promise<string | null> {
       const requestId = createRealtimeRequestId();
+      const cookieAuth = config.authSessionMode === 'cookie';
+      const maxAttempts = cookieAuth ? 1 : 2;
 
-      for (let attempt = 0; attempt < 2; attempt += 1) {
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         const forceRefresh = attempt === 1;
 
         if (forceRefresh) {
@@ -190,12 +212,14 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
 
         let headers: Headers;
         try {
-          headers = await appendAuthHeaders(
-            {
-              'X-Request-ID': requestId
-            },
-            forceRefresh ? { forceRefresh: true } : {}
-          );
+          headers = cookieAuth
+            ? new Headers({ 'X-Request-ID': requestId })
+            : await appendAuthHeaders(
+                {
+                  'X-Request-ID': requestId
+                },
+                forceRefresh ? { forceRefresh: true } : {}
+              );
         } catch (error) {
           if (forceRefresh) {
             logRealtimeAuth('silent-recovery-failed', {
@@ -208,7 +232,14 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
           throw error;
         }
 
-        if (config.oidcEnabled && !headers.has('Authorization')) {
+        if (cookieAuth) {
+          const csrfToken = readCsrfToken();
+          if (csrfToken) {
+            headers.set('X-CSRF-Token', csrfToken);
+          }
+        }
+
+        if (config.oidcEnabled && !cookieAuth && !headers.has('Authorization')) {
           const error = new Error(
             buildMissingRealtimeBearerTokenMessage(requestId, { forceRefresh })
           );
@@ -232,7 +263,8 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
           {
             method: 'POST',
             headers,
-            cache: 'no-store'
+            cache: 'no-store',
+            credentials: cookieAuth ? 'include' : undefined
           },
           {
             timeoutMs: REALTIME_TICKET_TIMEOUT_MS,
@@ -258,7 +290,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
           return ticket;
         }
 
-        if (response.status === 401 && !forceRefresh) {
+        if (response.status === 401 && !cookieAuth && !forceRefresh) {
           continue;
         }
 

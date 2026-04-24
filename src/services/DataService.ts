@@ -86,6 +86,27 @@ export const DataService = {
     }
   },
 
+  async createAuthSessionWithBearerToken(
+    accessToken: string
+  ): Promise<ResponseWithMeta<AuthSessionStatus>> {
+    try {
+      const response = await apiService.createAuthSessionWithBearerToken(accessToken);
+      return response;
+    } catch (error) {
+      console.error('[DataService] createAuthSessionWithBearerToken error', error);
+      throw error;
+    }
+  },
+
+  async deleteAuthSession(): Promise<Record<string, never>> {
+    try {
+      return await apiService.deleteAuthSession();
+    } catch (error) {
+      console.error('[DataService] deleteAuthSession error', error);
+      throw error;
+    }
+  },
+
   getDomainMetadata(
     layer: 'bronze' | 'silver' | 'gold' | 'platinum',
     domain: string,

@@ -27,6 +27,7 @@ const API_REQUEST_RETRY_BASE_DELAY_MS = 500;
 const API_REQUEST_RETRY_MAX_DELAY_MS = 4000;
 const AUTH_SESSION_STATUS_ENDPOINT = '/auth/session';
 const RECENT_AUTH_SESSION_VALIDATION_WINDOW_MS = 60_000;
+const CSRF_COOKIE_NAMES = ['__Host-aa_csrf', 'aa_csrf_dev'] as const;
 
 const apiWarmupAttempted = new Set<string>();
 const apiWarmupInFlight = new Map<string, Promise<void>>();
@@ -124,7 +125,53 @@ function buildBrowserSessionReplayHeaders(headers: Headers): Headers {
 }
 
 function requiresOidcBearerToken(endpoint: string): boolean {
-  return uiConfig.oidcEnabled && endpoint !== AUTH_SESSION_STATUS_ENDPOINT;
+  return (
+    uiConfig.oidcEnabled &&
+    uiConfig.authSessionMode !== 'cookie' &&
+    endpoint !== AUTH_SESSION_STATUS_ENDPOINT
+  );
+}
+
+function usesCookieAuth(headers: Headers): boolean {
+  return uiConfig.authSessionMode === 'cookie' && !headers.has('Authorization');
+}
+
+function shouldWarmUpBeforeRequest(endpoint: string): boolean {
+  return endpoint !== AUTH_SESSION_STATUS_ENDPOINT && endpoint !== '/realtime/ticket';
+}
+
+function readCookie(name: string): string {
+  if (typeof document === 'undefined') {
+    return '';
+  }
+
+  const target = `${name}=`;
+  return document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(target))
+    ?.slice(target.length) ?? '';
+}
+
+function readCsrfToken(): string {
+  for (const name of CSRF_COOKIE_NAMES) {
+    const token = readCookie(name);
+    if (token) {
+      return decodeURIComponent(token);
+    }
+  }
+  return '';
+}
+
+function appendCookieAuthHeaders(headers: Headers, method: string): Headers {
+  const nextHeaders = new Headers(headers);
+  if (!isSafeReplayMethod(method) && !nextHeaders.has('X-CSRF-Token')) {
+    const csrfToken = readCsrfToken();
+    if (csrfToken) {
+      nextHeaders.set('X-CSRF-Token', csrfToken);
+    }
+  }
+  return nextHeaders;
 }
 
 function isRetryableStatusCode(statusCode: number): boolean {
@@ -380,7 +427,9 @@ async function performRequest<T>(
   if (!requestHeaders.has('X-Request-ID')) {
     requestHeaders.set('X-Request-ID', createRequestId());
   }
-  let authHeaders = await appendAuthHeaders(requestHeaders);
+  let authHeaders = usesCookieAuth(requestHeaders)
+    ? appendCookieAuthHeaders(requestHeaders, requestMethod)
+    : await appendAuthHeaders(requestHeaders);
   const requestId = authHeaders.get('X-Request-ID') || '';
   if (requiresOidcBearerToken(endpoint) && !authHeaders.has('Authorization')) {
     const error = new Error(buildMissingBearerTokenMessage(endpoint, requestId));
@@ -397,6 +446,7 @@ async function performRequest<T>(
     requestId,
     apiBaseUrl,
     apiBaseUrlMode: /^https?:\/\//i.test(apiBaseUrl) ? 'absolute' : 'same-origin',
+    authSessionMode: uiConfig.authSessionMode,
     url: summarizeUrlForLogs(url),
     allowSilentAuthRecovery,
     retryAttempts: maxAttempts,
@@ -406,7 +456,9 @@ async function performRequest<T>(
     requestHeaders: summarizeHeadersForLogs(requestHeaders),
     outboundHeaders: summarizeHeadersForLogs(authHeaders)
   });
-  await warmUpApiOnce(apiBaseUrl);
+  if (shouldWarmUpBeforeRequest(endpoint)) {
+    await warmUpApiOnce(apiBaseUrl);
+  }
 
   let retryDelayMs = API_REQUEST_RETRY_BASE_DELAY_MS;
   let response: Response | null = null;
@@ -433,8 +485,12 @@ async function performRequest<T>(
       response = await fetchWithOptionalTimeout(
         url,
         {
+          ...customConfig,
           headers: authHeaders,
-          ...customConfig
+          credentials:
+            uiConfig.authSessionMode === 'cookie'
+              ? 'include'
+              : customConfig.credentials
         },
         {
           timeoutMs,
@@ -499,7 +555,12 @@ async function performRequest<T>(
       break;
     }
 
-    if (response.status === 401 && allowSilentAuthRecovery && !attemptedSilentAuthRecovery) {
+    if (
+      uiConfig.authSessionMode !== 'cookie' &&
+      response.status === 401 &&
+      allowSilentAuthRecovery &&
+      !attemptedSilentAuthRecovery
+    ) {
       attemptedSilentAuthRecovery = true;
       logAuthRecovery('silent-recovery-start', {
         endpoint,
@@ -542,6 +603,7 @@ async function performRequest<T>(
     }
 
     if (
+      uiConfig.authSessionMode !== 'cookie' &&
       response.status === 401 &&
       allowSilentAuthRecovery &&
       !attemptedBrowserSessionReplay &&
@@ -1197,6 +1259,23 @@ export const apiService = {
 
   getAuthSessionStatusWithMeta(): Promise<ResponseWithMeta<AuthSessionStatus>> {
     return requestWithMeta<AuthSessionStatus>('/auth/session');
+  },
+
+  createAuthSessionWithBearerToken(accessToken: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
+    return requestWithMeta<AuthSessionStatus>('/auth/session', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
+      retryOnStatusCodes: false
+    });
+  },
+
+  deleteAuthSession(): Promise<Record<string, never>> {
+    return request<Record<string, never>>('/auth/session', {
+      method: 'DELETE',
+      retryOnStatusCodes: false
+    });
   },
 
   getDomainMetadata(
