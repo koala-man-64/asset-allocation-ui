@@ -3,7 +3,10 @@ import type { UiRuntimeConfig } from '@asset-allocation/contracts';
 import { normalizeApiBaseUrl } from '@/utils/apiBaseUrl';
 import { logUiDiagnostic, summarizeUrlForLogs } from '@/services/uiDiagnostics';
 
-type RuntimeUiConfigSource = Partial<UiRuntimeConfig> & {
+type RuntimeUiConfigSource = Omit<
+  Partial<UiRuntimeConfig>,
+  'authSessionMode' | 'oidcScopes' | 'oidcAudience' | 'oidcPostLogoutRedirectUri' | 'uiAuthEnabled'
+> & {
   authSessionMode?: string;
   oidcScopes?: string[] | string;
   oidcAudience?: string[] | string;
