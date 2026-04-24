@@ -3,7 +3,15 @@
 import type { UiRuntimeConfig } from '@asset-allocation/contracts';
 
 interface Window {
-  __API_UI_CONFIG__?: Partial<UiRuntimeConfig> & {
+  __API_UI_CONFIG__?: Omit<
+    Partial<UiRuntimeConfig>,
+    | 'authSessionMode'
+    | 'oidcScopes'
+    | 'oidcAudience'
+    | 'oidcPostLogoutRedirectUri'
+    | 'uiAuthEnabled'
+  > & {
+    authSessionMode?: string;
     oidcScopes?: string[] | string;
     oidcAudience?: string[] | string;
     oidcPostLogoutRedirectUri?: string;
