@@ -230,6 +230,58 @@ describe('apiService cold start handling', () => {
     expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
   });
 
+  it('does not reset the OIDC session when recent /auth/session validation precedes a missing forced-refresh token', async () => {
+    mockAppendAuthHeaders.mockImplementationOnce(async (headersInput?: HeadersInit) => {
+      const headers = new Headers(headersInput);
+      headers.set('Authorization', 'Bearer session-token');
+      return headers;
+    });
+    mockAppendAuthHeaders.mockImplementationOnce(async (headersInput?: HeadersInit) => {
+      const headers = new Headers(headersInput);
+      headers.set('Authorization', 'Bearer stale-token');
+      return headers;
+    });
+    mockAppendAuthHeaders.mockImplementationOnce(async (headersInput?: HeadersInit) => {
+      return new Headers(headersInput);
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          authMode: 'oidc',
+          subject: 'user-123',
+          requiredRoles: ['AssetAllocation.Access'],
+          grantedRoles: ['AssetAllocation.Access']
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(
+        new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' })
+      );
+
+    const { request } = await importApiService();
+
+    await expect(request('/auth/session')).resolves.toEqual(
+      expect.objectContaining({
+        authMode: 'oidc',
+        subject: 'user-123'
+      })
+    );
+
+    await expect(request('/system/status-view')).rejects.toThrow(
+      /Interactive sign-in was suppressed because \/auth\/session succeeded recently/i
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2]?.[0]).toContain('/api/system/status-view');
+    expect(mockAppendAuthHeaders).toHaveBeenNthCalledWith(
+      3,
+      expect.any(Headers),
+      expect.objectContaining({ forceRefresh: true })
+    );
+    expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
+  });
+
   it('uses cookie credentials and csrf without bearer headers in cookie auth mode', async () => {
     windowWithConfig.__API_UI_CONFIG__ = {
       apiBaseUrl: '/api',

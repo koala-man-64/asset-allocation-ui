@@ -33,8 +33,12 @@ const apiWarmupAttempted = new Set<string>();
 const apiWarmupInFlight = new Map<string, Promise<void>>();
 let lastSuccessfulAuthSessionValidationAt = 0;
 
-function logAuthRecovery(event: string, detail: Record<string, unknown> = {}): void {
-  logUiDiagnostic('AuthRecovery', event, detail);
+function logAuthRecovery(
+  event: string,
+  detail: Record<string, unknown> = {},
+  level: 'info' | 'warn' | 'error' = 'info'
+): void {
+  logUiDiagnostic('AuthRecovery', event, detail, level);
 }
 
 function logApiRequest(
@@ -367,6 +371,54 @@ export class ApiError extends Error {
   }
 }
 
+async function buildRecentSessionSuppressedApiError(
+  endpoint: string,
+  method: string,
+  requestId: string,
+  response: Response,
+  recoveryAttempt: number,
+  knownErrorBody?: string
+): Promise<ApiError | null> {
+  const recentSessionValidationAgeMs = getRecentAuthSessionValidationAgeMs(endpoint);
+  if (recentSessionValidationAgeMs === null) {
+    return null;
+  }
+
+  let errorBody = knownErrorBody ?? '';
+  if (knownErrorBody === undefined) {
+    try {
+      errorBody = await response.clone().text();
+    } catch (error) {
+      logAuthRecovery(
+        'suppressed-reauth-error-body-unavailable',
+        {
+          endpoint,
+          method,
+          requestId,
+          status: response.status,
+          recoveryAttempt,
+          error
+        },
+        'warn'
+      );
+    }
+  }
+
+  logAuthRecovery('interactive-reauth-suppressed', {
+    endpoint,
+    method,
+    requestId,
+    status: response.status,
+    recoveryAttempt,
+    recentSessionValidationAgeMs
+  });
+
+  return new ApiError(
+    response.status,
+    buildRecentSessionSuppressedAuthMessage(response, requestId, errorBody)
+  );
+}
+
 export interface RequestMeta {
   requestId: string;
   status: number;
@@ -582,6 +634,17 @@ async function performRequest<T>(
             error: error.message
           });
           if (hasInteractiveAuthHandler()) {
+            const suppressedAuthError = await buildRecentSessionSuppressedApiError(
+              endpoint,
+              requestMethod,
+              requestId,
+              response,
+              1
+            );
+            if (suppressedAuthError) {
+              throw suppressedAuthError;
+            }
+
             await requestInteractiveReauth({
               reason: error.message,
               source: 'silent-auth-recovery-missing-token',
@@ -670,20 +733,16 @@ async function performRequest<T>(
       });
     }
     if (response.status === 401 && hasInteractiveAuthHandler()) {
-      const recentSessionValidationAgeMs = getRecentAuthSessionValidationAgeMs(endpoint);
-      if (recentSessionValidationAgeMs !== null) {
-        logAuthRecovery('interactive-reauth-suppressed', {
-          endpoint,
-          method: requestMethod,
-          requestId,
-          status: response.status,
-          recoveryAttempt: attemptedSilentAuthRecovery ? 1 : 0,
-          recentSessionValidationAgeMs
-        });
-        throw new ApiError(
-          response.status,
-          buildRecentSessionSuppressedAuthMessage(response, requestId, errorBody)
-        );
+      const suppressedAuthError = await buildRecentSessionSuppressedApiError(
+        endpoint,
+        requestMethod,
+        requestId,
+        response,
+        attemptedSilentAuthRecovery ? 1 : 0,
+        errorBody
+      );
+      if (suppressedAuthError) {
+        throw suppressedAuthError;
       }
 
       const recoveryAttempt = attemptedSilentAuthRecovery ? 1 : 0;
