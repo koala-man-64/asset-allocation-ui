@@ -10,6 +10,7 @@ import {
   Globe,
   Landmark,
   Layers3,
+  LogIn,
   Orbit,
   ScanSearch,
   SlidersHorizontal,
@@ -19,10 +20,17 @@ import {
 
 import { STOCK_DETAIL_BASE_PATH, STOCK_DETAIL_ROUTE } from '@/features/stocks/stockRoutes';
 
-export type NavSectionKey = 'market-intelligence' | 'live-operations';
+export type NavSectionKey = 'market-intelligence' | 'live-operations' | 'access';
 
 export interface AppRouteNavigationMeta {
   path?: string;
+  label: string;
+  icon: ElementType;
+  sectionKey: NavSectionKey;
+}
+
+export interface AppNavigationItemDefinition {
+  path: string;
   label: string;
   icon: ElementType;
   sectionKey: NavSectionKey;
@@ -39,7 +47,8 @@ export const DEFAULT_APP_ROUTE_PATH = '/system-status';
 
 export const NAV_SECTION_TITLES: Record<NavSectionKey, string> = {
   'market-intelligence': 'MARKET INTELLIGENCE',
-  'live-operations': 'LIVE OPERATIONS'
+  'live-operations': 'LIVE OPERATIONS',
+  access: 'ACCESS'
 };
 
 export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
@@ -291,4 +300,31 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
       sectionKey: 'live-operations'
     }
   }
+];
+
+const NAVIGATION_ONLY_ITEMS: AppNavigationItemDefinition[] = [
+  {
+    path: '/login',
+    label: 'Login',
+    icon: LogIn,
+    sectionKey: 'access'
+  }
+];
+
+export const APP_NAVIGATION_REGISTRY: AppNavigationItemDefinition[] = [
+  ...APP_ROUTE_REGISTRY.flatMap((route) => {
+    if (!route.nav) {
+      return [];
+    }
+
+    return [
+      {
+        path: route.nav.path ?? route.path,
+        label: route.nav.label,
+        icon: route.nav.icon,
+        sectionKey: route.nav.sectionKey
+      }
+    ];
+  }),
+  ...NAVIGATION_ONLY_ITEMS
 ];

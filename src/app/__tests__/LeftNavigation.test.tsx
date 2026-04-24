@@ -14,6 +14,7 @@ vi.mock('lucide-react', () => ({
   Database: () => <div data-testid="icon-database" />,
   Layers3: () => <div data-testid="icon-layers-3" />,
   Landmark: () => <div data-testid="icon-landmark" />,
+  LogIn: () => <div data-testid="icon-login" />,
   Target: () => <div data-testid="icon-target" />,
   Folder: () => <div data-testid="icon-folder" />,
   Globe: () => <div data-testid="icon-globe" />,
@@ -121,6 +122,7 @@ describe('LeftNavigation', () => {
       'aria-current',
       'page'
     );
+    expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login');
     expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument();
     expect(screen.getByText('UPTIME CLOCK')).toBeInTheDocument();
   });
@@ -141,6 +143,7 @@ describe('LeftNavigation', () => {
         pinnedNavPaths: ['/strategies', '/system-status'],
         navOrderBySection: {
           'market-intelligence': ['/stock-detail', '/stock-explorer'],
+          access: ['/login'],
           'live-operations': [
             '/postgres-explorer',
             '/data-explorer',
@@ -187,7 +190,8 @@ describe('LeftNavigation', () => {
         '/accounts',
         '/portfolios',
         '/universes',
-        '/rankings'
+        '/rankings',
+        '/login'
       ])
     );
     expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute(

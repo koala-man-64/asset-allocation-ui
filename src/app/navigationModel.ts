@@ -1,5 +1,9 @@
 import type { ElementType } from 'react';
-import { APP_ROUTE_REGISTRY, NAV_SECTION_TITLES, type NavSectionKey } from '@/app/routeRegistry';
+import {
+  APP_NAVIGATION_REGISTRY,
+  NAV_SECTION_TITLES,
+  type NavSectionKey
+} from '@/app/routeRegistry';
 export type { NavSectionKey } from '@/app/routeRegistry';
 export type NavZoneKey = NavSectionKey | 'pinned';
 
@@ -22,17 +26,17 @@ export const NAV_SECTIONS: NavSection[] = Object.entries(NAV_SECTION_TITLES).map
   ([sectionKey, title]) => ({
     key: sectionKey as NavSectionKey,
     title,
-    items: APP_ROUTE_REGISTRY.flatMap((route) => {
-      if (!route.nav || route.nav.sectionKey !== sectionKey) {
+    items: APP_NAVIGATION_REGISTRY.flatMap((item) => {
+      if (item.sectionKey !== sectionKey) {
         return [];
       }
 
       return [
         {
-          path: route.nav.path ?? route.path,
-          label: route.nav.label,
-          icon: route.nav.icon as ElementType,
-          sectionKey: route.nav.sectionKey
+          path: item.path,
+          label: item.label,
+          icon: item.icon as ElementType,
+          sectionKey: item.sectionKey
         }
       ];
     })

@@ -32,6 +32,7 @@ describe('navigationModel', () => {
     expect(normalizedOrder['live-operations']).toContain('/accounts');
     expect(normalizedOrder['live-operations']).toContain('/portfolios');
     expect(normalizedOrder['live-operations']).toContain('/rankings');
+    expect(normalizedOrder.access).toEqual(['/login']);
   });
 
   it('preserves pinned slots when reordering visible section items', () => {
