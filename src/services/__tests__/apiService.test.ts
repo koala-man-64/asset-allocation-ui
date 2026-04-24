@@ -260,7 +260,7 @@ describe('apiService cold start handling', () => {
     expect(headers.get('X-CSRF-Token')).toBe('csrf-token');
   });
 
-  it('refuses to replay a protected request when a forced refresh yields no bearer token', async () => {
+  it('resets the OIDC session when a forced refresh yields no bearer token', async () => {
     mockAppendAuthHeaders.mockImplementationOnce(async (headersInput?: HeadersInit) => {
       const headers = new Headers(headersInput);
       headers.set('Authorization', 'Bearer stale-token');
@@ -278,9 +278,7 @@ describe('apiService cold start handling', () => {
 
     const { request } = await importApiService();
 
-    await expect(request('/system/status-view')).rejects.toThrow(
-      /OIDC token refresh did not produce a bearer token/i
-    );
+    await expect(request('/system/status-view')).rejects.toThrow('reauth-required');
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(mockAppendAuthHeaders).toHaveBeenNthCalledWith(
@@ -288,7 +286,17 @@ describe('apiService cold start handling', () => {
       expect.any(Headers),
       expect.objectContaining({ forceRefresh: true })
     );
-    expect(mockRequestInteractiveReauth).not.toHaveBeenCalled();
+    expect(mockRequestInteractiveReauth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: expect.stringMatching(/OIDC token refresh did not produce a bearer token/i),
+        source: 'silent-auth-recovery-missing-token',
+        endpoint: '/system/status-view',
+        status: 401,
+        recoveryAttempt: 1,
+        requestId: expect.any(String),
+        resetOidcSession: true
+      })
+    );
   });
 
   it('fails fast before the network call when browser OIDC is enabled and no bearer token is available', async () => {
