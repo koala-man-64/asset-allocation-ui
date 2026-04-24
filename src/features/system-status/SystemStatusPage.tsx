@@ -532,7 +532,7 @@ export function SystemStatusPage() {
         </ErrorBoundary>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)]">
+      <div className="grid gap-6">
         <ErrorBoundary>
           <Suspense fallback={<Skeleton className="h-[220px] w-full rounded-xl bg-muted/20" />}>
             <ContainerAppsPanel />
