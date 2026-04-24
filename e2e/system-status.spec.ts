@@ -31,6 +31,11 @@ test('desktop smoke covers shell navigation, collapse state, and system-status a
 
   await expect(page).toHaveURL(/\/system-status$/);
   await expect(page.getByRole('heading', { name: 'Operations Command Deck' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Backtests, Rankings, and Regime Workflows' })
+  ).toBeVisible();
+  await expect(page.getByText('aca-job-backtest-runner').first()).toBeVisible();
+  await expect(page.getByText('aca-job-market-bronze').first()).toBeVisible();
 
   const collapseButton = page.getByRole('button', { name: 'Collapse navigation' });
   await collapseButton.click();

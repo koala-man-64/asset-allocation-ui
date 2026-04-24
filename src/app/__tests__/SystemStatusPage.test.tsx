@@ -12,14 +12,16 @@ import { DataService } from '@/services/DataService';
 import type { SystemStatusViewResponse } from '@/services/apiService';
 import type { DataLayer } from '@/types/strategy';
 
-const { MOCK_RUN_TIMESTAMPS, domainLayerCoverageSpy, jobLogStreamSpy } = vi.hoisted(() => ({
-  MOCK_RUN_TIMESTAMPS: {
-    latest: '2026-03-11T12:00:00.000Z',
-    older: '2026-03-10T12:00:00.000Z'
-  },
-  domainLayerCoverageSpy: vi.fn(),
-  jobLogStreamSpy: vi.fn()
-}));
+const { MOCK_RUN_TIMESTAMPS, domainLayerCoverageSpy, jobLogStreamSpy, operationalJobSpy } =
+  vi.hoisted(() => ({
+    MOCK_RUN_TIMESTAMPS: {
+      latest: '2026-03-11T12:00:00.000Z',
+      older: '2026-03-10T12:00:00.000Z'
+    },
+    domainLayerCoverageSpy: vi.fn(),
+    jobLogStreamSpy: vi.fn(),
+    operationalJobSpy: vi.fn()
+  }));
 
 vi.mock('@/services/DataService', () => ({
   DataService: {
@@ -46,6 +48,13 @@ vi.mock('@/features/system-status/components/JobLogStreamPanel', () => ({
   JobLogStreamPanel: (props: unknown) => {
     jobLogStreamSpy(props);
     return <div data-testid="mock-job-log-stream-panel">Mock Job Log Stream Panel</div>;
+  }
+}));
+
+vi.mock('@/features/system-status/components/OperationalJobMonitorPanel', () => ({
+  OperationalJobMonitorPanel: (props: unknown) => {
+    operationalJobSpy(props);
+    return <div data-testid="mock-operational-job-monitor">Mock Operational Job Monitor</div>;
   }
 }));
 
@@ -179,6 +188,20 @@ function buildSystemStatusView(
           status: 'success',
           startTime: MOCK_RUN_TIMESTAMPS.latest,
           triggeredBy: 'azure'
+        },
+        {
+          jobName: 'aca-job-backtest-runner',
+          jobType: 'backtest',
+          status: 'running',
+          startTime: MOCK_RUN_TIMESTAMPS.latest,
+          triggeredBy: 'manual'
+        },
+        {
+          jobName: 'aca-job-ranking-materialize',
+          jobType: 'data-ingest',
+          status: 'success',
+          startTime: MOCK_RUN_TIMESTAMPS.latest,
+          triggeredBy: 'api'
         }
       ],
       alerts: [],
@@ -216,6 +239,22 @@ function buildSystemStatusView(
           lastChecked: MOCK_RUN_TIMESTAMPS.latest,
           runningState: 'Suspended',
           lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+        },
+        {
+          name: 'aca-job-backtest-runner',
+          resourceType: 'Microsoft.App/jobs',
+          status: 'healthy',
+          lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+          runningState: 'Running',
+          lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+        },
+        {
+          name: 'aca-job-regime-refresh',
+          resourceType: 'Microsoft.App/jobs',
+          status: 'healthy',
+          lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+          runningState: 'Succeeded',
+          lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
         }
       ]
     },
@@ -235,6 +274,7 @@ describe('SystemStatusPage', () => {
     vi.restoreAllMocks();
     domainLayerCoverageSpy.mockClear();
     jobLogStreamSpy.mockClear();
+    operationalJobSpy.mockClear();
   });
 
   const createQueryClient = () =>
@@ -274,6 +314,7 @@ describe('SystemStatusPage', () => {
     expect(screen.queryByText('Live refresh feed')).not.toBeInTheDocument();
     expect(screen.queryByText('Persisted metadata snapshot')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Strategy Workspace/i })).not.toBeInTheDocument();
+    expect(await screen.findByTestId('mock-operational-job-monitor')).toBeInTheDocument();
     expect(await screen.findByTestId('mock-container-apps-panel')).toBeInTheDocument();
     expect(await screen.findByTestId('mock-job-log-stream-panel')).toBeInTheDocument();
   });
@@ -346,6 +387,46 @@ describe('SystemStatusPage', () => {
     expect(coverageOrder).toEqual(['alpha', 'market', 'zeta']);
   });
 
+  it('routes non-domain jobs to the operational monitor without leaking domain jobs', async () => {
+    renderWithProviders(<SystemStatusPage />);
+
+    await waitFor(() => {
+      expect(operationalJobSpy).toHaveBeenCalled();
+    });
+
+    const operationalProps = operationalJobSpy.mock.calls.at(-1)?.[0] as {
+      jobs: Array<{ name: string; category: string }>;
+    };
+    const operationalNames = operationalProps.jobs.map((job) => job.name);
+
+    expect(operationalProps.jobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'aca-job-backtest-runner',
+          category: 'backtest'
+        }),
+        expect.objectContaining({
+          name: 'aca-job-ranking-materialize',
+          category: 'ranking'
+        }),
+        expect.objectContaining({
+          name: 'aca-job-regime-refresh',
+          category: 'regime'
+        })
+      ])
+    );
+    expect(operationalNames).not.toContain('aca-job-market');
+    expect(operationalNames).not.toContain('aca-job-zeta');
+
+    const coverageProps = domainLayerCoverageSpy.mock.calls.at(-1)?.[0] as {
+      managedContainerJobs: Array<{ name: string }>;
+    };
+    expect(coverageProps.managedContainerJobs.map((job) => job.name)).toEqual([
+      'aca-job-market',
+      'aca-job-zeta'
+    ]);
+  });
+
   it('passes the anchored active job run status and start time to the job console stream panel', async () => {
     renderWithProviders(<SystemStatusPage />);
 
@@ -362,6 +443,7 @@ describe('SystemStatusPage', () => {
       }>;
     };
 
+    expect(jobStreamProps.jobs.map((job) => job.name)).not.toContain('aca-job-backtest-runner');
     expect(jobStreamProps.jobs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -522,7 +604,27 @@ describe('SystemStatusPage', () => {
         buildSystemStatusView({
           systemHealth: {
             overall: 'degraded',
-            dataLayers: [],
+            dataLayers: [
+              {
+                name: 'Bronze',
+                description: 'Raw ingestion layer',
+                status: 'degraded',
+                lastUpdated: now,
+                refreshFrequency: 'Daily',
+                domains: [
+                  {
+                    name: 'zeta',
+                    description: 'Market data',
+                    type: 'blob',
+                    path: 'bronze/zeta',
+                    lastUpdated: now,
+                    status: 'stale',
+                    jobName: 'aca-job-zeta',
+                    frequency: 'Daily'
+                  }
+                ]
+              }
+            ],
             recentJobs: [
               {
                 jobName: 'aca-job-zeta',
@@ -584,7 +686,27 @@ describe('SystemStatusPage', () => {
         buildSystemStatusView({
           systemHealth: {
             overall: 'degraded',
-            dataLayers: [],
+            dataLayers: [
+              {
+                name: 'Bronze',
+                description: 'Raw ingestion layer',
+                status: 'degraded',
+                lastUpdated: now,
+                refreshFrequency: 'Daily',
+                domains: [
+                  {
+                    name: 'zeta',
+                    description: 'Market data',
+                    type: 'blob',
+                    path: 'bronze/zeta',
+                    lastUpdated: now,
+                    status: 'stale',
+                    jobName: 'aca-job-zeta',
+                    frequency: 'Daily'
+                  }
+                ]
+              }
+            ],
             recentJobs: [
               {
                 jobName: 'aca-job-zeta',

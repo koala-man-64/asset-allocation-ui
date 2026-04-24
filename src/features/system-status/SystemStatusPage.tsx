@@ -1,11 +1,5 @@
 import React, { useCallback, useMemo, useState, lazy, Suspense } from 'react';
-import {
-  Activity,
-  Layers3,
-  RefreshCw,
-  ShieldCheck,
-  TriangleAlert
-} from 'lucide-react';
+import { Activity, Layers3, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { useSystemStatusViewQuery } from '@/hooks/useSystemStatusView';
@@ -40,6 +34,11 @@ const JobLogStreamPanel = lazy(() =>
     default: m.JobLogStreamPanel
   }))
 );
+const OperationalJobMonitorPanel = lazy(() =>
+  import('@/features/system-status/components/OperationalJobMonitorPanel').then((m) => ({
+    default: m.OperationalJobMonitorPanel
+  }))
+);
 
 import {
   buildAnchoredJobRunIndex,
@@ -49,6 +48,10 @@ import {
   normalizeAzureJobName,
   resolveManagedJobName
 } from '@/features/system-status/lib/SystemStatusHelpers';
+import {
+  buildDomainJobKeySet,
+  buildOperationalJobTargets
+} from '@/features/system-status/lib/operationalJobs';
 import { normalizeDomainKey } from '@/features/system-status/components/SystemPurgeControls';
 
 type JobResourceSummary = {
@@ -129,9 +132,7 @@ function SummaryCard({
   tone?: SummaryTone;
 }) {
   return (
-    <div
-      className={`rounded-[1.15rem] border px-4 py-4 ${getSummaryToneClasses(tone)}`}
-    >
+    <div className={`rounded-[1.15rem] border px-4 py-4 ${getSummaryToneClasses(tone)}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-2">
           <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
@@ -216,12 +217,24 @@ export function SystemStatusPage() {
     return items;
   }, [jobResourcesByKey]);
 
+  const domainManagedContainerJobs = useMemo(() => {
+    const domainJobKeys = buildDomainJobKeySet(displayDataLayers);
+    return managedContainerJobs.filter((job) => {
+      const key =
+        normalizeAzureJobName(job.name) ||
+        String(job.name || '')
+          .trim()
+          .toLowerCase();
+      return key ? domainJobKeys.has(key) : false;
+    });
+  }, [displayDataLayers, managedContainerJobs]);
+
   const anchoredJobRuns = useMemo(
     () => buildAnchoredJobRunIndex(systemHealth?.recentJobs || []),
     [systemHealth?.recentJobs]
   );
 
-  const jobLogStreamJobs = useMemo<JobLogStreamTarget[]>(() => {
+  const domainJobLogStreamJobs = useMemo<JobLogStreamTarget[]>(() => {
     type MutableJobTarget = Omit<
       JobLogStreamTarget,
       'runningState' | 'recentStatus' | 'startTime'
@@ -250,36 +263,6 @@ export function SystemStatusPage() {
           sortLayerName: layer.name
         });
       }
-    }
-
-    for (const resource of jobResourcesByKey.values()) {
-      const rawJobName = String(resource.name || '').trim();
-      if (!rawJobName) continue;
-      const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();
-      if (items.has(key)) continue;
-      items.set(key, {
-        name: rawJobName,
-        label: rawJobName,
-        layerName: null,
-        domainName: null,
-        jobUrl: null,
-        sortLayerName: ''
-      });
-    }
-
-    for (const run of anchoredJobRuns.values()) {
-      const rawJobName = String(run.jobName || '').trim();
-      if (!rawJobName) continue;
-      const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();
-      if (items.has(key)) continue;
-      items.set(key, {
-        name: rawJobName,
-        label: rawJobName,
-        layerName: null,
-        domainName: null,
-        jobUrl: null,
-        sortLayerName: ''
-      });
     }
 
     return Array.from(items.entries())
@@ -317,6 +300,17 @@ export function SystemStatusPage() {
       })
       .map(({ sortLayerName: _sortLayerName, ...item }) => item);
   }, [anchoredJobRuns, displayDataLayers, jobResourcesByKey, jobStates]);
+
+  const operationalJobs = useMemo(
+    () =>
+      buildOperationalJobTargets({
+        dataLayers: displayDataLayers,
+        recentJobs: systemHealth?.recentJobs || [],
+        managedContainerJobs,
+        jobStates
+      }),
+    [displayDataLayers, jobStates, managedContainerJobs, systemHealth?.recentJobs]
+  );
 
   const handleMetadataSnapshotChange = useCallback(
     (
@@ -391,13 +385,13 @@ export function SystemStatusPage() {
       .toLowerCase();
     return status !== 'healthy' && status !== 'success';
   }).length;
-  const runningJobCount = jobLogStreamJobs.filter(
+  const runningJobCount = domainJobLogStreamJobs.filter(
     (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'running'
   ).length;
-  const warningJobCount = jobLogStreamJobs.filter(
+  const warningJobCount = domainJobLogStreamJobs.filter(
     (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'warning'
   ).length;
-  const failedJobCount = jobLogStreamJobs.filter(
+  const failedJobCount = domainJobLogStreamJobs.filter(
     (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'failed'
   ).length;
   const overallTone = determineTone({
@@ -483,7 +477,7 @@ export function SystemStatusPage() {
               value={`${failedJobCount} fail / ${warningJobCount} warn`}
               detail={
                 failedJobCount > 0
-                  ? `${pluralize(failedJobCount, 'failure')} visible across ${pluralize(jobLogStreamJobs.length, 'tracked job')}.`
+                  ? `${pluralize(failedJobCount, 'failure')} visible across ${pluralize(domainJobLogStreamJobs.length, 'domain job')}.`
                   : warningJobCount > 0
                     ? `${pluralize(warningJobCount, 'warning')} visible; ${pluralize(runningJobCount, 'job')} currently running.`
                     : `${pluralize(runningJobCount, 'job')} running; no failed jobs visible.`
@@ -511,6 +505,17 @@ export function SystemStatusPage() {
           </div>
         </section>
 
+        <ErrorBoundary>
+          <Suspense fallback={<Skeleton className="h-[360px] w-full rounded-xl bg-muted/20" />}>
+            <OperationalJobMonitorPanel
+              jobs={operationalJobs}
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+              isFetching={isFetching}
+            />
+          </Suspense>
+        </ErrorBoundary>
+
         {/* Domain Layer Coverage Comparison */}
         <ErrorBoundary>
           <Suspense fallback={<Skeleton className="h-[280px] w-full rounded-xl bg-muted/20" />}>
@@ -519,7 +524,7 @@ export function SystemStatusPage() {
               dataLayers={displayDataLayers}
               recentJobs={recentJobs}
               jobStates={jobStates}
-              managedContainerJobs={managedContainerJobs}
+              managedContainerJobs={domainManagedContainerJobs}
               metadataSnapshot={systemStatusView?.metadataSnapshot}
               metadataUpdatedAt={systemStatusView?.metadataSnapshot.updatedAt || null}
               metadataSource={systemStatusView?.sources.metadataSnapshot}
@@ -541,7 +546,7 @@ export function SystemStatusPage() {
 
         <ErrorBoundary>
           <Suspense fallback={<Skeleton className="h-[260px] w-full rounded-xl bg-muted/20" />}>
-            <JobLogStreamPanel jobs={jobLogStreamJobs} />
+            <JobLogStreamPanel jobs={domainJobLogStreamJobs} />
           </Suspense>
         </ErrorBoundary>
       </div>
