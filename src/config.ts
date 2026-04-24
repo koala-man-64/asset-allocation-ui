@@ -3,13 +3,16 @@ import type { UiRuntimeConfig } from '@asset-allocation/contracts';
 import { normalizeApiBaseUrl } from '@/utils/apiBaseUrl';
 import { logUiDiagnostic, summarizeUrlForLogs } from '@/services/uiDiagnostics';
 
-type RuntimeUiConfigSource = Partial<UiRuntimeConfig> & {
+type RuntimeUiConfigOverrides = {
   authSessionMode?: string;
   oidcScopes?: string[] | string;
   oidcAudience?: string[] | string;
   oidcPostLogoutRedirectUri?: string;
   uiAuthEnabled?: boolean | string;
 };
+
+type RuntimeUiConfigSource = Omit<Partial<UiRuntimeConfig>, keyof RuntimeUiConfigOverrides> &
+  RuntimeUiConfigOverrides;
 
 export type AuthSessionMode = 'bearer' | 'cookie';
 
