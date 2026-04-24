@@ -21,9 +21,9 @@ importers:
 
   .:
     dependencies:
-  '@asset-allocation/contracts':
-    specifier: 3.3.0
-    version: 3.3.0
+      '@asset-allocation/contracts':
+        specifier: 3.3.0
+        version: 3.3.0
       '@azure/msal-browser':
         specifier: 5.3.0
         version: 5.3.0
