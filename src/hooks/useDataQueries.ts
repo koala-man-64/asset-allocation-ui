@@ -56,9 +56,9 @@ export function useSystemHealthQuery(
   const autoRefresh = options.autoRefresh ?? false;
   const query = useQuery<SystemHealth>({
     queryKey: queryKeys.systemHealth(),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       try {
-        const response = await DataService.getSystemHealthWithMeta();
+        const response = await DataService.getSystemHealthWithMeta({}, signal);
         lastSystemHealthMeta = response.meta;
         return response.data;
       } catch (error) {
@@ -155,11 +155,11 @@ export function useDomainMetadataQuery(
 ) {
   return useQuery<DomainMetadata>({
     queryKey: queryKeys.domainMetadata(String(layer || ''), String(domain || '')),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!layer || !domain) {
         throw new Error('Layer and domain are required.');
       }
-      return DataService.getDomainMetadata(layer, domain);
+      return DataService.getDomainMetadata(layer, domain, {}, signal);
     },
     enabled: Boolean(layer && domain) && options.enabled !== false,
     staleTime: 5 * 60 * 1000,

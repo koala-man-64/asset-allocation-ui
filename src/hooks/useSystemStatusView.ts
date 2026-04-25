@@ -101,7 +101,7 @@ export function useSystemStatusViewQuery(options: UseSystemStatusViewQueryOption
 
   const query = useQuery<SystemStatusViewResponse>({
     queryKey: queryKeys.systemStatusView(),
-    queryFn: async () => DataService.getSystemStatusView(),
+    queryFn: async ({ signal }) => DataService.getSystemStatusView({}, signal),
     initialData: () =>
       queryClient.getQueryData<SystemStatusViewResponse>(queryKeys.systemStatusView()) ??
       initialViewRef.current,

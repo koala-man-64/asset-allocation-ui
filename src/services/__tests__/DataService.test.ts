@@ -78,8 +78,11 @@ describe('DataService.getSystemStatusView', () => {
       }
     });
     expect(result.generatedAt).toEqual(expect.any(String));
-    expect(mockApiService.getSystemHealth).toHaveBeenCalledWith({ refresh: true });
-    expect(mockApiService.getDomainMetadataSnapshot).toHaveBeenCalledWith({ refresh: true });
+    expect(mockApiService.getSystemHealth).toHaveBeenCalledWith({ refresh: true }, undefined);
+    expect(mockApiService.getDomainMetadataSnapshot).toHaveBeenCalledWith(
+      { refresh: true },
+      undefined
+    );
     expect(mockLogUiDiagnostic).toHaveBeenCalledWith(
       'DataService',
       'system-status-view-fallback-start',
