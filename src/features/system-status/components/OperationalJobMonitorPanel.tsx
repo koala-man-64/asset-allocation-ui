@@ -341,7 +341,7 @@ export function OperationalJobMonitorPanel({
           </div>
         </div>
       ) : (
-        <div className="grid gap-6 p-6 xl:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.82fr)]">
+        <div className="space-y-6 p-6">
           <div className="min-w-0 space-y-5">
             <div className="overflow-x-auto rounded-[1.2rem] border border-mcm-walnut/18 bg-mcm-paper/72">
               <Table>
