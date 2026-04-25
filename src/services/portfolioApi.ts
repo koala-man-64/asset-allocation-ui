@@ -5,6 +5,7 @@ import type {
   PortfolioBuildListResponse,
   PortfolioBuildRunSummary,
   PortfolioBuildStatus,
+  PortfolioAllocationMode,
   PortfolioConfig,
   PortfolioDetail,
   PortfolioExecutionPolicy,
@@ -55,7 +56,10 @@ interface RawPortfolioAllocation {
   sleeveId: string;
   sleeveName?: string;
   strategy: RawStrategyReference;
-  targetWeight: number;
+  allocationMode?: 'percent' | 'notional_base_ccy';
+  targetWeight?: number | null;
+  targetNotionalBaseCcy?: number | null;
+  derivedWeight?: number | null;
   minWeight?: number | null;
   maxWeight?: number | null;
   enabled: boolean;
@@ -79,6 +83,8 @@ interface RawPortfolioRevision {
   version: number;
   description?: string;
   benchmarkSymbol?: string | null;
+  allocationMode?: 'percent' | 'notional_base_ccy';
+  allocatableCapital?: number | null;
   allocations: RawPortfolioAllocation[];
   notes?: string;
   publishedAt?: string | null;
@@ -315,6 +321,7 @@ export type {
   PortfolioBuildRunSummary,
   PortfolioBuildScope,
   PortfolioBuildStatus,
+  PortfolioAllocationMode,
   PortfolioConfig,
   PortfolioDetail,
   PortfolioExecutionPolicy,
@@ -378,12 +385,22 @@ function deriveHealthTone(
 }
 
 function mapAllocationToSleeve(allocation: RawPortfolioAllocation): PortfolioSleeveDefinition {
+  const allocationMode = allocation.allocationMode ?? 'percent';
+  const derivedWeightPct = ratioToPct(
+    allocation.derivedWeight ?? allocation.targetWeight ?? 0
+  );
   return {
     sleeveId: allocation.sleeveId,
     label: allocation.sleeveName || allocation.sleeveId,
     strategyName: allocation.strategy.strategyName,
     strategyVersion: allocation.strategy.strategyVersion,
-    targetWeightPct: ratioToPct(allocation.targetWeight),
+    allocationMode,
+    targetWeightPct:
+      allocationMode === 'percent'
+        ? ratioToPct(allocation.targetWeight ?? 0)
+        : derivedWeightPct,
+    targetNotionalBaseCcy: allocation.targetNotionalBaseCcy ?? null,
+    derivedWeightPct: allocationMode === 'notional_base_ccy' ? derivedWeightPct : null,
     minWeightPct: ratioToPct(allocation.minWeight ?? 0),
     maxWeightPct: ratioToPct(
       allocation.maxWeight ?? allocation.targetWeight ?? allocation.minWeight ?? 0
@@ -397,6 +414,7 @@ function mapAllocationToSleeve(allocation: RawPortfolioAllocation): PortfolioSle
 }
 
 function mapSleeveToAllocation(sleeve: PortfolioSleeveDefinition): RawPortfolioAllocation {
+  const allocationMode = sleeve.allocationMode ?? 'percent';
   const boundedTarget = Math.max(0, Math.min(100, sleeve.targetWeightPct));
   const boundedMin = Math.max(0, Math.min(boundedTarget, sleeve.minWeightPct));
   const boundedMax = Math.max(boundedTarget, sleeve.maxWeightPct);
@@ -407,7 +425,14 @@ function mapSleeveToAllocation(sleeve: PortfolioSleeveDefinition): RawPortfolioA
       strategyName: sleeve.strategyName.trim(),
       strategyVersion: Math.max(1, Math.round(sleeve.strategyVersion || 1))
     },
-    targetWeight: pctToRatio(boundedTarget),
+    allocationMode,
+    targetWeight: allocationMode === 'percent' ? pctToRatio(boundedTarget) : null,
+    targetNotionalBaseCcy:
+      allocationMode === 'notional_base_ccy' ? sleeve.targetNotionalBaseCcy ?? 0 : null,
+    derivedWeight:
+      allocationMode === 'notional_base_ccy'
+        ? pctToRatio(sleeve.derivedWeightPct ?? sleeve.targetWeightPct)
+        : null,
     minWeight: pctToRatio(boundedMin),
     maxWeight: pctToRatio(Math.min(100, boundedMax)),
     enabled: sleeve.status !== 'paused',
@@ -416,13 +441,23 @@ function mapSleeveToAllocation(sleeve: PortfolioSleeveDefinition): RawPortfolioA
   };
 }
 
-function buildConfig(benchmarkSymbol: string, baseCurrency: string, sleeves: PortfolioSleeveDefinition[]): PortfolioConfig {
+function buildConfig(
+  benchmarkSymbol: string,
+  baseCurrency: string,
+  sleeves: PortfolioSleeveDefinition[],
+  allocationMode: PortfolioAllocationMode = 'percent',
+  allocatableCapital: number | null = null
+): PortfolioConfig {
   const targetWeightPct = Number(
-    sleeves.reduce((total, sleeve) => total + sleeve.targetWeightPct, 0).toFixed(2)
+    sleeves
+      .reduce((total, sleeve) => total + (sleeve.derivedWeightPct ?? sleeve.targetWeightPct), 0)
+      .toFixed(2)
   );
   return {
     benchmarkSymbol,
     baseCurrency,
+    allocationMode,
+    allocatableCapital,
     rebalanceCadence: 'weekly',
     rebalanceAnchor: 'Strategy native cadence',
     targetGrossExposurePct: targetWeightPct,
@@ -497,7 +532,9 @@ function buildDetailFromResponses(
   const config = buildConfig(
     normalizeBenchmark(accountDetail.account.benchmarkSymbol ?? activeRevision?.benchmarkSymbol),
     accountDetail.account.baseCurrency,
-    sleeves
+    sleeves,
+    activeRevision?.allocationMode ?? 'percent',
+    activeRevision?.allocatableCapital ?? null
   );
   const openingCash = resolveOpeningCash(accountDetail.recentLedgerEvents || []);
 
@@ -582,21 +619,24 @@ async function getPortfolioDetailResponse(
 }
 
 function buildSyntheticPreview(detail: PortfolioDetail, asOfDate: string): PortfolioPreviewResponse {
-  const allocations: PortfolioPreviewAllocation[] = detail.config.sleeves.map((sleeve) => ({
-    sleeveId: sleeve.sleeveId,
-    label: sleeve.label,
-    strategyName: sleeve.strategyName,
-    strategyVersion: sleeve.strategyVersion,
-    targetWeightPct: sleeve.targetWeightPct,
-    projectedWeightPct: sleeve.targetWeightPct,
-    projectedGrossExposurePct: sleeve.targetWeightPct,
-    projectedTurnoverPct: 0,
-    expectedHoldings: sleeve.expectedHoldings,
-    status: sleeve.status
-  }));
+  const allocations: PortfolioPreviewAllocation[] = detail.config.sleeves.map((sleeve) => {
+    const sleeveWeightPct = sleeve.derivedWeightPct ?? sleeve.targetWeightPct;
+    return {
+      sleeveId: sleeve.sleeveId,
+      label: sleeve.label,
+      strategyName: sleeve.strategyName,
+      strategyVersion: sleeve.strategyVersion,
+      targetWeightPct: sleeveWeightPct,
+      projectedWeightPct: sleeveWeightPct,
+      projectedGrossExposurePct: sleeveWeightPct,
+      projectedTurnoverPct: 0,
+      expectedHoldings: sleeve.expectedHoldings,
+      status: sleeve.status
+    };
+  });
 
   const targetWeightPct = Number(
-    allocations.reduce((total, allocation) => total + allocation.targetWeightPct, 0).toFixed(2)
+    allocations.reduce((total, allocation) => total + allocation.projectedWeightPct, 0).toFixed(2)
   );
   const residualCashPct = Number(Math.max(0, 100 - targetWeightPct).toFixed(2));
   const warnings: string[] = [];
@@ -729,14 +769,15 @@ export const portfolioApi = {
 
     return accounts.map((account) => {
       const portfolioDetail = detailMap.get(account.activePortfolioName || '') || null;
-      const activeRevision = portfolioDetail?.activeRevision;
-      const sleeveCount = activeRevision?.allocations?.length ?? 0;
-      const targetWeightPct = Number(
-        ((activeRevision?.allocations || []).reduce(
-          (total, allocation) => total + ratioToPct(allocation.targetWeight),
-          0
-        )).toFixed(2)
-      );
+        const activeRevision = portfolioDetail?.activeRevision;
+        const sleeveCount = activeRevision?.allocations?.length ?? 0;
+        const targetWeightPct = Number(
+          ((activeRevision?.allocations || []).reduce(
+            (total, allocation) =>
+              total + ratioToPct(allocation.derivedWeight ?? allocation.targetWeight ?? 0),
+            0
+          )).toFixed(2)
+        );
       return {
         accountId: account.accountId,
         portfolioName: account.activePortfolioName || account.name,
@@ -820,17 +861,19 @@ export const portfolioApi = {
       .filter((sleeve) => sleeve.strategyName.trim())
       .map(mapSleeveToAllocation);
 
-    const portfolioResponse = await request<RawPortfolioDefinitionDetailResponse>('/portfolios', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: portfolioName,
-        description: payload.description || '',
-        benchmarkSymbol: payload.config.benchmarkSymbol || null,
-        allocations,
-        notes: payload.notes || ''
-      }),
-      signal
-    });
+      const portfolioResponse = await request<RawPortfolioDefinitionDetailResponse>('/portfolios', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: portfolioName,
+          description: payload.description || '',
+          benchmarkSymbol: payload.config.benchmarkSymbol || null,
+          allocationMode: payload.config.allocationMode,
+          allocatableCapital: payload.config.allocatableCapital ?? null,
+          allocations,
+          notes: payload.notes || ''
+        }),
+        signal
+      });
 
     const accountPayload = {
       name: payload.name.trim() || portfolioName,

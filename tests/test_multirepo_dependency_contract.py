@@ -40,13 +40,13 @@ def test_lockfile_uses_published_contracts_package() -> None:
     assert "directory: ../asset-allocation-contracts/ts" not in text
 
 
-def test_broker_account_types_remain_local_bridge() -> None:
+def test_broker_account_types_flow_through_published_contracts() -> None:
     text = (repo_root() / "src" / "types" / "brokerAccounts.ts").read_text(
         encoding="utf-8"
     )
-    assert "Temporary local bridge" in text
-    assert "export interface BrokerAccountSummary" in text
-    assert "export interface BrokerAccountDetail" in text
+    assert "from '@asset-allocation/contracts'" in text
+    assert "BrokerAccountConfiguration" in text
+    assert "BrokerTradingPolicyUpdateRequest" in text
 
 
 def test_ui_dockerfile_does_not_copy_contracts_repo() -> None:

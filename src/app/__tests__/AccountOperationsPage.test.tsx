@@ -8,6 +8,7 @@ import { renderWithProviders } from '@/test/utils';
 import { toast } from 'sonner';
 import type {
   BrokerAccountActionResponse,
+  BrokerAccountConfiguration,
   BrokerAccountDetail,
   BrokerAccountListResponse,
   BrokerAccountSummary
@@ -17,15 +18,23 @@ vi.mock('@/services/accountOperationsApi', () => ({
   accountOperationsApi: {
     listAccounts: vi.fn(),
     getAccountDetail: vi.fn(),
+    getConfiguration: vi.fn(),
     reconnectAccount: vi.fn(),
     setSyncPaused: vi.fn(),
     refreshAccount: vi.fn(),
-    acknowledgeAlert: vi.fn()
+    acknowledgeAlert: vi.fn(),
+    saveTradingPolicy: vi.fn(),
+    saveAllocation: vi.fn()
   },
   accountOperationsKeys: {
     all: () => ['account-operations'],
     list: () => ['account-operations', 'list'],
-    detail: (accountId: string | null) => ['account-operations', 'detail', accountId ?? 'none']
+    detail: (accountId: string | null) => ['account-operations', 'detail', accountId ?? 'none'],
+    configuration: (accountId: string | null) => [
+      'account-operations',
+      'configuration',
+      accountId ?? 'none'
+    ]
   }
 }));
 
@@ -76,6 +85,35 @@ const disconnectedAccount: BrokerAccountSummary = {
   snapshotAsOf: '2026-04-20T12:00:00Z',
   activePortfolioName: 'Macro Core',
   strategyLabel: 'Core Rotation',
+  configurationVersion: 7,
+  allocationSummary: {
+    portfolioName: 'Macro Core',
+    portfolioVersion: 4,
+    allocationMode: 'percent',
+    allocatableCapital: 250000,
+    allocatedPercent: 100,
+    allocatedNotionalBaseCcy: 250000,
+    remainingPercent: 0,
+    remainingNotionalBaseCcy: 0,
+    sharedActivePortfolio: false,
+    effectiveFrom: '2026-04-20T00:00:00Z',
+    items: [
+      {
+        sleeveId: 'macro-core',
+        sleeveName: 'Macro Core',
+        strategy: {
+          strategyName: 'core-rotation',
+          strategyVersion: 2
+        },
+        allocationMode: 'percent',
+        targetWeightPct: 100,
+        targetNotionalBaseCcy: null,
+        derivedWeightPct: 100,
+        enabled: true,
+        notes: 'Primary strategy allocation.'
+      }
+    ]
+  },
   alertCount: 2
 };
 
@@ -154,6 +192,69 @@ const listResponse: BrokerAccountListResponse = {
   generatedAt: '2026-04-20T13:50:00Z'
 };
 
+const configurationResponse: BrokerAccountConfiguration = {
+  accountId: disconnectedAccount.accountId,
+  accountName: disconnectedAccount.name,
+  baseCurrency: disconnectedAccount.baseCurrency,
+  configurationVersion: 7,
+  requestedPolicy: {
+    maxOpenPositions: 20,
+    maxSinglePositionExposure: {
+      mode: 'pct_of_allocatable_capital',
+      value: 12.5
+    },
+    allowedSides: ['long'],
+    allowedAssetClasses: ['equity', 'option'],
+    requireOrderConfirmation: true
+  },
+  effectivePolicy: {
+    maxOpenPositions: 20,
+    maxSinglePositionExposure: {
+      mode: 'pct_of_allocatable_capital',
+      value: 12.5
+    },
+    allowedSides: ['long'],
+    allowedAssetClasses: ['equity'],
+    requireOrderConfirmation: true
+  },
+  capabilities: {
+    canReadBalances: true,
+    canReadPositions: true,
+    canReadOrders: true,
+    canTrade: false,
+    canReconnect: true,
+    canPauseSync: true,
+    canRefresh: true,
+    canAcknowledgeAlerts: true,
+    canReadTradingPolicy: true,
+    canWriteTradingPolicy: true,
+    canReadAllocation: true,
+    canWriteAllocation: true,
+    canReleaseTradeConfirmation: false,
+    readOnlyReason: null
+  },
+  allocation: disconnectedAccount.allocationSummary!,
+  warnings: ['Current book exceeds the tighter max-open-positions rule.'],
+  updatedAt: '2026-04-20T13:58:00Z',
+  updatedBy: 'desk-op',
+  audit: [
+    {
+      auditId: 'audit-1',
+      accountId: disconnectedAccount.accountId,
+      category: 'trading_policy',
+      outcome: 'saved',
+      requestedAt: '2026-04-20T13:58:00Z',
+      actor: 'desk-op',
+      requestId: 'req-1',
+      grantedRoles: ['AssetAllocation.AccountPolicy.Write'],
+      summary: 'Updated trading policy from account operations.',
+      before: {},
+      after: {},
+      denialReason: null
+    }
+  ]
+};
+
 const detailResponse: BrokerAccountDetail = {
   account: disconnectedAccount,
   capabilities: {
@@ -164,7 +265,13 @@ const detailResponse: BrokerAccountDetail = {
     canReconnect: true,
     canPauseSync: true,
     canRefresh: true,
-    canAcknowledgeAlerts: true
+    canAcknowledgeAlerts: true,
+    canReadTradingPolicy: true,
+    canWriteTradingPolicy: true,
+    canReadAllocation: true,
+    canWriteAllocation: true,
+    canReleaseTradeConfirmation: false,
+    readOnlyReason: null
   },
   accountType: 'margin',
   tradingBlocked: true,
@@ -231,7 +338,8 @@ const detailResponse: BrokerAccountDetail = {
       note: null,
       relatedAlertId: 'alert-1'
     }
-  ]
+  ],
+  configuration: configurationResponse
 };
 
 function buildActionResponse(
@@ -266,6 +374,7 @@ describe('AccountOperationsPage', () => {
     vi.clearAllMocks();
     vi.mocked(accountOperationsApi.listAccounts).mockResolvedValue(listResponse);
     vi.mocked(accountOperationsApi.getAccountDetail).mockResolvedValue(detailResponse);
+    vi.mocked(accountOperationsApi.getConfiguration).mockResolvedValue(configurationResponse);
     vi.mocked(accountOperationsApi.refreshAccount).mockResolvedValue(buildActionResponse('refresh'));
     vi.mocked(accountOperationsApi.reconnectAccount).mockResolvedValue(
       buildActionResponse('reconnect')
@@ -276,6 +385,8 @@ describe('AccountOperationsPage', () => {
     vi.mocked(accountOperationsApi.acknowledgeAlert).mockResolvedValue(
       buildActionResponse('acknowledge_alert')
     );
+    vi.mocked(accountOperationsApi.saveTradingPolicy).mockResolvedValue(configurationResponse);
+    vi.mocked(accountOperationsApi.saveAllocation).mockResolvedValue(configurationResponse);
   });
 
   it('renders the hero summary and sorts the board by exception priority', async () => {
@@ -315,7 +426,7 @@ describe('AccountOperationsPage', () => {
     });
   });
 
-  it('opens the account dossier and renders the fixed detail tabs', async () => {
+  it('opens the account dossier and renders the detail tabs including configuration', async () => {
     const user = userEvent.setup();
     renderWithProviders(<AccountOperationsPage />);
 
@@ -334,6 +445,7 @@ describe('AccountOperationsPage', () => {
     expect(screen.getByRole('tab', { name: 'Connectivity' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Risk' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Activity' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Configuration' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'Connectivity' }));
     expect(await screen.findByText(/capability flags/i)).toBeInTheDocument();
@@ -346,6 +458,41 @@ describe('AccountOperationsPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Activity' }));
     expect(await screen.findByText(/reconnect request submitted/i)).toBeInTheDocument();
+  });
+
+  it('loads and saves account configuration from the configuration tab', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /open dossier/i })[0]);
+    await user.click(screen.getByRole('tab', { name: 'Configuration' }));
+
+    expect(await screen.findByText(/execution guardrails/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(accountOperationsApi.getConfiguration).toHaveBeenCalledWith(
+        disconnectedAccount.accountId,
+        expect.anything()
+      );
+    });
+
+    const maxOpenPositionsInput = screen.getByLabelText(/max open positions/i);
+    await user.clear(maxOpenPositionsInput);
+    await user.type(maxOpenPositionsInput, '24');
+
+    await user.click(screen.getByRole('button', { name: /save trading policy/i }));
+
+    await waitFor(() => {
+      expect(accountOperationsApi.saveTradingPolicy).toHaveBeenCalledWith(
+        disconnectedAccount.accountId,
+        expect.objectContaining({
+          expectedConfigurationVersion: configurationResponse.configurationVersion,
+          requestedPolicy: expect.objectContaining({
+            maxOpenPositions: 24
+          })
+        })
+      );
+    });
   });
 
   it('disables the refresh action while a refresh mutation is pending', async () => {

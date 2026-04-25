@@ -73,6 +73,7 @@ const account: TradeAccountSummary = {
     supportsNotionalOrders: true,
     supportsEquities: true,
     supportsEtfs: true,
+    supportsOptions: false,
     readOnly: false,
     unsupportedReason: null
   },
@@ -83,6 +84,7 @@ const account: TradeAccountSummary = {
   positionCount: 1,
   unresolvedAlertCount: 0,
   killSwitchActive: false,
+  confirmationRequired: false,
   lastSyncedAt: now,
   snapshotAsOf: now,
   freshness: {
@@ -240,7 +242,8 @@ describe('TradeDeskPage', () => {
       warnings: [],
       blocked: false,
       blockReason: null,
-      freshness: account.freshness
+      freshness: account.freshness,
+      confirmationRequired: false
     };
     mocks.previewOrder.mockResolvedValue(preview);
     mocks.placeOrder.mockResolvedValue({

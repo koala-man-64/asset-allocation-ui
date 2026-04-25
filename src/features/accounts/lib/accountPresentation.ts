@@ -3,6 +3,7 @@ import type {
   BrokerAccountSummary,
   BrokerHealthTone,
   BrokerTradeReadiness,
+  BrokerStrategyAllocationSummary,
   BrokerVendor
 } from '@/types/brokerAccounts';
 
@@ -27,6 +28,14 @@ export function formatNumber(value?: number | null, digits: number = 0): string 
     minimumFractionDigits: digits,
     maximumFractionDigits: digits
   }).format(value);
+}
+
+export function formatPercent(value?: number | null, digits: number = 2): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return 'n/a';
+  }
+
+  return `${formatNumber(value, digits)}%`;
 }
 
 export function formatTimestamp(value?: string | null): string {
@@ -90,6 +99,36 @@ export function statusBadgeVariant(
   return 'default';
 }
 
+function allocationModeLabel(
+  summary: BrokerStrategyAllocationSummary,
+  baseCurrency: string
+): string {
+  if (summary.allocationMode === 'notional_base_ccy') {
+    return formatCurrency(summary.allocatedNotionalBaseCcy, baseCurrency);
+  }
+  return formatPercent(summary.allocatedPercent);
+}
+
+export function accountAssignmentTitle(account: BrokerAccountSummary): string {
+  return (
+    account.allocationSummary?.portfolioName ||
+    account.activePortfolioName ||
+    'No portfolio assignment'
+  );
+}
+
+export function accountAssignmentDetail(account: BrokerAccountSummary): string {
+  const summary = account.allocationSummary;
+  if (!summary) {
+    return account.strategyLabel || 'No strategy allocation configured';
+  }
+
+  const strategyCountLabel = `${summary.items.length} ${summary.items.length === 1 ? 'strategy' : 'strategies'}`;
+  return [strategyCountLabel, allocationModeLabel(summary, account.baseCurrency)]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 export function brokerAccentClass(broker: BrokerVendor): string {
   if (broker === 'alpaca') {
     return 'border-l-mcm-teal bg-[linear-gradient(90deg,rgba(0,128,128,0.14),transparent_22%)]';
@@ -133,6 +172,11 @@ export function getAccountSearchText(account: BrokerAccountSummary): string {
     account.accountNumberMasked,
     account.activePortfolioName,
     account.strategyLabel,
+    account.allocationSummary?.portfolioName,
+    ...(account.allocationSummary?.items || []).flatMap((item) => [
+      item.sleeveName,
+      item.strategy.strategyName
+    ]),
     account.tradeReadinessReason,
     account.connectionHealth.staleReason,
     account.connectionHealth.failureMessage

@@ -2,8 +2,11 @@ import { request } from '@/services/apiService';
 import type {
   AcknowledgeBrokerAlertRequest,
   BrokerAccountActionResponse,
+  BrokerAccountAllocationUpdateRequest,
+  BrokerAccountConfiguration,
   BrokerAccountDetail,
   BrokerAccountListResponse,
+  BrokerTradingPolicyUpdateRequest,
   PauseBrokerSyncRequest,
   ReconnectBrokerAccountRequest,
   RefreshBrokerAccountRequest
@@ -13,7 +16,9 @@ export const accountOperationsKeys = {
   all: () => ['account-operations'] as const,
   list: () => [...accountOperationsKeys.all(), 'list'] as const,
   detail: (accountId: string | null) =>
-    [...accountOperationsKeys.all(), 'detail', accountId ?? 'none'] as const
+    [...accountOperationsKeys.all(), 'detail', accountId ?? 'none'] as const,
+  configuration: (accountId: string | null) =>
+    [...accountOperationsKeys.all(), 'configuration', accountId ?? 'none'] as const
 };
 
 export const accountOperationsApi = {
@@ -25,6 +30,16 @@ export const accountOperationsApi = {
     return request<BrokerAccountDetail>(`/broker-accounts/${encodeURIComponent(accountId)}`, {
       signal
     });
+  },
+
+  async getConfiguration(
+    accountId: string,
+    signal?: AbortSignal
+  ): Promise<BrokerAccountConfiguration> {
+    return request<BrokerAccountConfiguration>(
+      `/broker-accounts/${encodeURIComponent(accountId)}/configuration`,
+      { signal }
+    );
   },
 
   async reconnectAccount(
@@ -83,6 +98,36 @@ export const accountOperationsApi = {
       `/broker-accounts/${encodeURIComponent(accountId)}/alerts/${encodeURIComponent(alertId)}/acknowledge`,
       {
         method: 'POST',
+        body: JSON.stringify(payload),
+        signal
+      }
+    );
+  },
+
+  async saveTradingPolicy(
+    accountId: string,
+    payload: BrokerTradingPolicyUpdateRequest,
+    signal?: AbortSignal
+  ): Promise<BrokerAccountConfiguration> {
+    return request<BrokerAccountConfiguration>(
+      `/broker-accounts/${encodeURIComponent(accountId)}/trading-policy`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+        signal
+      }
+    );
+  },
+
+  async saveAllocation(
+    accountId: string,
+    payload: BrokerAccountAllocationUpdateRequest,
+    signal?: AbortSignal
+  ): Promise<BrokerAccountConfiguration> {
+    return request<BrokerAccountConfiguration>(
+      `/broker-accounts/${encodeURIComponent(accountId)}/allocation`,
+      {
+        method: 'PUT',
         body: JSON.stringify(payload),
         signal
       }
