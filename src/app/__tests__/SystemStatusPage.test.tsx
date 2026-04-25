@@ -865,7 +865,10 @@ describe('SystemStatusPage', () => {
     });
 
     expect(domainLayerCoverageSpy).toHaveBeenCalled();
-    expect(vi.mocked(DataService.getSystemStatusView).mock.calls[0]).toEqual([]);
+    expect(vi.mocked(DataService.getSystemStatusView).mock.calls[0]).toEqual([
+      {},
+      expect.any(AbortSignal)
+    ]);
     const initialCallCount = vi.mocked(DataService.getSystemStatusView).mock.calls.length;
     expect(initialCallCount).toBeGreaterThan(0);
 
