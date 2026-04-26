@@ -185,11 +185,100 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setBusy(true);
       setError(null);
       try {
-        const response = await DataService.getAuthSessionStatusWithMeta();
-        if (!mountedRef.current) {
-          return response.data;
-        }
-        setAuthenticated(true);
+        const instance = await msalSession.ensureInitialized();
+        await instance.loginRedirect({
+          scopes: oidcScopes
+        });
+        logAuthTransition('redirect-dispatched', {
+          returnPath: nextReturnPath,
+          scopes: oidcScopes
+        });
+      } catch (err) {
+        msalSession.setRedirectInFlight(false);
+        console.error('OIDC sign-in failed', err);
+        logAuthTransition(
+          'redirect-start-failed',
+          {
+            returnPath: nextReturnPath,
+            scopes: oidcScopes,
+            error: err
+          },
+          'error'
+        );
+        setPhase('signed-out');
+        setError(describeAuthError('OIDC sign-in could not be started.', err));
+        throw err;
+      }
+    };
+  }, [msalSession, oidcScopes]);
+
+  useEffect(() => {
+    if (!msalSession) {
+      clearReauthRequestState();
+      setAccount(null);
+      setInteractionReason(null);
+      setInteractionRequest(null);
+      setError(null);
+      setPhase('signed-out');
+      setReady(true);
+      logAuthTransition('provider-disabled', {
+        authRequired,
+        enabled
+      });
+      return;
+    }
+
+    let cancelled = false;
+    const pathname = typeof window === 'undefined' ? '' : window.location.pathname;
+    const onCallbackPath = isCallbackPath(pathname);
+    const onLoginPath = isLoginPath(pathname);
+    const onLogoutCompletePath = isLogoutCompletePath(pathname);
+
+    if (!authRequired && !onLoginPath && !onCallbackPath && !onLogoutCompletePath) {
+      setReady(true);
+      setPhase('signed-out');
+      setError(null);
+      setInteractionReason(null);
+      setInteractionRequest(null);
+      logAuthTransition('bootstrap-skipped-outside-auth-route', {
+        pathname,
+        authRequired
+      });
+      return;
+    }
+
+    setReady(false);
+    setError(null);
+    setInteractionReason(null);
+    setInteractionRequest(null);
+    setPhase(onCallbackPath ? 'redirecting' : authRequired ? 'initializing' : 'signed-out');
+    logAuthTransition('bootstrap-start', {
+      pathname,
+      authRequired,
+      login: onLoginPath,
+      callback: onCallbackPath,
+      logoutComplete: onLogoutCompletePath
+    });
+
+    const bootstrap = async () => {
+      const result = await msalSession.runBootstrap({
+        authRequired,
+        pathname,
+        onCallbackPath,
+        onLogoutCompletePath
+      });
+
+      if (cancelled) {
+        return;
+      }
+
+      msalSession.setRedirectInFlight(false);
+      if (result.account) {
+        clearReauthRequestState();
+        setAccount(result.account);
+        setInteractionReason(null);
+        setInteractionRequest(null);
+        setError(null);
         setPhase('authenticated');
         setUserLabel(sessionUserLabel(response.data));
         logUiDiagnostic('Auth', 'session-valid', {

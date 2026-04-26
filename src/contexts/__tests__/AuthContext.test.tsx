@@ -125,6 +125,107 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
+      expect(screen.getByTestId('ready')).toHaveTextContent('true');
+      expect(screen.getByTestId('interaction-reason')).toHaveTextContent('');
+      expect(mockMsal.loginRedirect).not.toHaveBeenCalled();
+    });
+  });
+
+  it('restores the session silently when ssoSilent returns an account', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'Login', '/login');
+    mockMsal.ssoSilent.mockResolvedValueOnce({ account });
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
+        scopes: ['api://asset-allocation-api/user_impersonation'],
+        redirectUri: 'https://asset-allocation.example.com/auth/silent-callback.html'
+      });
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+      expect(mockMsal.loginRedirect).not.toHaveBeenCalled();
+    });
+  });
+
+  it('restores the session silently on protected routes when a refresh lands outside auth pages', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'System Status', '/system-status');
+    mockMsal.ssoSilent.mockResolvedValueOnce({ account });
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
+        scopes: ['api://asset-allocation-api/user_impersonation'],
+        redirectUri: 'https://asset-allocation.example.com/auth/silent-callback.html'
+      });
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+    });
+  });
+
+  it('restores the callback session silently when the redirect result does not include an account', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'Callback', '/auth/callback');
+    mockMsal.handleRedirectPromise.mockResolvedValueOnce(null);
+    mockMsal.ssoSilent.mockResolvedValueOnce({ account });
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
+        scopes: ['api://asset-allocation-api/user_impersonation'],
+        redirectUri: 'https://asset-allocation.example.com/auth/silent-callback.html'
+      });
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+    });
+  });
+
+  it('switches into session-expired when background reauth is requested', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'Login', '/login');
+    mockMsal.getAllAccounts.mockReturnValue([account]);
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+    });
+
+    await act(async () => {
+      await expect(
+        requestInteractiveReauth({
+          reason: 'API /system/status returned 401.',
+          source: 'api:/system/status'
+        })
+      ).rejects.toBeInstanceOf(AuthReauthRequiredError);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase')).toHaveTextContent('session-expired');
       expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
       expect(screen.getByTestId('error')).toHaveTextContent('Invalid password');
     });
