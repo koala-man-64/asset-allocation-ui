@@ -195,6 +195,7 @@ function Build-LocalEnvResults {
     $apiUpstream = Get-ResolvedResultValue -Results $ResolvedResults -Name "API_UPSTREAM"
     $apiUpstreamScheme = Get-ResolvedResultValue -Results $ResolvedResults -Name "API_UPSTREAM_SCHEME" -Fallback "https"
     $uiAuthEnabled = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_AUTH_ENABLED" -Fallback "true"
+    $uiAuthProvider = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_AUTH_PROVIDER" -Fallback "password"
     $uiOidcAuthority = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_OIDC_AUTHORITY"
     $uiOidcClientId = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_OIDC_CLIENT_ID"
     $uiOidcScopes = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_OIDC_SCOPES"
@@ -208,6 +209,7 @@ function Build-LocalEnvResults {
         [pscustomobject]@{ Name = "VITE_API_BASE_URL"; Value = $apiBaseUrl; Source = "derived"; IsSecret = $false; PromptRequired = $false },
         [pscustomobject]@{ Name = "VITE_API_PROXY_TARGET"; Value = $proxyTarget; Source = "derived"; IsSecret = $false; PromptRequired = $false },
         [pscustomobject]@{ Name = "VITE_UI_AUTH_ENABLED"; Value = $uiAuthEnabled; Source = "derived"; IsSecret = $false; PromptRequired = $false },
+        [pscustomobject]@{ Name = "VITE_UI_AUTH_PROVIDER"; Value = $uiAuthProvider; Source = "derived"; IsSecret = $false; PromptRequired = $false },
         [pscustomobject]@{ Name = "VITE_OIDC_AUTHORITY"; Value = $uiOidcAuthority; Source = "derived"; IsSecret = $false; PromptRequired = $false },
         [pscustomobject]@{ Name = "VITE_OIDC_CLIENT_ID"; Value = $uiOidcClientId; Source = "derived"; IsSecret = $false; PromptRequired = $false },
         [pscustomobject]@{ Name = "VITE_OIDC_SCOPES"; Value = $uiOidcScopes; Source = "derived"; IsSecret = $false; PromptRequired = $false },
@@ -300,6 +302,7 @@ function Resolve-DiscoveredValue {
             return (New-Resolution -Value "https" -Source "default")
         }
         "UI_AUTH_ENABLED" { return (New-Resolution -Value "true" -Source "default") }
+        "UI_AUTH_PROVIDER" { return (New-Resolution -Value "password" -Source "default") }
         "AZURE_CLIENT_ID" {
             $items = Invoke-JsonCommand -FilePath "az" -ArgumentList @("identity", "list", "--resource-group", "AssetAllocationRG", "-o", "json")
             if ($items) {

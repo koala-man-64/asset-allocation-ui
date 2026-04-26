@@ -1,16 +1,7 @@
-import type { ReactNode } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { act, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '@/test/utils';
 import App from '../App';
-
-vi.mock('@/app/components/auth/OidcAccessGate', () => ({
-  OidcAccessGate: ({ children }: { children: ReactNode }) => <>{children}</>,
-  OidcCallbackPage: () => <div data-testid="mock-oidc-callback">Mock OIDC Callback</div>,
-  OidcLogoutCompletePage: () => (
-    <div data-testid="mock-oidc-logout-complete">Mock OIDC Logout Complete</div>
-  )
-}));
 
 vi.mock('@/hooks/useRealtime', () => ({
   useRealtime: () => undefined
@@ -19,6 +10,7 @@ vi.mock('@/hooks/useRealtime', () => ({
 vi.mock('@/config', () => ({
   config: {
     apiBaseUrl: '/api',
+    authProvider: 'disabled',
     authSessionMode: 'bearer',
     uiAuthEnabled: false,
     oidcEnabled: false,

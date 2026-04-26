@@ -150,14 +150,12 @@ export const DataService = {
     }
   },
 
-  async createAuthSessionWithBearerToken(
-    accessToken: string
-  ): Promise<ResponseWithMeta<AuthSessionStatus>> {
+  async createPasswordAuthSession(password: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
     try {
-      const response = await apiService.createAuthSessionWithBearerToken(accessToken);
+      const response = await apiService.createPasswordAuthSession(password);
       return response;
     } catch (error) {
-      console.error('[DataService] createAuthSessionWithBearerToken error', error);
+      console.error('[DataService] createPasswordAuthSession error', error);
       throw error;
     }
   },

@@ -63,9 +63,6 @@ export default defineConfig(({ mode }) => {
             if (id.includes('node_modules/@tanstack/')) {
               return 'query-vendor';
             }
-            if (id.includes('node_modules/@azure/msal-browser/')) {
-              return 'auth-vendor';
-            }
             if (id.includes('node_modules/@asset-allocation/contracts/')) {
               return 'contracts-vendor';
             }
