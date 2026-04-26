@@ -485,7 +485,7 @@ function buildConfig(
   benchmarkSymbol: string,
   baseCurrency: string,
   sleeves: PortfolioSleeveDefinition[],
-  options?: {
+  options: {
     rebalanceCadence?: PortfolioConfig['rebalanceCadence'];
     rebalanceAnchor?: string;
   },

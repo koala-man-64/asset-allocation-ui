@@ -259,6 +259,7 @@ const detailsByAccountId: Record<string, TradeAccountDetailView> = {
         statusAfter: 'previewed',
         summary: 'Manual order preview generated.',
         sanitizedError: null,
+        grantedRoles: [],
         details: {}
       }
     ],
@@ -413,8 +414,10 @@ describe('TradeDeskPage', () => {
       riskChecks: [
         {
           checkId: 'warning-1',
+          code: 'PRICE_BAND_ACK',
           label: 'Price band',
           status: 'warning',
+          severity: 'warning',
           blocking: false,
           message: 'The price band is within tolerance but needs operator acknowledgement.',
           metadata: { headroomPct: 0.14 }

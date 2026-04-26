@@ -7,13 +7,6 @@ on:
       - UI CI
     types:
       - completed
-  workflow_dispatch:
-    inputs:
-      contracts_version_override:
-        description: Published contracts version to force for this release
-        required: false
-        default: ""
-        type: string
 
 permissions:
   actions: read
@@ -42,6 +35,23 @@ jobs:
           path: asset-allocation-ui
           ref: ${{ env.RELEASE_SHA }}
 
+      - name: Resolve package versions
+        id: versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          package = json.loads(Path("asset-allocation-ui/package.json").read_text(encoding="utf-8"))
+          contracts = package["dependencies"]["@asset-allocation/contracts"]
+          with Path("ui-versions.txt").open("w", encoding="utf-8") as handle:
+              handle.write(f"contracts_version={contracts}\n")
+              handle.write(f"ui_version={package['version']}\n")
+          PY
+          cat ui-versions.txt >> "$GITHUB_OUTPUT"
+
       - name: Write required npmrc
         id: npmrc
         env:
@@ -54,52 +64,7 @@ jobs:
           printf '%s' "${NPMRC_CONTENT}" > "${path}"
           echo "path=${path}" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve contracts package version
-        id: contracts
-        env:
-          CONTRACTS_VERSION_OVERRIDE: ${{ github.event.inputs.contracts_version_override || '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          versions_path="${RUNNER_TEMP}/contracts-versions.json"
-          docker run --rm \
-            -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
-            node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
-            bash -lc 'set -euo pipefail; npm view @asset-allocation/contracts versions --json' > "${versions_path}"
-          args=(
-            --package-json asset-allocation-ui/package.json
-            --versions-json "${versions_path}"
-          )
-          if [ -n "${CONTRACTS_VERSION_OVERRIDE}" ]; then
-            args+=(--override "${CONTRACTS_VERSION_OVERRIDE}")
-          fi
-          python asset-allocation-ui/scripts/workflows/resolve_contracts_version.py "${args[@]}" > "${RUNNER_TEMP}/ui-versions.txt"
-          cat "${RUNNER_TEMP}/ui-versions.txt" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare published contracts lockfile
-        env:
-          CONTRACTS_VERSION: ${{ steps.contracts.outputs.contracts_version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          package_json_path = Path("asset-allocation-ui/package.json")
-          package_json = json.loads(package_json_path.read_text(encoding="utf-8"))
-          package_json["dependencies"]["@asset-allocation/contracts"] = os.environ["CONTRACTS_VERSION"]
-          package_json_path.write_text(json.dumps(package_json, indent=2) + "\n", encoding="utf-8")
-          PY
-          docker run --rm \
-            -v "${{ github.workspace }}/asset-allocation-ui:/workspace" \
-            -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
-            -w /workspace \
-            node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
-            bash -lc 'set -euo pipefail; corepack enable; pnpm install --lockfile-only --no-frozen-lockfile'
-
-      - name: Verify required Azure repo vars
+      - name: Validate required repo deploy vars
         env:
           REPO_VARS_JSON: ${{ toJson(vars) }}
         shell: bash
@@ -151,6 +116,7 @@ jobs:
           import os
           from pathlib import Path
 
+          package = json.loads(Path("asset-allocation-ui/package.json").read_text(encoding="utf-8"))
           manifest = {
               "repo": os.environ["GITHUB_REPOSITORY"],
               "git_sha": os.environ["RELEASE_SHA"],
@@ -158,21 +124,19 @@ jobs:
               "artifact_ref": os.environ["IMAGE_REF"],
               "image_digest": os.environ["IMAGE_DIGEST"],
               "version_matrix": {
-                  "contracts": os.environ["CONTRACTS_VERSION"],
+                  "contracts": package["dependencies"]["@asset-allocation/contracts"],
                   "runtime_common": None,
                   "control_plane": None,
                   "jobs": None,
-                  "ui": os.environ["UI_VERSION"],
+                  "ui": package["version"],
               },
           }
           Path("artifacts/release-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
           PY
         env:
-          CONTRACTS_VERSION: ${{ steps.contracts.outputs.contracts_version }}
           IMAGE_REF: ${{ steps.image.outputs.image_ref }}
           IMAGE_DIGEST: ${{ steps.image.outputs.image_digest }}
           RELEASE_SHA: ${{ env.RELEASE_SHA }}
-          UI_VERSION: ${{ steps.contracts.outputs.ui_version }}
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -191,6 +155,6 @@ jobs:
             echo "## UI release"
             echo ""
             echo "- Image: \`${IMAGE_DIGEST}\`"
-            echo "- Contracts: \`${{ steps.contracts.outputs.contracts_version }}\`"
+            echo "- Contracts: \`${{ steps.versions.outputs.contracts_version }}\`"
             echo "- Manifest: \`artifacts/release-manifest.json\`"
           } >> "${GITHUB_STEP_SUMMARY}"
