@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 
 
 def repo_root() -> Path:
@@ -11,7 +12,7 @@ def repo_root() -> Path:
     raise AssertionError("Could not resolve repository root from test path")
 
 
-def contracts_version() -> str:
+def contracts_spec() -> str:
     package_json = json.loads((repo_root() / "package.json").read_text(encoding="utf-8"))
     return package_json["dependencies"]["@asset-allocation/contracts"]
 
@@ -20,16 +21,23 @@ def workflow_text(name: str) -> str:
     return (repo_root() / ".github" / "workflows" / name).read_text(encoding="utf-8")
 
 
-def test_package_json_uses_versioned_contracts_dependency() -> None:
+def resolved_contracts_version() -> str:
+    text = (repo_root() / "pnpm-lock.yaml").read_text(encoding="utf-8")
+    match = re.search(r"'@asset-allocation/contracts':\n        specifier: .+\n        version: ([^\n]+)", text)
+    assert match, "pnpm-lock.yaml must record a resolved published contracts version"
+    return match.group(1).strip()
+
+
+def test_package_json_uses_supported_contracts_range() -> None:
     text = (repo_root() / "package.json").read_text(encoding="utf-8")
-    assert f'"@asset-allocation/contracts": "{contracts_version()}"' in text
+    assert f'"@asset-allocation/contracts": "{contracts_spec()}"' in text
     assert "file:../asset-allocation-contracts/ts" not in text
 
 
 def test_lockfile_uses_published_contracts_package() -> None:
-    version = contracts_version()
     text = (repo_root() / "pnpm-lock.yaml").read_text(encoding="utf-8")
-    assert f"specifier: {version}" in text
+    version = resolved_contracts_version()
+    assert f"specifier: '{contracts_spec()}'" in text
     assert f"version: {version}" in text
     assert f"@asset-allocation/contracts@{version}" in text
     assert "file:../asset-allocation-contracts/ts" not in text
@@ -46,6 +54,10 @@ def test_ui_dockerfile_does_not_copy_contracts_repo() -> None:
 def test_ci_workflow_uses_registry_auth_without_contracts_checkout() -> None:
     text = workflow_text("ci.yml")
     assert "Checkout contracts repository" not in text
+    assert "contracts_version_override" in text
+    assert "resolve_contracts_version.py" in text
+    assert "npm view @asset-allocation/contracts versions --json" in text
+    assert "pnpm install --lockfile-only --no-frozen-lockfile" in text
     assert "pnpm install --frozen-lockfile" in text
     assert "secrets.NPMRC" in text
 
@@ -65,6 +77,10 @@ def test_release_workflow_uses_registry_auth_without_contracts_checkout() -> Non
     release_text = workflow_text("release.yml")
     assert "Checkout contracts repository" not in release_text
     assert '--secret "id=npmrc,src=${{ steps.npmrc.outputs.path }}"' in release_text
+    assert "contracts_version_override" in release_text
+    assert "resolve_contracts_version.py" in release_text
+    assert "npm view @asset-allocation/contracts versions --json" in release_text
+    assert "pnpm install --lockfile-only --no-frozen-lockfile" in release_text
     assert "secrets.NPMRC" in release_text
 
 
@@ -77,7 +93,7 @@ def test_contracts_compat_workflow_is_the_only_checkout_exception() -> None:
     assert "compat_dir=/tmp/asset-allocation-ui-compat" in text
     assert "pnpm install --no-frozen-lockfile" in text
     assert "pnpm add --no-save /workspace/asset-allocation-contracts/ts" not in text
-    assert "DISPATCH_CONTRACTS_VERSION" in text
-    assert "pnpm install --lockfile-only --no-frozen-lockfile" in text
-    assert "git push origin HEAD:${{ steps.contracts.outputs.ui_ref }}" in text
-    assert text.index("Pin released contracts version") < text.index("Run compatibility suite")
+    assert "DISPATCH_CONTRACTS_VERSION" not in text
+    assert "pnpm install --lockfile-only --no-frozen-lockfile" not in text
+    assert "git push origin HEAD:${{ steps.contracts.outputs.ui_ref }}" not in text
+    assert "Pin released contracts version" not in text
