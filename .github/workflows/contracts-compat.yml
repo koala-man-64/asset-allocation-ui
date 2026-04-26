@@ -14,7 +14,7 @@ on:
       - contracts_released
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ui-contracts-compat-${{ github.ref }}
@@ -27,6 +27,7 @@ jobs:
     env:
       DISPATCH_CONTRACTS_SHA: ${{ github.event.client_payload.contracts_sha }}
       DISPATCH_CONTRACTS_REF: ${{ github.event.client_payload.contracts_ref }}
+      DISPATCH_CONTRACTS_VERSION: ${{ github.event.client_payload.contracts_version }}
     steps:
       - name: Resolve contracts ref
         id: contracts
@@ -76,10 +77,29 @@ jobs:
           printf '%s' "${NPMRC_CONTENT}" > "${path}"
           echo "path=${path}" >> "$GITHUB_OUTPUT"
 
-      - name: Run workflow contract tests
+      - name: Pin released contracts version
+        if: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.contracts_version != '' }}
+        env:
+          CONTRACTS_VERSION: ${{ github.event.client_payload.contracts_version }}
         shell: bash
         run: |
           set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          package_json_path = Path("asset-allocation-ui/package.json")
+          package_json = json.loads(package_json_path.read_text(encoding="utf-8"))
+          package_json["dependencies"]["@asset-allocation/contracts"] = os.environ["CONTRACTS_VERSION"]
+          package_json_path.write_text(json.dumps(package_json, indent=2) + "\n", encoding="utf-8")
+          PY
+          docker run --rm \
+            -v "${{ github.workspace }}/asset-allocation-ui:/workspace" \
+            -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
+            -w /workspace \
+            node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
+            bash -lc 'set -euo pipefail; corepack enable; pnpm install --lockfile-only --no-frozen-lockfile'
           python -m pip install --upgrade pip
           python -m pip install pytest
           python -m pytest asset-allocation-ui/tests/test_multirepo_dependency_contract.py -q
@@ -112,6 +132,24 @@ jobs:
               pnpm vitest run src/app/__tests__/App.auth.test.tsx src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/hooks/useRealtime.test.tsx
               pnpm build
             '
+
+      - name: Commit pinned contracts version
+        if: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.contracts_version != '' }}
+        env:
+          CONTRACTS_VERSION: ${{ github.event.client_payload.contracts_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd asset-allocation-ui
+          if git diff --quiet -- package.json pnpm-lock.yaml; then
+            echo "Contracts version already pinned to ${CONTRACTS_VERSION}."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json pnpm-lock.yaml
+          git commit -m "chore: adopt contracts ${CONTRACTS_VERSION}"
+          git push origin HEAD:${{ steps.contracts.outputs.ui_ref }}
 
       - name: Write compatibility summary
         shell: bash
