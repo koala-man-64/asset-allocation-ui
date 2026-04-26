@@ -1,7 +1,10 @@
 import { request } from '@/services/apiService';
 import type {
-  TradeAccountDetail,
-  TradeAccountListResponse,
+  TradeAccountDetailView,
+  TradeAccountListResponseView,
+  TradeBlotterResponse
+} from '@/services/tradeDeskModels';
+import type {
   TradeOrderCancelRequest,
   TradeOrderCancelResponse,
   TradeOrderHistoryResponse,
@@ -24,16 +27,18 @@ export const tradeDeskKeys = {
   orders: (accountId: string | null) =>
     [...tradeDeskKeys.all(), 'orders', accountId ?? 'none'] as const,
   history: (accountId: string | null) =>
-    [...tradeDeskKeys.all(), 'history', accountId ?? 'none'] as const
+    [...tradeDeskKeys.all(), 'history', accountId ?? 'none'] as const,
+  blotter: (accountId: string | null) =>
+    [...tradeDeskKeys.all(), 'blotter', accountId ?? 'none'] as const
 };
 
 export const tradeDeskApi = {
-  listAccounts(signal?: AbortSignal): Promise<TradeAccountListResponse> {
-    return request<TradeAccountListResponse>('/trade-accounts', { signal });
+  listAccounts(signal?: AbortSignal): Promise<TradeAccountListResponseView> {
+    return request<TradeAccountListResponseView>('/trade-accounts', { signal });
   },
 
-  getAccountDetail(accountId: string, signal?: AbortSignal): Promise<TradeAccountDetail> {
-    return request<TradeAccountDetail>(tradeAccountPath(accountId), { signal });
+  getAccountDetail(accountId: string, signal?: AbortSignal): Promise<TradeAccountDetailView> {
+    return request<TradeAccountDetailView>(tradeAccountPath(accountId), { signal });
   },
 
   listPositions(accountId: string, signal?: AbortSignal): Promise<TradePositionListResponse> {
@@ -50,6 +55,12 @@ export const tradeDeskApi = {
 
   listHistory(accountId: string, signal?: AbortSignal): Promise<TradeOrderHistoryResponse> {
     return request<TradeOrderHistoryResponse>(`${tradeAccountPath(accountId)}/history`, {
+      signal
+    });
+  },
+
+  listBlotter(accountId: string, signal?: AbortSignal): Promise<TradeBlotterResponse> {
+    return request<TradeBlotterResponse>(`${tradeAccountPath(accountId)}/blotter`, {
       signal
     });
   },

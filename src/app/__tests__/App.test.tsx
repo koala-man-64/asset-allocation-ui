@@ -81,6 +81,9 @@ vi.mock('@/features/accounts/AccountOperationsPage', () => ({
     <div data-testid="mock-account-operations">Mock Account Operations</div>
   )
 }));
+vi.mock('@/features/trade-desk/TradeMonitorPage', () => ({
+  TradeMonitorPage: () => <div data-testid="mock-trade-monitor">Mock Trade Monitor</div>
+}));
 
 vi.mock('@/features/universes/UniverseConfigPage', () => ({
   UniverseConfigPage: () => <div data-testid="mock-universe-config">Mock Universe Workbench</div>
@@ -171,6 +174,13 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-account-operations')).toBeInTheDocument();
+  });
+
+  it('renders the trade monitor route through the application shell', async () => {
+    window.history.pushState({}, 'Trade Monitor', '/trade-monitor');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-trade-monitor')).toBeInTheDocument();
   });
 
   it('renders the regime monitor route through the application shell', async () => {
