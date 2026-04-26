@@ -488,7 +488,7 @@ function buildConfig(
   options: {
     rebalanceCadence?: PortfolioConfig['rebalanceCadence'];
     rebalanceAnchor?: string;
-  } = {},
+  },
   allocationMode: PortfolioAllocationMode = 'percent',
   allocatableCapital: number | null = null
 ): PortfolioConfig {
