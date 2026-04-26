@@ -373,6 +373,7 @@ const detailsByAccountId: Record<string, TradeAccountDetailView> = {
         statusAfter: 'accepted',
         summary: 'Live trade submitted under supervisory review.',
         sanitizedError: null,
+        grantedRoles: [],
         details: {}
       }
     ],

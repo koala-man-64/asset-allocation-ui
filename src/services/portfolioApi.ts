@@ -485,10 +485,10 @@ function buildConfig(
   benchmarkSymbol: string,
   baseCurrency: string,
   sleeves: PortfolioSleeveDefinition[],
-  options?: {
+  options: {
     rebalanceCadence?: PortfolioConfig['rebalanceCadence'];
     rebalanceAnchor?: string;
-  }
+  } = {},
   allocationMode: PortfolioAllocationMode = 'percent',
   allocatableCapital: number | null = null
 ): PortfolioConfig {
@@ -504,8 +504,6 @@ function buildConfig(
     rebalanceAnchor: options?.rebalanceAnchor || 'Strategy native cadence',
     allocationMode,
     allocatableCapital,
-    rebalanceCadence: 'weekly',
-    rebalanceAnchor: 'Strategy native cadence',
     targetGrossExposurePct: targetWeightPct,
     cashReservePct: Number(Math.max(0, 100 - targetWeightPct).toFixed(2)),
     maxNames: 60,
@@ -612,7 +610,7 @@ function buildDetailFromResponses(
     {
       rebalanceCadence: accountDetail.account.rebalanceCadence,
       rebalanceAnchor: accountDetail.account.rebalanceAnchor
-    }
+    },
     activeRevision?.allocationMode ?? 'percent',
     activeRevision?.allocatableCapital ?? null
   );
