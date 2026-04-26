@@ -1,9 +1,17 @@
 import { ArrowUpRight, Layers3, Orbit, TableProperties, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from '@/app/components/ui/table';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { PageLoader } from '@/app/components/common/PageLoader';
-import type { RunRecordResponse } from '@/services/backtestApi';
+import type { RunRecordResponse, TradeResponse } from '@/services/backtestApi';
 import type { StrategyDetail } from '@/types/strategy';
 import {
   describeRegimePolicy,
@@ -23,6 +31,10 @@ interface StrategyDossierProps {
   recentRuns: RunRecordResponse[];
   recentRunsLoading: boolean;
   recentRunsError: string;
+  recentTrades: TradeResponse[];
+  recentTradesLoading: boolean;
+  recentTradesError: string;
+  recentTradesRunId: string | null;
 }
 
 function DossierTile({
@@ -56,7 +68,11 @@ export function StrategyDossier({
   errorMessage,
   recentRuns,
   recentRunsLoading,
-  recentRunsError
+  recentRunsError,
+  recentTrades,
+  recentTradesLoading,
+  recentTradesError,
+  recentTradesRunId
 }: StrategyDossierProps) {
   return (
     <section className="mcm-panel flex min-h-[680px] flex-col overflow-hidden">
@@ -312,6 +328,66 @@ export function StrategyDossier({
               ) : (
                 <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
                   No backtests have been submitted for this strategy yet.
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4 rounded-[2rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-display text-lg text-foreground">Latest Backtest Trade History</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Rendered from the existing backtest trades API so trade rows are visible without leaving the dossier.
+                  </p>
+                </div>
+                <Badge variant="secondary">{recentTrades.length} trades</Badge>
+              </div>
+
+              {recentTradesLoading ? (
+                <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
+                  Loading recent trades...
+                </div>
+              ) : recentTradesError ? (
+                <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+                  {recentTradesError}
+                </div>
+              ) : recentTrades.length ? (
+                <div className="space-y-3">
+                  {recentTradesRunId ? (
+                    <div className="text-sm text-muted-foreground">Run {recentTradesRunId}</div>
+                  ) : null}
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Execution</TableHead>
+                          <TableHead>Symbol</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead className="text-right">Quantity</TableHead>
+                          <TableHead className="text-right">Price</TableHead>
+                          <TableHead className="text-right">Commission</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {recentTrades.map((trade) => (
+                          <TableRow
+                            key={`${trade.execution_date}-${trade.symbol}-${trade.trade_role || 'trade'}`}
+                          >
+                            <TableCell>{formatStrategyTimestamp(trade.execution_date)}</TableCell>
+                            <TableCell className="font-medium">{trade.symbol}</TableCell>
+                            <TableCell>{trade.trade_role || 'trade'}</TableCell>
+                            <TableCell className="text-right">{trade.quantity}</TableCell>
+                            <TableCell className="text-right">{trade.price}</TableCell>
+                            <TableCell className="text-right">{trade.commission}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
+                  No trade rows were returned for the latest available backtest run.
                 </div>
               )}
             </div>

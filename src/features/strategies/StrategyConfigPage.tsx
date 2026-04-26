@@ -84,6 +84,19 @@ export function StrategyConfigPage() {
       }),
     enabled: Boolean(selectedStrategyName)
   });
+  const latestTradeHistoryRun =
+    recentRunsQuery.data?.runs.find((run) => run.status === 'completed') ||
+    recentRunsQuery.data?.runs[0] ||
+    null;
+  const recentTradesQuery = useQuery({
+    queryKey: ['backtest', 'trades', latestTradeHistoryRun?.run_id],
+    queryFn: () =>
+      backtestApi.getTrades(String(latestTradeHistoryRun?.run_id), {
+        limit: 20,
+        offset: 0
+      }),
+    enabled: Boolean(latestTradeHistoryRun?.run_id)
+  });
 
   const filteredStrategies = useMemo(() => {
     const query = deferredSearchText.trim().toLowerCase();
@@ -155,6 +168,7 @@ export function StrategyConfigPage() {
   const strategiesErrorMessage = formatSystemStatusText(strategiesError);
   const detailErrorMessage = formatSystemStatusText(detailQuery.error);
   const recentRunsErrorMessage = formatSystemStatusText(recentRunsQuery.error);
+  const recentTradesErrorMessage = formatSystemStatusText(recentTradesQuery.error);
 
   const editorSourceDetail =
     editorState?.strategyName && editorState.strategyName === selectedStrategyName
@@ -235,6 +249,10 @@ export function StrategyConfigPage() {
           recentRuns={recentRunsQuery.data?.runs || []}
           recentRunsLoading={recentRunsQuery.isLoading}
           recentRunsError={recentRunsErrorMessage}
+          recentTrades={recentTradesQuery.data?.trades || []}
+          recentTradesLoading={recentTradesQuery.isLoading}
+          recentTradesError={recentTradesErrorMessage}
+          recentTradesRunId={latestTradeHistoryRun?.run_id || null}
         />
 
         {editorState ? (

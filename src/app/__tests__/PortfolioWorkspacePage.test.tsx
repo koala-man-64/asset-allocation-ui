@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PortfolioWorkspacePage } from '@/features/portfolios/PortfolioWorkspacePage';
+import type { PortfolioModelOutlook } from '@/features/portfolios/lib/portfolioForecast';
 import { DataService } from '@/services/DataService';
 import { backtestApi } from '@/services/backtestApi';
 import { portfolioApi } from '@/services/portfolioApi';
@@ -25,6 +26,7 @@ vi.mock('@/services/portfolioApi', () => ({
     previewPortfolio: vi.fn(),
     savePortfolio: vi.fn(),
     listBuildRuns: vi.fn(),
+    getForecast: vi.fn(),
     getMonitorSnapshot: vi.fn(),
     triggerBuild: vi.fn()
   }
@@ -361,7 +363,29 @@ const monitorSnapshot: PortfolioMonitorSnapshot = {
     }
   ],
   ledgerEvents: detail.recentLedgerEvents,
-  freshness: detail.freshness
+  freshness: detail.freshness,
+  nextRebalance: {
+    accountId: 'acct-core',
+    asOf: '2026-04-18',
+    rebalanceCadence: 'weekly',
+    anchorText: 'Monday close',
+    nextDate: '2026-04-20',
+    inferred: false,
+    basis: 'anchor',
+    reason: 'Weekly cadence is anchored to the parsed weekday in the rebalance anchor.'
+  }
+};
+const forecast: PortfolioModelOutlook = {
+  expectedReturnPct: 3.4,
+  expectedActiveReturnPct: 1.1,
+  downsidePct: -2.2,
+  upsidePct: 6.8,
+  confidence: 'thin',
+  confidenceLabel: 'Thin sample',
+  sampleSize: 3,
+  sampleMode: 'fallback-history',
+  appliedRegimeCode: 'trending_up',
+  notes: ['Regime sample is thin; falling back to all available history.']
 };
 
 const buildRuns: PortfolioBuildListResponse = {
@@ -412,6 +436,7 @@ describe('PortfolioWorkspacePage', () => {
       portfolio: summary
     });
     vi.mocked(portfolioApi.listBuildRuns).mockResolvedValue(buildRuns);
+    vi.mocked(portfolioApi.getForecast).mockResolvedValue(forecast);
     vi.mocked(portfolioApi.getMonitorSnapshot).mockResolvedValue(monitorSnapshot);
     vi.mocked(portfolioApi.triggerBuild).mockResolvedValue(triggerResponse);
     vi.mocked(strategyApi.listStrategies).mockResolvedValue([
@@ -556,6 +581,9 @@ describe('PortfolioWorkspacePage', () => {
     expect(screen.getByRole('tab', { name: /overview/i })).toHaveAttribute('data-state', 'active');
     expect(screen.getByText(/trending up/i)).toBeInTheDocument();
     expect(screen.getByText(/current allocation/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText(/apr 20, 2026/i).length).toBeGreaterThan(0);
+    });
   });
 
   it('switches to construction, lets the user pick a strategy, and renders a live rebalance trade list', async () => {
@@ -622,6 +650,17 @@ describe('PortfolioWorkspacePage', () => {
     expect(await screen.findByText(/regime-conditioned forecast/i)).toBeInTheDocument();
     expect(screen.getByText(/thin sample/i)).toBeInTheDocument();
     expect(screen.getByText(/applied regime/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(portfolioApi.getForecast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: 'acct-core',
+          horizon: '3M',
+          assumption: 'current',
+          modelName: 'strategy-native'
+        }),
+        expect.anything()
+      );
+    });
   });
 
   it('renders the trading blotter and refreshes materialization from the next rebalance module', async () => {
