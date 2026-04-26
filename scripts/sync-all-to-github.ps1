@@ -9,20 +9,26 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $envPath = Join-Path $repoRoot ".env.web"
 $contractPath = Join-Path $repoRoot "docs\ops\env-contract.csv"
 
+function Normalize-TextValue {
+    param([AllowNull()][string]$Value)
+    if ($null -eq $Value) { return "" }
+    return $Value.Replace([string][char]0xFEFF, "").Trim()
+}
+
 function Parse-EnvFile {
     param([string]$Path)
     $map = @{}
     foreach ($rawLine in (Get-Content $Path)) {
-        $line = $rawLine.Trim()
+        $line = Normalize-TextValue -Value $rawLine
         if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith("#") -or $line -notmatch "^([^=]+)=(.*)$") { continue }
-        $map[$matches[1].Trim()] = $matches[2]
+        $map[(Normalize-TextValue -Value $matches[1])] = (Normalize-TextValue -Value $matches[2])
     }
     return $map
 }
 function ConvertTo-GitHubSecretValue {
     param([AllowNull()][string]$Value)
     if ($null -eq $Value) { return "" }
-    return $Value.Replace("\n", "`n")
+    return (Normalize-TextValue -Value $Value).Replace("\n", "`n")
 }
 
 function Load-EnvContract {
@@ -61,9 +67,9 @@ foreach ($key in ($contractMap.Keys | Sort-Object)) {
         continue
     }
     if ($storage -eq "var") {
-        $value | gh variable set $key
+        gh variable set $key --body $value
     } else {
-        (ConvertTo-GitHubSecretValue -Value $value) | gh secret set $key
+        gh secret set $key --body (ConvertTo-GitHubSecretValue -Value $value)
     }
     Write-Host "Synced ${storage}: $key" -ForegroundColor Green
 }

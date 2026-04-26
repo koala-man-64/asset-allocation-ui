@@ -1,0 +1,28 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "pnpm: dev",
+      "type": "shell",
+      "command": "corepack",
+      "args": ["pnpm", "dev"],
+      "options": {
+        "env": {
+          "VITE_PORT": "5173"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": "^(?!)"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\s*VITE\\s+v\\S+",
+          "endsPattern": "^.*Local:\\s+http://localhost:5173/?.*$"
+        }
+      }
+    }
+  ]
+}

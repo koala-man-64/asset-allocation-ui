@@ -2,6 +2,7 @@ name: UI CI
 run-name: UI CI / ${{ github.event_name }} / ${{ github.ref_name }}
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
@@ -32,8 +33,8 @@ jobs:
       - name: actionlint
         uses: rhysd/actionlint@393031adb9afb225ee52ae2ccd7a5af5525e03e8 # v1.7.11
 
-  build-test:
-    name: build-test
+  python-test:
+    name: python-test
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout UI repository
@@ -44,13 +45,48 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: "3.14"
+          python-version: '3.14'
 
-      - name: Run env-contract static tests
+      - name: Run Python quality checks
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip pytest
+          python -m pip install --upgrade pip pytest ruff
+          cd asset-allocation-ui
+          python -m pytest tests -q
+
+  validate:
+    name: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout UI repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: asset-allocation-ui
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Write required npmrc
+        id: npmrc
+        env:
+          NPMRC_CONTENT: ${{ secrets.NPMRC }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${NPMRC_CONTENT:?Set repository secret NPMRC to a complete .npmrc file with read access to @asset-allocation/contracts.}"
+          path="${RUNNER_TEMP}/ui.npmrc"
+          printf '%s' "${NPMRC_CONTENT}" > "${path}"
+          echo "path=${path}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate UI workspace
+        shell: bash
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ steps.npmrc.outputs.path }}
+        run: |
+          set -euo pipefail
           cd asset-allocation-ui
           python -m pytest tests/test_env_contract.py tests/test_multirepo_dependency_contract.py tests/test_workflow_scripts.py -q
 
@@ -113,12 +149,19 @@ jobs:
 
       - name: Lint, test, and build UI
         shell: bash
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ steps.npmrc.outputs.path }}
         run: |
           set -euo pipefail
-          docker run --rm \
-            -e VITE_PORT="5174" \
-            -v "${{ github.workspace }}:/workspace" \
-            -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
-            -w /workspace/asset-allocation-ui \
-            node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
-            bash -lc 'set -euo pipefail; corepack enable; pnpm install --frozen-lockfile; pnpm lint; pnpm exec tsc --noEmit; pnpm vitest run src/app/__tests__/App.auth.test.tsx src/contexts/__tests__/AuthContext.test.tsx src/services/__tests__/apiService.test.ts src/hooks/useRealtime.test.tsx; pnpm build'
+          cd asset-allocation-ui
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Build and run browser smoke
+        shell: bash
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ steps.npmrc.outputs.path }}
+        run: |
+          set -euo pipefail
+          cd asset-allocation-ui
+          pnpm build
+          pnpm test:e2e

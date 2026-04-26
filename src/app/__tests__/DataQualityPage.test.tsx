@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/utils';
-import { DataQualityPage } from '@/app/components/pages/DataQualityPage';
+import { DataQualityPage } from '@/features/data-quality/DataQualityPage';
 import { DataService } from '@/services/DataService';
 import type { SystemHealth } from '@/types/strategy';
 
@@ -124,7 +124,7 @@ describe('DataQualityPage', () => {
     });
   });
 
-  vi.mock('@/app/components/pages/data-quality/DataPipelinePanel', () => ({
+  vi.mock('@/features/data-quality/components/DataPipelinePanel', () => ({
     DataPipelinePanel: () => <div data-testid="mock-data-pipeline-panel">Mock Pipeline Panel</div>
   }));
 
@@ -192,6 +192,40 @@ describe('DataQualityPage', () => {
     expect(screen.queryByRole('link', { name: /open portal/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /open job/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /trigger/i })).toBeNull();
+  });
+
+  it('keeps Azure portal and same-origin operator links clickable', async () => {
+    const healthData = makeHealthData();
+    const layer = healthData.dataLayers[0];
+    if (layer && layer.domains && layer.domains[0]) {
+      layer.domains[0].triggerUrl = '/api/system/jobs/refresh';
+    }
+
+    mockUseSystemHealthQuery.mockReturnValue({
+      data: healthData,
+      isLoading: false,
+      error: null,
+      isFetching: false,
+      dataUpdatedAt: Date.now()
+    });
+
+    renderWithProviders(<DataQualityPage />);
+    expect(await screen.findByRole('heading', { name: /data quality/i })).toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: /open portal/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('https://portal.azure.com/')
+    );
+    expect(screen.getByRole('link', { name: /open job/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('https://portal.azure.com/')
+    );
+
+    const triggerLink = screen.getByRole('link', { name: /trigger/i });
+    expect(triggerLink).toHaveAttribute(
+      'href',
+      `${window.location.origin}/api/system/jobs/refresh`
+    );
   });
 
   it('forces refresh with refresh=true on click', async () => {

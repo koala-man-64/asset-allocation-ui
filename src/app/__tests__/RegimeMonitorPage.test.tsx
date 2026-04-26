@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RegimeModelConfig } from '@asset-allocation/contracts';
 
-import { RegimeMonitorPage } from '@/app/components/pages/RegimeMonitorPage';
+import { RegimeMonitorPage } from '@/features/regimes/RegimeMonitorPage';
 import { regimeApi } from '@/services/regimeApi';
 import { renderWithProviders } from '@/test/utils';
 
@@ -18,26 +18,23 @@ vi.mock('@/services/regimeApi', () => ({
 }));
 
 const defaultRegimeConfig: RegimeModelConfig = {
-  trendPositiveThreshold: 0.02,
-  trendNegativeThreshold: -0.02,
-  curveContangoThreshold: 0.5,
-  curveInvertedThreshold: -0.5,
-  highVolEnterThreshold: 32,
-  highVolExitThreshold: 28,
-  bearVolMin: 20,
-  bearVolMaxExclusive: 32,
-  bullVolMaxExclusive: 18,
-  choppyVolMin: 18,
-  choppyVolMaxExclusive: 24,
+  activationThreshold: 0.6,
   haltVixThreshold: 40,
   haltVixStreakDays: 3,
-  precedence: [
-    'high_vol',
-    'trending_bear',
-    'choppy_mean_reversion',
-    'trending_bull',
-    'unclassified'
-  ]
+  signalConfigs: {
+    trending_up: {
+      displayName: 'Trending Up',
+      requiredMetrics: ['return_20d'],
+      rules: [
+        {
+          metric: 'return_20d',
+          comparison: 'gte',
+          lower: 0.02,
+          description: '20-day return confirms a positive trend.'
+        }
+      ]
+    }
+  }
 };
 
 describe('RegimeMonitorPage', () => {
@@ -85,19 +82,21 @@ describe('RegimeMonitorPage', () => {
       effective_from_date: '2026-03-10',
       model_name: 'default-regime',
       model_version: 1,
-      regime_code: 'trending_bull',
-      regime_status: 'confirmed',
-      matched_rule_id: 'trending_bull',
+      active_regimes: ['trending_up'],
+      signals: [
+        {
+          regime_code: 'trending_up',
+          display_name: 'Trending Up',
+          signal_state: 'active',
+          score: 0.91,
+          activation_threshold: 0.6,
+          is_active: true,
+          matched_rule_id: 'trend-positive',
+          evidence: { return_20d: 0.0421 }
+        }
+      ],
       halt_flag: false,
       halt_reason: null,
-      spy_return_20d: 0.0421,
-      rvol_10d_ann: 13.2,
-      vix_spot_close: 18.4,
-      vix3m_close: 19.1,
-      vix_slope: 0.7,
-      trend_state: 'positive',
-      curve_state: 'contango',
-      vix_gt_32_streak: 0,
       computed_at: '2026-03-08T00:00:00Z'
     });
     vi.mocked(regimeApi.getHistory).mockResolvedValue({
@@ -110,9 +109,19 @@ describe('RegimeMonitorPage', () => {
           effective_from_date: '2026-03-10',
           model_name: 'default-regime',
           model_version: 1,
-          regime_code: 'trending_bull',
-          regime_status: 'confirmed',
-          matched_rule_id: 'trending_bull',
+          active_regimes: ['trending_up'],
+          signals: [
+            {
+              regime_code: 'trending_up',
+              display_name: 'Trending Up',
+              signal_state: 'active',
+              score: 0.91,
+              activation_threshold: 0.6,
+              is_active: true,
+              matched_rule_id: 'trend-positive',
+              evidence: { return_20d: 0.0421 }
+            }
+          ],
           halt_flag: false,
           halt_reason: null
         }
@@ -139,9 +148,9 @@ describe('RegimeMonitorPage', () => {
   it('renders the current snapshot and history rows', async () => {
     renderWithProviders(<RegimeMonitorPage />);
 
-    expect((await screen.findAllByText(/trending bull/i)).length).toBeGreaterThan(0);
-    expect(screen.getByText(/History/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/Mar 7, 2026/i).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/trending up/i)).length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: /history/i })).toBeInTheDocument();
+    expect((await screen.findAllByText(/Mar 7, 2026/i)).length).toBeGreaterThan(0);
   });
 
   it('saves a new regime model revision', async () => {

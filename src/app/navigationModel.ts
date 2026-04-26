@@ -1,20 +1,10 @@
 import type { ElementType } from 'react';
 import {
-  Activity,
-  BarChart3,
-  Bug,
-  Database,
-  Filter,
-  Folder,
-  Globe,
-  Layers3,
-  Orbit,
-  ScanSearch,
-  SlidersHorizontal,
-  Target
-} from 'lucide-react';
-
-export type NavSectionKey = 'market-intelligence' | 'live-operations';
+  APP_NAVIGATION_REGISTRY,
+  NAV_SECTION_TITLES,
+  type NavSectionKey
+} from '@/app/routeRegistry';
+export type { NavSectionKey } from '@/app/routeRegistry';
 export type NavZoneKey = NavSectionKey | 'pinned';
 
 export interface NavItem {
@@ -32,110 +22,26 @@ export interface NavSection {
 
 export type NavOrderBySection = Record<NavSectionKey, string[]>;
 
-export const NAV_SECTIONS: NavSection[] = [
-  {
-    key: 'market-intelligence',
-    title: 'MARKET INTELLIGENCE',
-    items: [
-      {
-        path: '/stock-explorer',
-        label: 'Stock Explorer',
-        icon: Globe,
-        sectionKey: 'market-intelligence'
-      },
-      {
-        path: '/stock-detail',
-        label: 'Live Stock View',
-        icon: Target,
-        sectionKey: 'market-intelligence'
+export const NAV_SECTIONS: NavSection[] = Object.entries(NAV_SECTION_TITLES).map(
+  ([sectionKey, title]) => ({
+    key: sectionKey as NavSectionKey,
+    title,
+    items: APP_NAVIGATION_REGISTRY.flatMap((item) => {
+      if (item.sectionKey !== sectionKey) {
+        return [];
       }
-    ]
-  },
-  {
-    key: 'live-operations',
-    title: 'LIVE OPERATIONS',
-    items: [
-      {
-        path: '/data-explorer',
-        label: 'Data Explorer',
-        icon: Folder,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/data-quality',
-        label: 'Data Quality',
-        icon: ScanSearch,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/data-profiling',
-        label: 'Data Profiling',
-        icon: BarChart3,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/regimes',
-        label: 'Regime Monitor',
-        icon: Orbit,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/system-status',
-        label: 'System Status',
-        icon: Activity,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/debug-symbols',
-        label: 'Debug Symbols',
-        icon: Bug,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/symbol-purge',
-        label: 'Symbol Purge',
-        icon: Filter,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/runtime-config',
-        label: 'Runtime Config',
-        icon: SlidersHorizontal,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/strategy-exploration',
-        label: 'Strategy Exploration',
-        icon: Target,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/strategies',
-        label: 'Strategies',
-        icon: Target,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/universes',
-        label: 'Universe Configurations',
-        icon: Globe,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/rankings',
-        label: 'Ranking Configurations',
-        icon: Layers3,
-        sectionKey: 'live-operations'
-      },
-      {
-        path: '/postgres-explorer',
-        label: 'Postgres Explorer',
-        icon: Database,
-        sectionKey: 'live-operations'
-      }
-    ]
-  }
-];
+
+      return [
+        {
+          path: item.path,
+          label: item.label,
+          icon: item.icon as ElementType,
+          sectionKey: item.sectionKey
+        }
+      ];
+    })
+  })
+);
 
 const NAV_ITEM_BY_PATH = new Map(
   NAV_SECTIONS.flatMap((section) => section.items.map((item) => [item.path, item] as const))

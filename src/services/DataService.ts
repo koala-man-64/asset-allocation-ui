@@ -32,9 +32,73 @@ import type {
   StorageUsageResponse
 } from '@/services/apiService';
 import type { StockScreenerResponse } from '@/services/apiService';
-import { apiService } from '@/services/apiService';
+import { ApiError, apiService } from '@/services/apiService';
+import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
 export type { FinanceData, MarketData };
+
+const SUPPRESSED_SESSION_AUTH_MESSAGE =
+  'Interactive sign-in was suppressed because /auth/session succeeded recently';
+
+function shouldUseSystemStatusFallback(error: unknown): boolean {
+  if (!(error instanceof ApiError)) {
+    return false;
+  }
+
+  if (error.status === 404) {
+    return true;
+  }
+
+  return error.status === 401 && error.message.includes(SUPPRESSED_SESSION_AUTH_MESSAGE);
+}
+
+function buildEmptyMetadataSnapshot(error: unknown): DomainMetadataSnapshotResponse {
+  const errorMessage = error instanceof Error ? error.message : String(error ?? 'Unknown error');
+
+  logUiDiagnostic(
+    'DataService',
+    'system-status-fallback-metadata-unavailable',
+    { error: errorMessage },
+    'warn'
+  );
+
+  return {
+    version: 1,
+    updatedAt: null,
+    entries: {},
+    warnings: [
+      'Metadata snapshot is unavailable; showing system health without cached cell counts.'
+    ]
+  };
+}
+
+async function buildFallbackSystemStatusView(
+  params: { refresh?: boolean },
+  cause: unknown
+): Promise<SystemStatusViewResponse> {
+  logUiDiagnostic(
+    'DataService',
+    'system-status-view-fallback-start',
+    { error: cause instanceof Error ? cause.message : String(cause ?? 'Unknown error') },
+    'warn'
+  );
+
+  const [systemHealth, metadataSnapshot] = await Promise.all([
+    apiService.getSystemHealth(params),
+    apiService.getDomainMetadataSnapshot(params).catch(buildEmptyMetadataSnapshot)
+  ]);
+
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    systemHealth,
+    metadataSnapshot,
+    sources: {
+      systemHealth: params.refresh ? 'live-refresh' : 'cache',
+      metadataSnapshot: 'persisted-snapshot'
+    }
+  };
+}
 
 export const DataService = {
   getMarketData(
@@ -86,6 +150,25 @@ export const DataService = {
     }
   },
 
+  async createPasswordAuthSession(password: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
+    try {
+      const response = await apiService.createPasswordAuthSession(password);
+      return response;
+    } catch (error) {
+      console.error('[DataService] createPasswordAuthSession error', error);
+      throw error;
+    }
+  },
+
+  async deleteAuthSession(): Promise<Record<string, never>> {
+    try {
+      return await apiService.deleteAuthSession();
+    } catch (error) {
+      console.error('[DataService] deleteAuthSession error', error);
+      throw error;
+    }
+  },
+
   getDomainMetadata(
     layer: 'bronze' | 'silver' | 'gold' | 'platinum',
     domain: string,
@@ -100,8 +183,15 @@ export const DataService = {
     return apiService.getDomainMetadataSnapshot(params);
   },
 
-  getSystemStatusView(params: { refresh?: boolean } = {}): Promise<SystemStatusViewResponse> {
-    return apiService.getSystemStatusView(params);
+  async getSystemStatusView(params: { refresh?: boolean } = {}): Promise<SystemStatusViewResponse> {
+    try {
+      return await apiService.getSystemStatusView(params);
+    } catch (error) {
+      if (shouldUseSystemStatusFallback(error)) {
+        return buildFallbackSystemStatusView(params, error);
+      }
+      throw error;
+    }
   },
 
   getPersistedDomainMetadataSnapshotCache(): Promise<DomainMetadataSnapshotResponse> {

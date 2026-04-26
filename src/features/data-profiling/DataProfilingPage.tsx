@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { BarChart3, Database, RefreshCw } from 'lucide-react';
 
+import { PageHero } from '@/app/components/common/PageHero';
+import { StatePanel } from '@/app/components/common/StatePanel';
+import { StatCard } from '@/app/components/common/StatCard';
 import { Button } from '@/app/components/ui/button';
 import { DataService } from '@/services/DataService';
 import type { DataProfilingResponse } from '@/services/apiService';
@@ -51,6 +53,56 @@ function toInputSafeNumber(raw: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function ProfileHistogram({
+  bins,
+  kind
+}: {
+  bins: Array<{ label: string; count: number }>;
+  kind: DataProfilingResponse['kind'];
+}) {
+  const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
+
+  return (
+    <div className="mt-5 rounded-xl border border-border/40 bg-background/80 p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm font-mono">
+        <Database className="h-4 w-4" />
+        {kind === 'date' ? 'Monthly buckets' : 'Numeric histogram'}
+      </div>
+      <div
+        className="overflow-x-auto"
+        tabIndex={0}
+        role="group"
+        aria-label={`${kind === 'date' ? 'Monthly bucket' : 'Numeric'} histogram`}
+      >
+        <div className="flex min-w-[32rem] items-end gap-3 rounded-xl border border-border/35 bg-mcm-cream/45 px-4 pb-4 pt-6">
+          {bins.map((bin) => {
+            const heightPercent = Math.max(12, Math.round((bin.count / maxCount) * 100));
+
+            return (
+              <div key={`${bin.label}-${bin.count}`} className="flex min-w-0 flex-1 flex-col gap-3">
+                <div className="flex min-h-[13rem] items-end">
+                  <div
+                    role="img"
+                    className="w-full rounded-t-lg border border-mcm-walnut/15 bg-gradient-to-t from-mcm-olive to-mcm-teal/70 shadow-sm"
+                    style={{ height: `${heightPercent}%` }}
+                    aria-label={`${bin.label}: ${formatNumber(bin.count)} rows`}
+                  />
+                </div>
+                <div className="text-center">
+                  <div className="font-mono text-xs text-foreground">{formatNumber(bin.count)}</div>
+                  <div className="truncate text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                    {bin.label}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DataProfilingPage() {
   const [layer, setLayer] = useState<ContainerLayer>('gold');
   const [domain, setDomain] = useState<string>('market');
@@ -80,6 +132,7 @@ export function DataProfilingPage() {
     setColumnsError(null);
     setProfile(null);
     setProfileError(null);
+
     try {
       const data = await DataService.getGenericData(layer, domain, undefined, 500);
       if (!data.length) {
@@ -95,8 +148,8 @@ export function DataProfilingPage() {
       if (!column || !keys.includes(column)) {
         setColumn(keys[0] ?? '');
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       setColumnsError(message || 'Unable to load columns.');
       setAvailableColumns([]);
       setColumn('');
@@ -124,8 +177,8 @@ export function DataProfilingPage() {
         topValues
       });
       setProfile(response);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       setProfileError(message || 'Failed to compute profile.');
       setProfile(null);
     } finally {
@@ -137,6 +190,11 @@ export function DataProfilingPage() {
   const topBuckets = useMemo(() => profile?.topValues ?? [], [profile?.topValues]);
   const showChart = Boolean(profile && chartData.length > 0 && profile.kind !== 'string');
   const isStringProfile = profile?.kind === 'string';
+  const profileStateLabel = profileLoading
+    ? 'Running'
+    : profile
+      ? profile.kind.toUpperCase()
+      : 'Ready';
 
   const maxTopCount = useMemo(() => {
     if (!topBuckets.length) return 1;
@@ -145,17 +203,37 @@ export function DataProfilingPage() {
 
   return (
     <div className="page-shell">
-      <div className="page-header">
-        <p className="page-kicker">Data Exploration</p>
-        <h1 className="page-title flex items-center gap-2">
-          <BarChart3 className="h-5 w-5 text-mcm-olive" />
-          Data Profiling
-        </h1>
-        <p className="page-subtitle">
-          Choose container + domain, then inspect a column distribution. Numeric and date columns
-          render as bucketed histograms; string columns show cardinality and top frequencies.
-        </p>
-      </div>
+      <PageHero
+        kicker="Data Exploration"
+        title={
+          <span className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-mcm-olive" />
+            Data Profiling
+          </span>
+        }
+        subtitle="Choose a container and domain, then inspect a column distribution. Numeric and date columns render as bucketed histograms; string columns show cardinality and top frequencies."
+        metrics={[
+          {
+            label: 'Dataset',
+            value: `${layer} / ${domain}`,
+            detail: 'Current medallion layer and domain.'
+          },
+          {
+            label: 'Column',
+            value: column || 'Awaiting column',
+            detail: columnsLoading
+              ? 'Refreshing available fields.'
+              : `${availableColumns.length} column options discovered.`
+          },
+          {
+            label: 'Profile State',
+            value: profileStateLabel,
+            detail: profile
+              ? `${formatNumber(profile.sampleRows)} rows sampled.`
+              : 'Run a profile to populate the dossier.'
+          }
+        ]}
+      />
 
       <div className="mcm-panel p-4 sm:p-5">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6 lg:items-end">
@@ -164,7 +242,7 @@ export function DataProfilingPage() {
             <select
               id="dp-layer"
               value={layer}
-              onChange={(e) => setLayer(e.target.value as ContainerLayer)}
+              onChange={(event) => setLayer(event.target.value as ContainerLayer)}
               className={controlClass}
             >
               {containerOptions.map((option) => (
@@ -180,7 +258,7 @@ export function DataProfilingPage() {
             <select
               id="dp-domain"
               value={domain}
-              onChange={(e) => setDomain(e.target.value)}
+              onChange={(event) => setDomain(event.target.value)}
               className={controlClass}
             >
               {domainOptions.map((option) => (
@@ -196,12 +274,12 @@ export function DataProfilingPage() {
             <select
               id="dp-column"
               value={column}
-              onChange={(e) => setColumn(e.target.value)}
+              onChange={(event) => setColumn(event.target.value)}
               disabled={columnsLoading || !availableColumns.length}
               className={controlClass}
             >
               <option value="" disabled>
-                {columnsLoading ? 'Loading columns…' : 'Select a column'}
+                {columnsLoading ? 'Loading columns...' : 'Select a column'}
               </option>
               {availableColumns.map((item) => (
                 <option key={item} value={item}>
@@ -219,7 +297,7 @@ export function DataProfilingPage() {
               min={3}
               max={200}
               value={bins}
-              onChange={(e) => setBins(toInputSafeNumber(e.target.value) || 3)}
+              onChange={(event) => setBins(toInputSafeNumber(event.target.value) || 3)}
               className={controlClass}
             />
           </div>
@@ -232,7 +310,7 @@ export function DataProfilingPage() {
               min={10}
               max={100000}
               value={sampleRows}
-              onChange={(e) => setSampleRows(toInputSafeNumber(e.target.value) || 10)}
+              onChange={(event) => setSampleRows(toInputSafeNumber(event.target.value) || 10)}
               className={controlClass}
             />
           </div>
@@ -245,7 +323,7 @@ export function DataProfilingPage() {
               min={1}
               max={200}
               value={topValues}
-              onChange={(e) => setTopValues(toInputSafeNumber(e.target.value) || 1)}
+              onChange={(event) => setTopValues(toInputSafeNumber(event.target.value) || 1)}
               className={controlClass}
             />
           </div>
@@ -257,8 +335,8 @@ export function DataProfilingPage() {
             className="h-10 gap-2"
             disabled={profileLoading || columnsLoading || !column}
           >
-            {profileLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-            {profileLoading ? 'Profiling…' : 'Run Profile'}
+            {profileLoading && <RefreshCw className="h-4 w-4 animate-spin" />}
+            {profileLoading ? 'Profiling...' : 'Run Profile'}
           </Button>
 
           <Button
@@ -267,7 +345,7 @@ export function DataProfilingPage() {
             onClick={() => void loadColumns()}
             disabled={columnsLoading}
           >
-            {columnsLoading ? 'Refreshing columns…' : 'Refresh Columns'}
+            {columnsLoading ? 'Refreshing columns...' : 'Refresh Columns'}
           </Button>
 
           <p className="text-xs font-mono text-muted-foreground">
@@ -275,115 +353,72 @@ export function DataProfilingPage() {
           </p>
         </div>
 
-        {columnsError ? (
-          <p className="mt-3 rounded-md border border-rose-300/40 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-            {columnsError}
-          </p>
-        ) : null}
+        {columnsError && (
+          <StatePanel
+            tone="error"
+            title="Column Retrieval Failed"
+            message={columnsError}
+            className="mt-4 rounded-xl p-4"
+          />
+        )}
       </div>
 
       {(profileError || profile) && (
         <section className="mcm-panel p-4 sm:p-5">
-          {profileError ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-              <div className="font-semibold">Profile failed</div>
-              <div className="mt-1 text-xs font-mono">{profileError}</div>
-            </div>
-          ) : null}
+          {profileError && (
+            <StatePanel
+              tone="error"
+              title="Profile Failed"
+              message={<span className="font-mono text-xs">{profileError}</span>}
+            />
+          )}
 
-          {profile ? (
+          {profile && (
             <>
-              <div className="page-kicker mb-1">Profile result</div>
+              <div className="page-kicker mb-1">Profile Summary</div>
               <div className="grid gap-1 sm:grid-cols-2 sm:items-end sm:justify-between">
                 <h2 className="text-xl font-black uppercase tracking-tight">{profile.column}</h2>
                 <div className="text-xs font-mono text-muted-foreground">
-                  {profile.kind.toUpperCase()} · {layer.toUpperCase()} · {domain}
+                  {profile.kind.toUpperCase()} | {layer.toUpperCase()} | {domain}
                 </div>
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                <div className="rounded-xl border border-border/50 bg-background/80 p-3">
-                  <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-                    TOTAL ROWS
-                  </div>
-                  <div className="text-xl font-black font-mono mt-1">
-                    {formatNumber(profile.totalRows)}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">from sample</div>
-                </div>
-
-                <div className="rounded-xl border border-border/50 bg-background/80 p-3">
-                  <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-                    NON-NULL
-                  </div>
-                  <div className="text-xl font-black font-mono mt-1">
-                    {formatNumber(profile.nonNullCount)}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Nulls: {formatNumber(profile.nullCount)}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-border/50 bg-background/80 p-3">
-                  <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-                    UNIQUE
-                  </div>
-                  <div className="text-xl font-black font-mono mt-1">
-                    {formatNumber(profile.uniqueCount ?? 0)}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">Distinct values</div>
-                </div>
-
-                <div className="rounded-xl border border-border/50 bg-background/80 p-3">
-                  <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-                    DUPLICATES
-                  </div>
-                  <div className="text-xl font-black font-mono mt-1">
-                    {formatNumber(profile.duplicateCount ?? 0)}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">Repeated values</div>
-                </div>
-
-                <div className="rounded-xl border border-border/50 bg-background/80 p-3">
-                  <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-                    SAMPLE ROWS
-                  </div>
-                  <div className="text-xl font-black font-mono mt-1">
-                    {formatNumber(profile.sampleRows)}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">Rows fetched</div>
-                </div>
+                <StatCard
+                  label="Total Rows"
+                  value={formatNumber(profile.totalRows)}
+                  detail="Rows considered in the sample."
+                  valueClassName="font-mono"
+                />
+                <StatCard
+                  label="Non-Null"
+                  value={formatNumber(profile.nonNullCount)}
+                  detail={`Nulls: ${formatNumber(profile.nullCount)}`}
+                  valueClassName="font-mono"
+                />
+                <StatCard
+                  label="Unique"
+                  value={formatNumber(profile.uniqueCount ?? 0)}
+                  detail="Distinct values."
+                  valueClassName="font-mono"
+                />
+                <StatCard
+                  label="Duplicates"
+                  value={formatNumber(profile.duplicateCount ?? 0)}
+                  detail="Repeated values."
+                  valueClassName="font-mono"
+                />
+                <StatCard
+                  label="Sample Rows"
+                  value={formatNumber(profile.sampleRows)}
+                  detail="Rows fetched for analysis."
+                  valueClassName="font-mono"
+                />
               </div>
 
-              {showChart ? (
-                <div className="mt-5 rounded-xl border border-border/40 bg-background/80 p-3">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-mono">
-                    <Database className="h-4 w-4" />
-                    {profile.kind === 'date' ? 'Monthly buckets' : 'Numeric histogram'}
-                  </div>
-                  <div className="h-[340px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} margin={{ left: 8, right: 8, bottom: 54 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis
-                          dataKey="label"
-                          tickLine={false}
-                          axisLine={false}
-                          angle={-30}
-                          textAnchor="end"
-                          height={60}
-                          interval={0}
-                        />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="count" fill="var(--mcm-olive)" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              ) : null}
+              {showChart ? <ProfileHistogram bins={chartData} kind={profile.kind} /> : null}
 
-              {isStringProfile ? (
+              {isStringProfile && (
                 <div className="mt-5 rounded-xl border border-border/40 bg-background/80 p-3">
                   <div className="mb-2 text-sm font-mono">Top string values</div>
                   {topBuckets.length === 0 ? (
@@ -397,20 +432,21 @@ export function DataProfilingPage() {
                           12,
                           Math.round((entry.count / maxTopCount) * 100)
                         );
+
                         return (
                           <div
                             key={`${entry.value}-${entry.count}`}
                             className="rounded-lg border border-border/30 p-2"
                           >
                             <div className="flex items-center justify-between text-xs font-mono">
-                              <span className="truncate max-w-[65%]">
+                              <span className="max-w-[65%] truncate">
                                 {entry.value || '(blank)'}
                               </span>
                               <span className="text-muted-foreground">
                                 {formatNumber(entry.count)}
                               </span>
                             </div>
-                            <div className="mt-1 h-1.5 w-full bg-muted/60 rounded-full overflow-hidden">
+                            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
                               <div
                                 className="h-full bg-mcm-olive"
                                 style={{ width: `${widthPercent}%` }}
@@ -422,9 +458,9 @@ export function DataProfilingPage() {
                     </div>
                   )}
                 </div>
-              ) : null}
+              )}
             </>
-          ) : null}
+          )}
         </section>
       )}
     </div>

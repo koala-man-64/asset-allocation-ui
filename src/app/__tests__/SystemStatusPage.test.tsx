@@ -4,22 +4,24 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 
 import { renderWithProviders } from '@/test/utils';
-import { SystemStatusPage } from '@/app/components/pages/SystemStatusPage';
-import { getDomainOrderEntries } from '@/app/components/pages/system-status/domainOrdering';
+import { SystemStatusPage } from '@/features/system-status/SystemStatusPage';
+import { getDomainOrderEntries } from '@/features/system-status/lib/domainOrdering';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { upsertRunningJobOverride } from '@/hooks/useSystemHealthJobOverrides';
 import { DataService } from '@/services/DataService';
 import type { SystemStatusViewResponse } from '@/services/apiService';
 import type { DataLayer } from '@/types/strategy';
 
-const { MOCK_RUN_TIMESTAMPS, domainLayerCoverageSpy, jobLogStreamSpy } = vi.hoisted(() => ({
-  MOCK_RUN_TIMESTAMPS: {
-    latest: '2026-03-11T12:00:00.000Z',
-    older: '2026-03-10T12:00:00.000Z'
-  },
-  domainLayerCoverageSpy: vi.fn(),
-  jobLogStreamSpy: vi.fn()
-}));
+const { MOCK_RUN_TIMESTAMPS, domainLayerCoverageSpy, jobLogStreamSpy, operationalJobSpy } =
+  vi.hoisted(() => ({
+    MOCK_RUN_TIMESTAMPS: {
+      latest: '2026-03-11T12:00:00.000Z',
+      older: '2026-03-10T12:00:00.000Z'
+    },
+    domainLayerCoverageSpy: vi.fn(),
+    jobLogStreamSpy: vi.fn(),
+    operationalJobSpy: vi.fn()
+  }));
 
 vi.mock('@/services/DataService', () => ({
   DataService: {
@@ -27,7 +29,7 @@ vi.mock('@/services/DataService', () => ({
   }
 }));
 
-vi.mock('@/app/components/pages/system-status/DomainLayerComparisonPanel', () => ({
+vi.mock('@/features/system-status/domain-layer-comparison/DomainLayerComparisonPanel', () => ({
   DomainLayerComparisonPanel: (props: unknown) => {
     domainLayerCoverageSpy(props);
     return (
@@ -36,16 +38,23 @@ vi.mock('@/app/components/pages/system-status/DomainLayerComparisonPanel', () =>
   }
 }));
 
-vi.mock('@/app/components/pages/system-status/ContainerAppsPanel', () => ({
+vi.mock('@/features/system-status/components/ContainerAppsPanel', () => ({
   ContainerAppsPanel: () => (
     <div data-testid="mock-container-apps-panel">Mock Container Apps Panel</div>
   )
 }));
 
-vi.mock('@/app/components/pages/system-status/JobLogStreamPanel', () => ({
+vi.mock('@/features/system-status/components/JobLogStreamPanel', () => ({
   JobLogStreamPanel: (props: unknown) => {
     jobLogStreamSpy(props);
     return <div data-testid="mock-job-log-stream-panel">Mock Job Log Stream Panel</div>;
+  }
+}));
+
+vi.mock('@/features/system-status/components/OperationalJobMonitorPanel', () => ({
+  OperationalJobMonitorPanel: (props: unknown) => {
+    operationalJobSpy(props);
+    return <div data-testid="mock-operational-job-monitor">Mock Operational Job Monitor</div>;
   }
 }));
 
@@ -162,6 +171,12 @@ function buildSystemStatusView(
         {
           jobName: 'aca-job-market',
           jobType: 'data-ingest',
+          jobCategory: 'data-pipeline',
+          jobKey: 'market',
+          jobRole: 'load',
+          triggerOwner: 'schedule',
+          metadataSource: 'tags',
+          metadataStatus: 'valid',
           status: 'success',
           startTime: MOCK_RUN_TIMESTAMPS.latest,
           triggeredBy: 'azure'
@@ -169,6 +184,12 @@ function buildSystemStatusView(
         {
           jobName: 'aca-job-market',
           jobType: 'data-ingest',
+          jobCategory: 'data-pipeline',
+          jobKey: 'market',
+          jobRole: 'load',
+          triggerOwner: 'schedule',
+          metadataSource: 'tags',
+          metadataStatus: 'valid',
           status: 'running',
           startTime: MOCK_RUN_TIMESTAMPS.older,
           triggeredBy: 'azure'
@@ -179,6 +200,20 @@ function buildSystemStatusView(
           status: 'success',
           startTime: MOCK_RUN_TIMESTAMPS.latest,
           triggeredBy: 'azure'
+        },
+        {
+          jobName: 'aca-job-backtest-runner',
+          jobType: 'backtest',
+          status: 'running',
+          startTime: MOCK_RUN_TIMESTAMPS.latest,
+          triggeredBy: 'manual'
+        },
+        {
+          jobName: 'aca-job-ranking-materialize',
+          jobType: 'data-ingest',
+          status: 'success',
+          startTime: MOCK_RUN_TIMESTAMPS.latest,
+          triggeredBy: 'api'
         }
       ],
       alerts: [],
@@ -187,6 +222,12 @@ function buildSystemStatusView(
           name: 'aca-job-market',
           resourceType: 'Microsoft.App/jobs',
           status: 'healthy',
+          jobCategory: 'data-pipeline',
+          jobKey: 'market',
+          jobRole: 'load',
+          triggerOwner: 'schedule',
+          metadataSource: 'tags',
+          metadataStatus: 'valid',
           lastChecked: MOCK_RUN_TIMESTAMPS.latest,
           runningState: 'Running',
           lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest,
@@ -213,8 +254,30 @@ function buildSystemStatusView(
           name: 'aca-job-zeta',
           resourceType: 'Microsoft.App/jobs',
           status: 'warning',
+          jobCategory: 'data-pipeline',
+          jobKey: 'zeta',
+          jobRole: 'load',
+          triggerOwner: 'schedule',
+          metadataSource: 'legacy-catalog',
+          metadataStatus: 'fallback',
           lastChecked: MOCK_RUN_TIMESTAMPS.latest,
           runningState: 'Suspended',
+          lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+        },
+        {
+          name: 'aca-job-backtest-runner',
+          resourceType: 'Microsoft.App/jobs',
+          status: 'healthy',
+          lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+          runningState: 'Running',
+          lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+        },
+        {
+          name: 'aca-job-regime-refresh',
+          resourceType: 'Microsoft.App/jobs',
+          status: 'healthy',
+          lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+          runningState: 'Succeeded',
           lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
         }
       ]
@@ -235,6 +298,7 @@ describe('SystemStatusPage', () => {
     vi.restoreAllMocks();
     domainLayerCoverageSpy.mockClear();
     jobLogStreamSpy.mockClear();
+    operationalJobSpy.mockClear();
   });
 
   const createQueryClient = () =>
@@ -265,7 +329,19 @@ describe('SystemStatusPage', () => {
 
     await screen.findByTestId('mock-domain-layer-coverage-panel');
 
-    expect(screen.getByText(/VIEW UPDATED/i)).toBeInTheDocument();
+    expect(screen.getByText('Risk Readout')).toBeInTheDocument();
+    expect(screen.getByText('Configured Coverage')).toBeInTheDocument();
+    expect(screen.getByText('Job Risk')).toBeInTheDocument();
+    expect(screen.getByText('Open Alerts')).toBeInTheDocument();
+    expect(screen.queryByText(/VIEW UPDATED/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Session Readout')).not.toBeInTheDocument();
+    expect(screen.queryByText('Live refresh feed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Persisted metadata snapshot')).not.toBeInTheDocument();
+    expect(screen.queryByText('Job Taxonomy')).not.toBeInTheDocument();
+    expect(screen.queryByText('Runtime Workflow Groups')).not.toBeInTheDocument();
+    expect(screen.queryByText('Metadata Review')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Strategy Workspace/i })).not.toBeInTheDocument();
+    expect(await screen.findByTestId('mock-operational-job-monitor')).toBeInTheDocument();
     expect(await screen.findByTestId('mock-container-apps-panel')).toBeInTheDocument();
     expect(await screen.findByTestId('mock-job-log-stream-panel')).toBeInTheDocument();
   });
@@ -338,6 +414,46 @@ describe('SystemStatusPage', () => {
     expect(coverageOrder).toEqual(['alpha', 'market', 'zeta']);
   });
 
+  it('routes non-domain jobs to the operational monitor without leaking domain jobs', async () => {
+    renderWithProviders(<SystemStatusPage />);
+
+    await waitFor(() => {
+      expect(operationalJobSpy).toHaveBeenCalled();
+    });
+
+    const operationalProps = operationalJobSpy.mock.calls.at(-1)?.[0] as {
+      jobs: Array<{ name: string; category: string }>;
+    };
+    const operationalNames = operationalProps.jobs.map((job) => job.name);
+
+    expect(operationalProps.jobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'aca-job-backtest-runner',
+          category: 'backtest'
+        }),
+        expect.objectContaining({
+          name: 'aca-job-ranking-materialize',
+          category: 'ranking'
+        }),
+        expect.objectContaining({
+          name: 'aca-job-regime-refresh',
+          category: 'regime'
+        })
+      ])
+    );
+    expect(operationalNames).not.toContain('aca-job-market');
+    expect(operationalNames).not.toContain('aca-job-zeta');
+
+    const coverageProps = domainLayerCoverageSpy.mock.calls.at(-1)?.[0] as {
+      managedContainerJobs: Array<{ name: string }>;
+    };
+    expect(coverageProps.managedContainerJobs.map((job) => job.name)).toEqual([
+      'aca-job-market',
+      'aca-job-zeta'
+    ]);
+  });
+
   it('passes the anchored active job run status and start time to the job console stream panel', async () => {
     renderWithProviders(<SystemStatusPage />);
 
@@ -354,6 +470,7 @@ describe('SystemStatusPage', () => {
       }>;
     };
 
+    expect(jobStreamProps.jobs.map((job) => job.name)).not.toContain('aca-job-backtest-runner');
     expect(jobStreamProps.jobs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -373,6 +490,103 @@ describe('SystemStatusPage', () => {
               unit: 'Bytes'
             })
           ])
+        })
+      ])
+    );
+  });
+
+  it('keeps metadata-only ACA jobs in the log stream without rendering taxonomy groups', async () => {
+    const payload = buildSystemStatusView();
+    vi.mocked(DataService.getSystemStatusView).mockResolvedValue(
+      buildSystemStatusView({
+        systemHealth: {
+          ...payload.systemHealth,
+          resources: [
+            ...(payload.systemHealth.resources || []),
+            {
+              name: 'gold-regime-job',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'healthy',
+              jobCategory: 'strategy-compute',
+              jobKey: 'regime',
+              jobRole: 'publish',
+              triggerOwner: 'schedule',
+              metadataSource: 'tags',
+              metadataStatus: 'valid',
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            },
+            {
+              name: 'platinum-rankings-job',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'healthy',
+              jobCategory: 'strategy-compute',
+              jobKey: 'rankings',
+              jobRole: 'materialize',
+              triggerOwner: 'control-plane',
+              metadataSource: 'tags',
+              metadataStatus: 'valid',
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            },
+            {
+              name: 'backtests-job',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'healthy',
+              jobCategory: 'strategy-compute',
+              jobKey: 'backtests',
+              jobRole: 'execute',
+              triggerOwner: 'control-plane',
+              metadataSource: 'tags',
+              metadataStatus: 'valid',
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            },
+            {
+              name: 'results-reconcile-job',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'warning',
+              jobCategory: 'strategy-compute',
+              jobKey: 'results-reconcile',
+              jobRole: 'execute',
+              triggerOwner: 'schedule',
+              metadataSource: 'tags',
+              metadataStatus: 'invalid',
+              metadataErrors: ['tag values do not match legacy catalog'],
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            }
+          ]
+        }
+      })
+    );
+
+    renderWithProviders(<SystemStatusPage />);
+
+    expect(screen.queryByText('Job Taxonomy')).not.toBeInTheDocument();
+    expect(screen.queryByText('Runtime Workflow Groups')).not.toBeInTheDocument();
+    expect(screen.queryByText('Metadata Review')).not.toBeInTheDocument();
+    expect(screen.queryByText('tag values do not match legacy catalog')).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(jobLogStreamSpy).toHaveBeenCalled();
+    });
+    const jobStreamProps = jobLogStreamSpy.mock.calls.at(-1)?.[0] as {
+      jobs: Array<{ label: string; name: string }>;
+    };
+    expect(jobStreamProps.jobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'results-reconcile-job',
+          label: 'results-reconcile-job - Strategy Compute / results-reconcile / execute'
+        }),
+        expect.objectContaining({
+          name: 'gold-regime-job',
+          label: 'gold-regime-job - Strategy Compute / regime / publish'
         })
       ])
     );
@@ -514,7 +728,27 @@ describe('SystemStatusPage', () => {
         buildSystemStatusView({
           systemHealth: {
             overall: 'degraded',
-            dataLayers: [],
+            dataLayers: [
+              {
+                name: 'Bronze',
+                description: 'Raw ingestion layer',
+                status: 'degraded',
+                lastUpdated: now,
+                refreshFrequency: 'Daily',
+                domains: [
+                  {
+                    name: 'zeta',
+                    description: 'Market data',
+                    type: 'blob',
+                    path: 'bronze/zeta',
+                    lastUpdated: now,
+                    status: 'stale',
+                    jobName: 'aca-job-zeta',
+                    frequency: 'Daily'
+                  }
+                ]
+              }
+            ],
             recentJobs: [
               {
                 jobName: 'aca-job-zeta',
@@ -576,7 +810,27 @@ describe('SystemStatusPage', () => {
         buildSystemStatusView({
           systemHealth: {
             overall: 'degraded',
-            dataLayers: [],
+            dataLayers: [
+              {
+                name: 'Bronze',
+                description: 'Raw ingestion layer',
+                status: 'degraded',
+                lastUpdated: now,
+                refreshFrequency: 'Daily',
+                domains: [
+                  {
+                    name: 'zeta',
+                    description: 'Market data',
+                    type: 'blob',
+                    path: 'bronze/zeta',
+                    lastUpdated: now,
+                    status: 'stale',
+                    jobName: 'aca-job-zeta',
+                    frequency: 'Daily'
+                  }
+                ]
+              }
+            ],
             recentJobs: [
               {
                 jobName: 'aca-job-zeta',
@@ -610,8 +864,23 @@ describe('SystemStatusPage', () => {
       await Promise.resolve();
     });
 
+    for (
+      let attempt = 0;
+      attempt < 10 && domainLayerCoverageSpy.mock.calls.length === 0;
+      attempt += 1
+    ) {
+      await act(async () => {
+        await vi.dynamicImportSettled();
+        await vi.advanceTimersByTimeAsync(1);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
     expect(domainLayerCoverageSpy).toHaveBeenCalled();
-    expect(vi.mocked(DataService.getSystemStatusView).mock.calls[0]).toEqual([]);
+    expect(vi.mocked(DataService.getSystemStatusView).mock.calls[0]?.[0]).not.toEqual(
+      expect.objectContaining({ refresh: true })
+    );
     const initialCallCount = vi.mocked(DataService.getSystemStatusView).mock.calls.length;
     expect(initialCallCount).toBeGreaterThan(0);
 
@@ -623,9 +892,9 @@ describe('SystemStatusPage', () => {
     expect(vi.mocked(DataService.getSystemStatusView).mock.calls.length).toBeGreaterThan(
       initialCallCount
     );
-    expect(vi.mocked(DataService.getSystemStatusView).mock.calls.at(-1)).toEqual([
-      { refresh: true }
-    ]);
+    expect(vi.mocked(DataService.getSystemStatusView).mock.calls.at(-1)?.[0]).toEqual({
+      refresh: true
+    });
 
     const coverageProps = domainLayerCoverageSpy.mock.calls.at(-1)?.[0] as {
       overall: string;

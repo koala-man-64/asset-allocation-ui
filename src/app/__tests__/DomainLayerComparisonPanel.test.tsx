@@ -3,7 +3,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 
-import { DomainLayerComparisonPanel } from '@/app/components/pages/system-status/DomainLayerComparisonPanel';
+import { DomainLayerComparisonPanel } from '@/features/system-status/domain-layer-comparison/DomainLayerComparisonPanel';
 import { DataService } from '@/services/DataService';
 import { renderWithProviders } from '@/test/utils';
 import type { DataLayer, DomainMetadata, JobRun } from '@/types/strategy';
@@ -35,11 +35,11 @@ vi.mock('@/hooks/useJobTrigger', () => ({
   })
 }));
 
-vi.mock('@/app/components/pages/system-status/DomainListViewerSheet', () => ({
+vi.mock('@/features/system-status/components/DomainListViewerSheet', () => ({
   DomainListViewerSheet: () => null
 }));
 
-vi.mock('@/app/components/pages/system-status/JobKillSwitchPanel', () => ({
+vi.mock('@/features/system-status/components/JobKillSwitchPanel', () => ({
   JobKillSwitchInline: () => null
 }));
 
@@ -667,8 +667,8 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
 
     await waitFor(() => {
       expect(screen.queryByTestId('domain-refresh-indicator-market')).not.toBeInTheDocument();
+      expect(screen.getAllByText('0 symbols').length).toBeGreaterThan(0);
     });
-    expect(screen.getByText('0 symbols')).toBeInTheDocument();
   });
 
   it('omits empty medallion layer columns', async () => {
@@ -678,6 +678,19 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
 
     expect(await screen.findAllByText('Bronze')).not.toHaveLength(0);
     expect(screen.queryByText('Platinum')).not.toBeInTheDocument();
+  });
+
+  it('keeps unconfigured cells quiet while configured cells carry the row', async () => {
+    renderPanel({
+      dataLayers: makeLayerTriggerLayers()
+    });
+
+    const emptyCell = await screen.findByLabelText('Silver earnings not configured');
+
+    expect(emptyCell).toHaveTextContent('not configured');
+    expect(emptyCell).toHaveClass('opacity-70');
+    expect(screen.getByText('2 configured')).toBeInTheDocument();
+    expect(screen.getByText('1 empty')).toBeInTheDocument();
   });
 
   it('triggers all configured jobs for a layer from the medallion header', async () => {
@@ -708,7 +721,7 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     ]);
   });
 
-  it('derives the managed gold regime job name when the payload omits it', async () => {
+  it('does not infer the gold regime strategy-compute job from domain rows', async () => {
     const user = userEvent.setup();
 
     renderPanel({
@@ -738,18 +751,12 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     await user.click(await screen.findByRole('button', { name: 'Expand regime details' }));
 
     const runButton = await screen.findByRole('button', { name: 'Run' });
-    await waitFor(() => {
-      expect(runButton).toBeEnabled();
-    });
-    expect(screen.getAllByText('NO RUN').length).toBeGreaterThan(0);
+    expect(runButton).toBeDisabled();
+    expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
 
-    await user.click(runButton);
-
-    await waitFor(() => {
-      expect(triggerJobMock).toHaveBeenCalledWith('gold-regime-job', [
-        ['systemStatusView'],
-        ['systemHealth']
-      ]);
-    });
+    expect(triggerJobMock).not.toHaveBeenCalledWith('gold-regime-job', [
+      ['systemStatusView'],
+      ['systemHealth']
+    ]);
   });
 });

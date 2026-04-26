@@ -1,25 +1,23 @@
 import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Pencil, RefreshCw, Trash2 } from 'lucide-react';
-import { DataService } from '@/services/DataService';
-import {
-  useRuntimeConfigCatalogQuery,
-  useRuntimeConfigQuery,
-  queryKeys
-} from '@/hooks/useDataQueries';
+import { Pencil, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react';
+
+import { PageHero } from '@/app/components/common/PageHero';
+import { PageLoader } from '@/app/components/common/PageLoader';
+import { StatePanel } from '@/app/components/common/StatePanel';
+import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
-import { Input } from '@/app/components/ui/input';
-import { Badge } from '@/app/components/ui/badge';
-import { Textarea } from '@/app/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@/app/components/ui/dialog';
+import { Input } from '@/app/components/ui/input';
 import {
   Table,
   TableBody,
@@ -28,10 +26,16 @@ import {
   TableHeader,
   TableRow
 } from '@/app/components/ui/table';
-import { formatTimeAgo } from '@/app/components/pages/system-status/SystemStatusHelpers';
+import { Textarea } from '@/app/components/ui/textarea';
+import { formatTimeAgo } from '@/features/system-status/lib/SystemStatusHelpers';
+import {
+  queryKeys,
+  useRuntimeConfigCatalogQuery,
+  useRuntimeConfigQuery
+} from '@/hooks/useDataQueries';
+import { DataService } from '@/services/DataService';
 import type { RuntimeConfigItem } from '@/services/apiService';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
-import { PageLoader } from '@/app/components/common/PageLoader';
 
 type EditState = {
   key: string;
@@ -107,6 +111,7 @@ export function RuntimeConfigPage() {
 
   const save = async () => {
     if (!editing) return;
+
     setIsSaving(true);
     try {
       await DataService.setRuntimeConfig({
@@ -121,8 +126,8 @@ export function RuntimeConfigPage() {
         queryClient.invalidateQueries({ queryKey: queryKeys.runtimeConfig(scope) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.runtimeConfigCatalog() })
       ]);
-    } catch (err) {
-      const message = formatSystemStatusText(err);
+    } catch (error) {
+      const message = formatSystemStatusText(error);
       toast.error(`Failed to update runtime config: ${message}`);
     } finally {
       setIsSaving(false);
@@ -135,8 +140,8 @@ export function RuntimeConfigPage() {
       await DataService.deleteRuntimeConfig(key, scope);
       toast.success('Runtime config entry removed.');
       await queryClient.invalidateQueries({ queryKey: queryKeys.runtimeConfig(scope) });
-    } catch (err) {
-      const message = formatSystemStatusText(err);
+    } catch (error) {
+      const message = formatSystemStatusText(error);
       toast.error(`Failed to delete runtime config: ${message}`);
     } finally {
       setIsDeletingKey(null);
@@ -145,9 +150,46 @@ export function RuntimeConfigPage() {
 
   const isLoading = catalogQuery.isLoading || configQuery.isLoading;
   const hasError = Boolean(catalogQuery.error || configQuery.error);
+  const overrideCount = configQuery.data?.items.length ?? 0;
+  const catalogCount = rows.length;
+
+  const hero = (
+    <PageHero
+      kicker="Live Operations"
+      title={
+        <span className="flex items-center gap-2">
+          <SlidersHorizontal className="h-5 w-5 text-mcm-teal" />
+          Runtime Config
+        </span>
+      }
+      subtitle={`DB-backed overrides applied at ETL job and API startup (scope: ${scope}).`}
+      metrics={[
+        {
+          label: 'Catalog Keys',
+          value: String(catalogCount),
+          detail: 'Keys exposed by the current deployment catalog.'
+        },
+        {
+          label: 'DB Overrides',
+          value: String(overrideCount),
+          detail: 'Rows currently persisted for this scope.'
+        },
+        {
+          label: 'Scope',
+          value: scope.toUpperCase(),
+          detail: 'Runtime override namespace.'
+        }
+      ]}
+    />
+  );
 
   if (isLoading) {
-    return <PageLoader text="Loading Runtime Configuration..." />;
+    return (
+      <div className="page-shell">
+        {hero}
+        <PageLoader text="Loading Runtime Configuration..." variant="panel" />
+      </div>
+    );
   }
 
   if (hasError) {
@@ -155,23 +197,23 @@ export function RuntimeConfigPage() {
       formatSystemStatusText(catalogQuery.error) ||
       formatSystemStatusText(configQuery.error) ||
       'Runtime config is unavailable.';
+
     return (
-      <div className="mcm-panel rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-destructive">
-        <p className="font-mono text-sm uppercase tracking-wide">Runtime Config Unavailable</p>
-        <p className="mt-3 text-sm">{message}</p>
+      <div className="page-shell">
+        {hero}
+        <StatePanel
+          tone="error"
+          title="Runtime Config Unavailable"
+          message={message}
+          className="mcm-panel border-destructive/30 bg-destructive/10"
+        />
       </div>
     );
   }
 
   return (
     <div className="page-shell">
-      <div className="page-header">
-        <p className="page-kicker">Live Operations</p>
-        <h1 className="page-title">Runtime Config</h1>
-        <p className="page-subtitle">
-          DB-backed overrides applied at ETL job and API startup (scope: {scope}).
-        </p>
-      </div>
+      {hero}
 
       <Card className="mcm-panel">
         <CardHeader>
@@ -192,87 +234,96 @@ export function RuntimeConfigPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[180px]">KEY</TableHead>
-                <TableHead className="w-[120px]">SOURCE</TableHead>
-                <TableHead>DESCRIPTION</TableHead>
-                <TableHead className="w-[320px]">VALUE</TableHead>
-                <TableHead className="w-[110px]">UPDATED</TableHead>
-                <TableHead className="w-[160px] text-right">ACTIONS</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.key}>
-                  <TableCell className="font-mono text-xs">{row.key}</TableCell>
-                  <TableCell>{statusBadge(row.item)}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {row.item?.description || row.description || ''}
-                    {row.example ? (
-                      <div className="mt-1 font-mono text-[10px] text-muted-foreground/70">
-                        e.g. {row.example}
-                      </div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {row.item?.value ? (
-                      <span title={row.item.value}>{formatValuePreview(row.item.value)}</span>
-                    ) : (
-                      '—'
-                    )}
-                  </TableCell>
-                  <TableCell className="font-mono text-[11px] text-muted-foreground">
-                    {row.item?.updatedAt ? formatTimeAgo(row.item.updatedAt) : '—'}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="inline-flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => openEdit(row.key)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => void remove(row.key)}
-                        disabled={!row.item || isDeletingKey === row.key}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Remove
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {rows.length === 0 && (
+          {rows.length === 0 ? (
+            <StatePanel
+              tone="empty"
+              title="No Runtime Keys Available"
+              message="This deployment has not exposed any runtime config keys yet."
+            />
+          ) : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="py-10 text-center text-sm text-muted-foreground"
-                  >
-                    No runtime config keys are available in this deployment.
-                  </TableCell>
+                  <TableHead className="w-[180px]">KEY</TableHead>
+                  <TableHead className="w-[120px]">SOURCE</TableHead>
+                  <TableHead>DESCRIPTION</TableHead>
+                  <TableHead className="w-[320px]">VALUE</TableHead>
+                  <TableHead className="w-[110px]">UPDATED</TableHead>
+                  <TableHead className="w-[160px] text-right">ACTIONS</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell className="font-mono text-xs">{row.key}</TableCell>
+                    <TableCell>{statusBadge(row.item)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {row.item?.description || row.description || ''}
+                      {row.example && (
+                        <div className="mt-1 font-mono text-[10px] text-muted-foreground/70">
+                          e.g. {row.example}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {row.item?.value ? (
+                        <span title={row.item.value}>{formatValuePreview(row.item.value)}</span>
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
+                    <TableCell className="font-mono text-[11px] text-muted-foreground">
+                      {row.item?.updatedAt ? formatTimeAgo(row.item.updatedAt) : '-'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => openEdit(row.key)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => void remove(row.key)}
+                          disabled={!row.item || isDeletingKey === row.key}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Remove
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog open={Boolean(editing)} onOpenChange={(open) => (!open ? closeEdit() : null)}>
+      <Dialog
+        open={Boolean(editing)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeEdit();
+          }
+        }}
+      >
         <DialogContent className="max-w-[720px]">
           <DialogHeader>
             <DialogTitle>Update Runtime Config</DialogTitle>
+            <DialogDescription>
+              Review the selected override, update the persisted value, and adjust the operator note
+              that explains why this scope differs from the environment default.
+            </DialogDescription>
           </DialogHeader>
 
-          {editing ? (
+          {editing && (
             <div className="space-y-4">
               <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
                 <div className="text-xs uppercase text-muted-foreground">Active Override</div>
@@ -295,7 +346,9 @@ export function RuntimeConfigPage() {
                 <Textarea
                   value={editing.value}
                   onChange={(event) =>
-                    setEditing((prev) => (prev ? { ...prev, value: event.target.value } : prev))
+                    setEditing((previous) =>
+                      previous ? { ...previous, value: event.target.value } : previous
+                    )
                   }
                   className="min-h-[120px] font-mono text-sm"
                 />
@@ -306,22 +359,22 @@ export function RuntimeConfigPage() {
                 <Textarea
                   value={editing.description || ''}
                   onChange={(event) =>
-                    setEditing((prev) =>
-                      prev ? { ...prev, description: event.target.value } : prev
+                    setEditing((previous) =>
+                      previous ? { ...previous, description: event.target.value } : previous
                     )
                   }
                   className="min-h-[80px] text-sm"
                 />
               </div>
             </div>
-          ) : null}
+          )}
 
           <DialogFooter>
             <Button variant="outline" onClick={closeEdit} disabled={isSaving}>
               Cancel
             </Button>
             <Button onClick={() => void save()} disabled={isSaving || !editing}>
-              {isSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+              {isSaving && <RefreshCw className="h-4 w-4 animate-spin" />}
               Save
             </Button>
           </DialogFooter>

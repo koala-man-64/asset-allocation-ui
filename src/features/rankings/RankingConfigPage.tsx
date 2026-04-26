@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LayoutPanelLeft, Plus } from 'lucide-react';
+import { PageHero } from '@/app/components/common/PageHero';
 import { PageLoader } from '@/app/components/common/PageLoader';
+import { StatePanel } from '@/app/components/common/StatePanel';
 import { Button } from '@/app/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/app/components/ui/collapsible';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/app/components/ui/sheet';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@/app/components/ui/collapsible';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger
+} from '@/app/components/ui/sheet';
 import { Textarea } from '@/app/components/ui/textarea';
 import { RankingGroupOverview } from '@/features/rankings/components/RankingGroupOverview';
 import { RankingGroupWorkspace } from '@/features/rankings/components/RankingGroupWorkspace';
@@ -158,9 +171,7 @@ export function RankingConfigPage() {
 
   const confirmLeaveCurrentDraft = () => {
     if (!hasUnsavedChanges) return true;
-    return window.confirm(
-      'Discard the current unsaved ranking changes and switch workspaces?'
-    );
+    return window.confirm('Discard the current unsaved ranking changes and switch workspaces?');
   };
 
   const openNewDraft = () => {
@@ -295,7 +306,8 @@ export function RankingConfigPage() {
   const hasSchemaName = Boolean(draft.name.trim());
   const hasUniverseConfig = Boolean(draft.config.universeConfigName);
   const hasGroups = draft.config.groups.length > 0;
-  const everyGroupHasFactor = hasGroups && draft.config.groups.every((group) => group.factors.length > 0);
+  const everyGroupHasFactor =
+    hasGroups && draft.config.groups.every((group) => group.factors.length > 0);
   const hasPreviewStrategy = Boolean(previewStrategyName);
 
   const readinessItems = [
@@ -376,6 +388,7 @@ export function RankingConfigPage() {
   const materializeDisabled = materializeMutation.isPending || Boolean(materializeBlockingReason);
   const tableNames = rankingCatalog?.tables.map((table) => table.name) || [];
   const activeGroup = draft.config.groups[activeGroupIndex] || null;
+  const factorCount = draft.config.groups.reduce((count, group) => count + group.factors.length, 0);
 
   const replaceGroup = (groupIndex: number, nextGroup: RankingGroup) => {
     updateDraft((current) => {
@@ -459,14 +472,19 @@ export function RankingConfigPage() {
         groups: current.config.groups.filter((_, itemIndex) => itemIndex !== groupIndex)
       }
     }));
-    setActiveGroupIndex((current) => clampIndex(current > groupIndex ? current - 1 : current, draft.config.groups.length - 1));
+    setActiveGroupIndex((current) =>
+      clampIndex(current > groupIndex ? current - 1 : current, draft.config.groups.length - 1)
+    );
     setActiveFactorIndex(0);
   };
 
   const handleAddFactor = () => {
     if (!activeGroup) return;
 
-    const nextFactor = buildEmptyFactor(activeGroup.name || `group-${activeGroupIndex + 1}`, rankingCatalog);
+    const nextFactor = buildEmptyFactor(
+      activeGroup.name || `group-${activeGroupIndex + 1}`,
+      rankingCatalog
+    );
     replaceGroup(activeGroupIndex, {
       ...activeGroup,
       factors: [...activeGroup.factors, nextFactor]
@@ -506,7 +524,9 @@ export function RankingConfigPage() {
       ...activeGroup,
       factors: activeGroup.factors.filter((_, itemIndex) => itemIndex !== factorIndex)
     });
-    setActiveFactorIndex((current) => clampIndex(current > factorIndex ? current - 1 : current, activeGroup.factors.length - 1));
+    setActiveFactorIndex((current) =>
+      clampIndex(current > factorIndex ? current - 1 : current, activeGroup.factors.length - 1)
+    );
   };
 
   const handleDeleteSchema = () => {
@@ -520,56 +540,72 @@ export function RankingConfigPage() {
 
   return (
     <div className="page-shell space-y-6">
-      <div className="page-header-row">
-        <div className="page-header">
-          <p className="page-kicker">Ranking Configuration</p>
-          <h1 className="page-title">Ranking Workbench</h1>
-          <p className="page-subtitle">
-            Build ranking schemas as a guided scoring stack instead of managing one long ladder of dropdowns and nested buttons.
-          </p>
-        </div>
+      <PageHero
+        kicker="Ranking Configuration"
+        title="Ranking Workbench"
+        subtitle="Build ranking schemas as a guided scoring stack instead of managing one long ladder of dropdowns and nested buttons."
+        actions={
+          <>
+            <Sheet open={isLibraryOpen} onOpenChange={setIsLibraryOpen}>
+              <SheetTrigger asChild>
+                <Button type="button" variant="outline" className="xl:hidden">
+                  <LayoutPanelLeft className="h-4 w-4" />
+                  Browse Schemas
+                </Button>
+              </SheetTrigger>
+              <SheetContent
+                side="left"
+                className="w-[92vw] border-mcm-walnut bg-background p-0 sm:max-w-xl"
+              >
+                <SheetHeader className="border-b border-border/40">
+                  <SheetTitle>Ranking Schema Library</SheetTitle>
+                  <SheetDescription>
+                    Switch between saved schemas or open a new draft workspace.
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="h-[calc(100vh-84px)] overflow-hidden p-4">
+                  <RankingSchemaLibrary
+                    schemas={schemas}
+                    selectedSchemaName={selectedSchemaName}
+                    isCreatingNew={isCreatingNew}
+                    hasUnsavedChanges={hasUnsavedChanges}
+                    draftName={draft.name}
+                    isLoading={isSchemasLoading}
+                    error={listError}
+                    onCreateNew={openNewDraft}
+                    onSelectSchema={loadSchema}
+                    className="h-full border-0 shadow-none before:hidden after:hidden"
+                  />
+                </div>
+              </SheetContent>
+            </Sheet>
 
-        <div className="flex flex-wrap gap-3 xl:hidden">
-          <Sheet open={isLibraryOpen} onOpenChange={setIsLibraryOpen}>
-            <SheetTrigger asChild>
-              <Button type="button" variant="outline">
-                <LayoutPanelLeft className="h-4 w-4" />
-                Browse Schemas
-              </Button>
-            </SheetTrigger>
-            <SheetContent
-              side="left"
-              className="w-[92vw] border-mcm-walnut bg-background p-0 sm:max-w-xl"
-            >
-              <SheetHeader className="border-b border-border/40">
-                <SheetTitle>Ranking Schema Library</SheetTitle>
-                <SheetDescription>
-                  Switch between saved schemas or open a new draft workspace.
-                </SheetDescription>
-              </SheetHeader>
-              <div className="h-[calc(100vh-84px)] overflow-hidden p-4">
-                <RankingSchemaLibrary
-                  schemas={schemas}
-                  selectedSchemaName={selectedSchemaName}
-                  isCreatingNew={isCreatingNew}
-                  hasUnsavedChanges={hasUnsavedChanges}
-                  draftName={draft.name}
-                  isLoading={isSchemasLoading}
-                  error={listError}
-                  onCreateNew={openNewDraft}
-                  onSelectSchema={loadSchema}
-                  className="h-full border-0 shadow-none before:hidden after:hidden"
-                />
-              </div>
-            </SheetContent>
-          </Sheet>
-
-          <Button type="button" variant="secondary" onClick={openNewDraft}>
-            <Plus className="h-4 w-4" />
-            New Draft
-          </Button>
-        </div>
-      </div>
+            <Button type="button" variant="secondary" onClick={openNewDraft}>
+              <Plus className="h-4 w-4" />
+              New Draft
+            </Button>
+          </>
+        }
+        metrics={[
+          {
+            label: 'Saved Schemas',
+            value: String(schemas.length),
+            detail: 'Published ranking schemas available in the library.'
+          },
+          {
+            label: 'Draft Status',
+            value: hasUnsavedChanges ? 'Unsaved' : 'Saved',
+            detail: hasUnsavedChanges
+              ? 'The current workspace differs from the saved baseline.'
+              : 'The current workspace matches the last saved baseline.'
+          },
+          {
+            label: 'Structure',
+            value: `${draft.config.groups.length}G / ${factorCount}F`,
+            detail: 'Current groups and factors in the active workspace.'
+          }
+        ]}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
         <div className="hidden xl:block">
@@ -588,11 +624,13 @@ export function RankingConfigPage() {
 
         <div className="space-y-6">
           {detailQuery.isLoading && selectedSchemaName && !isCreatingNew ? (
-            <PageLoader text="Loading ranking schema..." className="h-80" />
+            <PageLoader
+              text="Loading ranking schema..."
+              variant="panel"
+              className="min-h-[20rem]"
+            />
           ) : detailError ? (
-            <div className="rounded-3xl border border-destructive/30 bg-destructive/10 p-5 text-sm text-destructive">
-              {detailError}
-            </div>
+            <StatePanel tone="error" title="Ranking Schema Unavailable" message={detailError} />
           ) : (
             <>
               <RankingSchemaBasics
@@ -629,12 +667,18 @@ export function RankingConfigPage() {
               />
 
               {isCatalogLoading ? (
-                <PageLoader text="Loading ranking catalog..." className="h-48" />
+                <PageLoader
+                  text="Loading ranking catalog..."
+                  variant="panel"
+                  className="min-h-[12rem]"
+                />
               ) : catalogError ? (
-                <div className="rounded-3xl border border-destructive/30 bg-destructive/10 p-5 text-sm text-destructive">
-                  {catalogError}
-                </div>
-              ) : null}
+                <StatePanel
+                  tone="error"
+                  title="Ranking Catalog Unavailable"
+                  message={catalogError}
+                />
+              ) : undefined}
 
               <RankingGroupWorkspace
                 group={activeGroup}
@@ -687,7 +731,8 @@ export function RankingConfigPage() {
                     Schema Lifecycle
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Delete the currently loaded saved schema only after you have moved dependent strategies away from it.
+                    Delete the currently loaded saved schema only after you have moved dependent
+                    strategies away from it.
                   </p>
                 </div>
                 <Button
@@ -708,7 +753,8 @@ export function RankingConfigPage() {
                         Advanced
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        Inspect the normalized JSON payload without keeping it in view during normal editing.
+                        Inspect the normalized JSON payload without keeping it in view during normal
+                        editing.
                       </p>
                     </div>
                     <CollapsibleTrigger asChild>

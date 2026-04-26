@@ -1,6 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Globe, Plus, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+
+import { PageHero } from '@/app/components/common/PageHero';
+import { PageLoader } from '@/app/components/common/PageLoader';
+import { StatePanel } from '@/app/components/common/StatePanel';
+import { UniverseRuleBuilder } from '@/features/universes/components/UniverseRuleBuilder';
+import {
+  buildEmptyUniverse,
+  collectUniverseFields,
+  countUniverseConditions,
+  summarizeUniverse
+} from '@/features/universes/lib/universeUtils';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import {
@@ -13,20 +25,11 @@ import {
 } from '@/app/components/ui/card';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
-import { PageLoader } from '@/app/components/common/PageLoader';
 import { Textarea } from '@/app/components/ui/textarea';
-import { UniverseRuleBuilder } from '@/app/components/pages/strategy-editor/UniverseRuleBuilder';
-import {
-  buildEmptyUniverse,
-  collectUniverseTables,
-  countUniverseConditions,
-  summarizeUniverse
-} from '@/app/components/pages/strategy-editor/universeUtils';
-import { universeApi } from '@/services/universeApi';
-import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
-import type { UniverseConfigDetail } from '@/types/strategy';
 import { cn } from '@/app/components/ui/utils';
-import { toast } from 'sonner';
+import { universeApi } from '@/services/universeApi';
+import type { UniverseConfigDetail } from '@/types/strategy';
+import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 function buildEmptyUniverseConfig(): UniverseConfigDetail {
   return {
@@ -45,18 +48,6 @@ function formatTimestamp(value?: string): string {
     dateStyle: 'medium',
     timeStyle: 'short'
   }).format(parsed);
-}
-
-function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return (
-    <div className="rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm">
-      <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-2 font-mono text-xl font-semibold text-foreground">{value}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
-    </div>
-  );
 }
 
 export function UniverseConfigPage() {
@@ -140,69 +131,59 @@ export function UniverseConfigPage() {
   const listError = formatSystemStatusText(error);
   const detailError = formatSystemStatusText(detailQuery.error);
   const selectedUniverseLabel = selectedUniverseName || draft.name || 'New Universe Configuration';
-  const tableCount = collectUniverseTables(draft.config.root).length;
+  const fieldCount = collectUniverseFields(draft.config.root).length;
   const conditionCount = countUniverseConditions(draft.config.root);
   const draftSummary = summarizeUniverse(draft.config);
 
   return (
     <div className="page-shell space-y-6">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="space-y-2">
-          <div className="text-sm font-medium uppercase tracking-[0.08em] text-muted-foreground">
-            Universe control plane
-          </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-            Universe Configurations
-          </h1>
-          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-            Define reusable symbol eligibility logic from Postgres gold data, validate the current
-            matching set, and publish versioned definitions used by run configurations and ranking
-            schemas.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Button variant="outline" onClick={handleCreateNew}>
-            <Plus className="h-4 w-4" />
-            New Universe Configuration
-          </Button>
-          <Button
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending || !draft.name.trim()}
-          >
-            {saveMutation.isPending ? 'Saving...' : 'Save Universe Configuration'}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          label="Saved definitions"
-          value={String(universes.length)}
-          detail="Versioned universes available for reuse."
-        />
-        <MetricCard
-          label="Current version"
-          value={`v${draft.version || 1}`}
-          detail={
-            selectedUniverseName
+      <PageHero
+        kicker="Universe Control Plane"
+        title="Universe Configurations"
+        subtitle="Define reusable symbol eligibility logic from Postgres gold data, validate the current matching set, and publish versioned definitions used by run configurations and ranking schemas."
+        actions={
+          <>
+            <Button variant="outline" onClick={handleCreateNew}>
+              <Plus className="h-4 w-4" />
+              New Universe Configuration
+            </Button>
+            <Button
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending || !draft.name.trim()}
+            >
+              {saveMutation.isPending ? 'Saving...' : 'Save Universe Configuration'}
+            </Button>
+          </>
+        }
+        metrics={[
+          {
+            label: 'Saved Definitions',
+            value: String(universes.length),
+            detail: 'Versioned universes available for reuse.'
+          },
+          {
+            label: 'Current Version',
+            value: `v${draft.version || 1}`,
+            detail: selectedUniverseName
               ? 'Published revision loaded in the editor.'
               : 'Draft version for a new universe.'
+          },
+          {
+            label: 'Conditions',
+            value: String(conditionCount),
+            detail: 'Individual eligibility checks in the active rule tree.'
+          },
+          {
+            label: 'Referenced Fields',
+            value: String(fieldCount),
+            detail: 'Public field ids currently used by the active definition.'
           }
-        />
-        <MetricCard
-          label="Conditions"
-          value={String(conditionCount)}
-          detail="Individual eligibility checks in the active rule tree."
-        />
-        <MetricCard
-          label="Referenced tables"
-          value={String(tableCount)}
-          detail="Gold datasets currently used by the active definition."
-        />
-      </div>
+        ]}
+        metricsClassName="sm:grid-cols-2 xl:grid-cols-4"
+      />
 
       <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-        <Card className="border border-border/60 bg-card shadow-sm">
+        <Card className="mcm-panel border border-border/60 bg-card shadow-sm">
           <CardHeader className="border-b border-border/60">
             <div className="space-y-1">
               <CardTitle className="text-lg font-semibold">Universe Library</CardTitle>
@@ -216,16 +197,15 @@ export function UniverseConfigPage() {
           </CardHeader>
           <CardContent className="space-y-4 pt-5">
             {isLoading ? (
-              <PageLoader text="Loading universe configurations..." className="h-64" />
+              <PageLoader text="Loading universe configurations..." variant="panel" />
             ) : listError ? (
-              <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-                {listError}
-              </div>
+              <StatePanel tone="error" title="Universe Library Unavailable" message={listError} />
             ) : universes.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border/70 bg-muted/20 p-5 text-sm text-muted-foreground">
-                No universe configurations saved yet. Create one to reuse across strategies and
-                rankings.
-              </div>
+              <StatePanel
+                tone="empty"
+                title="No Universe Configurations"
+                message="Create a universe to reuse eligibility logic across strategies and rankings."
+              />
             ) : (
               <div className="space-y-3">
                 {universes.map((universe) => {
@@ -257,9 +237,9 @@ export function UniverseConfigPage() {
                       </div>
                       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
                         <span>Updated {formatTimestamp(universe.updated_at)}</span>
-                        {isSelected ? (
+                        {isSelected && (
                           <span className="font-medium text-foreground">Selected</span>
-                        ) : null}
+                        )}
                       </div>
                     </button>
                   );
@@ -269,7 +249,7 @@ export function UniverseConfigPage() {
           </CardContent>
         </Card>
 
-        <Card className="border border-border/60 bg-card shadow-sm">
+        <Card className="mcm-panel border border-border/60 bg-card shadow-sm">
           <CardHeader className="gap-4 border-b border-border/60">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="space-y-1">
@@ -287,11 +267,9 @@ export function UniverseConfigPage() {
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
             {detailQuery.isLoading && selectedUniverseName ? (
-              <PageLoader text="Loading universe configuration..." className="h-56" />
+              <PageLoader text="Loading universe configuration..." variant="panel" />
             ) : detailError ? (
-              <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-                {detailError}
-              </div>
+              <StatePanel tone="error" title="Universe Detail Unavailable" message={detailError} />
             ) : (
               <>
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
@@ -315,7 +293,10 @@ export function UniverseConfigPage() {
                           id="universe-description"
                           value={draft.description || ''}
                           onChange={(event) =>
-                            setDraft((current) => ({ ...current, description: event.target.value }))
+                            setDraft((current) => ({
+                              ...current,
+                              description: event.target.value
+                            }))
                           }
                           placeholder="Describe the eligible symbol set."
                         />
@@ -356,7 +337,7 @@ export function UniverseConfigPage() {
                         Current scope
                       </div>
                       <div className="mt-2 text-sm font-medium text-foreground">
-                        {conditionCount} conditions across {tableCount} tables
+                        {conditionCount} conditions across {fieldCount} fields
                       </div>
                     </div>
                   </div>
@@ -380,7 +361,7 @@ export function UniverseConfigPage() {
                     />
                   </div>
 
-                  {selectedUniverseName ? (
+                  {selectedUniverseName && (
                     <div className="flex justify-end xl:pt-8">
                       <Button
                         type="button"
@@ -392,7 +373,7 @@ export function UniverseConfigPage() {
                         {deleteMutation.isPending ? 'Deleting...' : 'Delete Universe Configuration'}
                       </Button>
                     </div>
-                  ) : null}
+                  )}
                 </div>
               </>
             )}

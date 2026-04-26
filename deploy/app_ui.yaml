@@ -14,6 +14,8 @@ properties:
       targetPort: 80
       transport: auto
       allowInsecure: false
+      ipSecurityRestrictions:
+__UI_IP_SECURITY_RESTRICTIONS__
     registries:
     - server: ${ACR_LOGIN_SERVER}
       identity: "${ACR_PULL_IDENTITY_RESOURCE_ID}"
@@ -30,6 +32,16 @@ properties:
         value: "${API_UPSTREAM_SCHEME}"
       - name: UI_AUTH_ENABLED
         value: "${UI_AUTH_ENABLED}"
+      - name: UI_AUTH_PROVIDER
+        value: "${UI_AUTH_PROVIDER}"
+      - name: UI_OIDC_AUTHORITY
+        value: "${UI_OIDC_AUTHORITY}"
+      - name: UI_OIDC_CLIENT_ID
+        value: "${UI_OIDC_CLIENT_ID}"
+      - name: UI_OIDC_SCOPES
+        value: "${UI_OIDC_SCOPES}"
+      - name: UI_OIDC_AUDIENCE
+        value: "${UI_OIDC_AUDIENCE}"
       resources:
         cpu: 0.25
         memory: 0.5Gi

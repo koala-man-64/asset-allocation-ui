@@ -1,20 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { DataService } from '@/services/DataService';
-import { MarketData, FinanceData } from '@/types/data';
-import { CandlestickChart } from '@/app/components/CandlestickChart';
-import { Button } from '@/app/components/ui/button';
-import { Input } from '@/app/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
-
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Search,
   Activity,
-  Table as TableIcon,
   AlertCircle,
   Loader2,
+  Search,
+  Table as TableIcon,
   TrendingUp
 } from 'lucide-react';
+
+import { PageHero } from '@/app/components/common/PageHero';
+import { PageLoader } from '@/app/components/common/PageLoader';
+import { StatePanel } from '@/app/components/common/StatePanel';
+import { Badge } from '@/app/components/ui/badge';
+import { Button } from '@/app/components/ui/button';
+import { Input } from '@/app/components/ui/input';
 import {
   Table,
   TableBody,
@@ -23,236 +23,392 @@ import {
   TableHeader,
   TableRow
 } from '@/app/components/ui/table';
+import { buildStockDetailPath } from '@/features/stocks/stockRoutes';
+import { DataService } from '@/services/DataService';
+import type { FinanceData, MarketData } from '@/types/data';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
-import { PageLoader } from '@/app/components/common/PageLoader';
+
+const CandlestickChart = lazy(() =>
+  import('@/app/components/CandlestickChart').then((module) => ({
+    default: module.CandlestickChart
+  }))
+);
+
+function formatPrice(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '--';
+  }
+  return `$${value.toFixed(2)}`;
+}
+
+function formatSignedPriceChange(value: number): string {
+  const absoluteValue = Math.abs(value).toFixed(2);
+  return `${value >= 0 ? '+' : '-'}$${absoluteValue}`;
+}
+
+function formatSignedPercent(value: number): string {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+function formatVolume(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '--';
+  }
+  return value.toLocaleString();
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) {
+    return '--';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleDateString();
+}
 
 export function StockDetailPage() {
   const { ticker: paramTicker } = useParams();
   const navigate = useNavigate();
+
   const [ticker, setTicker] = useState(paramTicker || '');
   const [stats, setStats] = useState<MarketData[]>([]);
   const [finance, setFinance] = useState<FinanceData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
-  // Effect to load data when ticker changes (from URL)
-  useEffect(() => {
-    if (paramTicker) {
-      setTicker(paramTicker);
-      loadData(paramTicker);
+  const loadData = useCallback(async (symbol: string) => {
+    if (!symbol) {
+      setStats([]);
+      setFinance([]);
+      setError(null);
+      setWarning(null);
+      return;
     }
-  }, [paramTicker]);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (ticker) {
-      navigate(`/stock/${ticker.toUpperCase()}`);
-    }
-  };
-
-  const loadData = async (sym: string) => {
     setLoading(true);
     setError(null);
+    setWarning(null);
+    setStats([]);
+    setFinance([]);
+
     try {
-      // Parallel fetch
-      const [marketRes, financeRes] = await Promise.allSettled([
-        DataService.getMarketData(sym, 'silver'), // Default to silver layer
-        DataService.getFinanceData(sym, 'summary', 'silver')
+      const [marketResult, financeResult] = await Promise.allSettled([
+        DataService.getMarketData(symbol, 'silver'),
+        DataService.getFinanceData(symbol, 'summary', 'silver')
       ]);
 
-      if (marketRes.status === 'fulfilled') {
-        setStats(marketRes.value);
+      if (marketResult.status === 'fulfilled') {
+        setStats(marketResult.value);
       } else {
-        console.warn('Market data failed', marketRes.reason);
+        console.warn('Market data failed', marketResult.reason);
       }
 
-      if (financeRes.status === 'fulfilled') {
-        setFinance(financeRes.value);
+      if (financeResult.status === 'fulfilled') {
+        setFinance(financeResult.value);
       } else {
-        console.warn('Finance data failed', financeRes.reason);
+        console.warn('Finance data failed', financeResult.reason);
       }
 
-      if (marketRes.status === 'rejected' && financeRes.status === 'rejected') {
+      if (marketResult.status === 'rejected' && financeResult.status === 'rejected') {
         setError('Could not retrieve data for this symbol.');
+      } else if (marketResult.status === 'rejected') {
+        setWarning('Price history is unavailable. Fundamental records remain visible below.');
+      } else if (financeResult.status === 'rejected') {
+        setWarning('Fundamental data is unavailable. Quote and chart data are still live.');
       }
-    } catch (err) {
-      setError(formatSystemStatusText(err));
+    } catch (nextError) {
+      setError(formatSystemStatusText(nextError));
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    if (!paramTicker) {
+      setTicker('');
+      setStats([]);
+      setFinance([]);
+      setError(null);
+      setWarning(null);
+      return;
+    }
+
+    setTicker(paramTicker);
+    void loadData(paramTicker);
+  }, [loadData, paramTicker]);
+
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!ticker.trim()) {
+      return;
+    }
+
+    navigate(buildStockDetailPath(ticker));
   };
 
   const latestPrice = stats.length > 0 ? stats[stats.length - 1] : null;
-  const prevPrice = stats.length > 1 ? stats[stats.length - 2] : null;
-  const priceChange = latestPrice && prevPrice ? latestPrice.close - prevPrice.close : 0;
-  const percentChange = latestPrice && prevPrice ? (priceChange / prevPrice.close) * 100 : 0;
+  const previousPrice = stats.length > 1 ? stats[stats.length - 2] : null;
+  const priceChange = latestPrice && previousPrice ? latestPrice.close - previousPrice.close : 0;
+  const percentChange =
+    latestPrice && previousPrice && previousPrice.close
+      ? (priceChange / previousPrice.close) * 100
+      : 0;
+  const quoteToneClass =
+    priceChange >= 0
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : 'text-rose-600 dark:text-rose-400';
+  const financeRows = useMemo(
+    () =>
+      finance.flatMap((row, rowIndex) =>
+        Object.entries(row)
+          .filter(([key]) => key !== 'symbol' && key !== 'date' && key !== 'sub_domain')
+          .map(([key, value]) => ({
+            id: `${rowIndex}-${key}`,
+            key,
+            value: String(value)
+          }))
+      ),
+    [finance]
+  );
 
   return (
     <div className="page-shell">
-      {/* Top Bar: Search & Title */}
-      <div className="page-header-row border-b border-border/40 pb-6">
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg border border-mcm-walnut/30 bg-mcm-paper p-2">
-            <TrendingUp className="h-6 w-6 text-mcm-teal" />
-          </div>
-          <div>
-            <p className="page-kicker">Market Intelligence</p>
-            <h1 className="page-title">Live Market Data</h1>
-            <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
-              DATA LAYER: SILVER • SOURCE: BACKTEST ENGINE
-            </p>
-          </div>
+      <PageHero
+        kicker="Market Intelligence"
+        title={
+          <span className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-mcm-teal" />
+            {paramTicker ? `${paramTicker.toUpperCase()} Detail` : 'Stock Detail'}
+          </span>
+        }
+        subtitle="Keep symbol lookup, quote readout, chart context, and fundamentals on the same operations desk instead of a separate terminal-style surface."
+        actions={
+          <form
+            onSubmit={handleSearch}
+            className="flex w-full flex-col gap-2 sm:flex-row sm:items-center"
+          >
+            <div className="relative min-w-0 flex-1 sm:min-w-[18rem]">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="ENTER SYMBOL (e.g. SPY)"
+                value={ticker}
+                onChange={(event) => setTicker(event.target.value)}
+                className="h-10 pl-9 font-mono uppercase"
+              />
+            </div>
+            <Button type="submit" disabled={loading} className="h-10 min-w-[7rem]">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'LOAD'}
+            </Button>
+          </form>
+        }
+        metrics={[
+          {
+            label: 'Last Close',
+            value: latestPrice
+              ? formatPrice(latestPrice.close)
+              : paramTicker
+                ? 'Awaiting tape'
+                : 'No symbol',
+            detail: latestPrice
+              ? `Date ${formatDate(latestPrice.date)}`
+              : 'Load a symbol to populate quote data.'
+          },
+          {
+            label: 'Day Change',
+            value: latestPrice && previousPrice ? formatSignedPercent(percentChange) : '--',
+            detail:
+              latestPrice && previousPrice
+                ? formatSignedPriceChange(priceChange)
+                : 'Requires at least two market observations.'
+          },
+          {
+            label: 'Fundamentals',
+            value: String(financeRows.length),
+            detail: financeRows.length
+              ? 'Visible summary fields returned by the finance endpoint.'
+              : 'No finance fields are currently available.'
+          }
+        ]}
+      />
+
+      {error ? (
+        <StatePanel
+          tone="error"
+          title="Stock Detail Unavailable"
+          message={
+            <span className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              {error}
+            </span>
+          }
+        />
+      ) : null}
+
+      {warning ? (
+        <div className="rounded-2xl border border-mcm-mustard/35 bg-mcm-mustard/10 px-4 py-3 text-sm text-mcm-walnut">
+          {warning}
         </div>
+      ) : null}
 
-        <form onSubmit={handleSearch} className="flex gap-2 w-full md:w-auto">
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="ENTER SYMBOL (e.g. SPY)"
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              className="pl-9 w-64 font-mono uppercase"
-            />
-          </div>
-          <Button type="submit" disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'LOAD'}
-          </Button>
-        </form>
-      </div>
+      {loading ? <PageLoader text="Loading Live Market Data..." className="h-[60vh]" /> : null}
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-4 text-destructive">
-          <AlertCircle className="h-5 w-5" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* Main Content Area */}
-      {loading ? (
-        <PageLoader text="Loading Live Market Data..." className="h-[60vh]" />
-      ) : stats.length > 0 ? (
-        <div className="grid grid-cols-12 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          {/* Header Stats Card */}
-          <div className="col-span-12">
-            <Card className="mcm-panel">
-              <CardContent className="p-6 flex items-center justify-between">
+      {!loading && stats.length > 0 ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_360px]">
+          <section className="mcm-panel overflow-hidden">
+            <div className="border-b border-border/40 px-5 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h2 className="mb-1 text-4xl font-black tracking-tight text-foreground">
-                    {paramTicker?.toUpperCase()}
-                  </h2>
-                  <div className="flex items-center gap-4 text-sm font-mono text-muted-foreground">
-                    <span>NASD</span>
-                    <span>•</span>
-                    <span>{stats.length} DATA POINTS</span>
-                  </div>
+                  <div className="page-kicker">Price Action</div>
+                  <h2 className="text-lg">Quote Dossier</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Daily silver-layer market history rendered into a lightweight local chart.
+                  </p>
                 </div>
-                <div className="text-right">
-                  <div className="text-3xl font-bold font-mono text-foreground">
-                    ${latestPrice?.close.toFixed(2)}
-                  </div>
-                  <div
-                    className={`font-mono text-sm flex items-center justify-end gap-1 ${priceChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant="secondary"
+                    className="font-mono text-[11px] uppercase tracking-[0.18em]"
                   >
-                    {priceChange > 0 ? '+' : ''}
-                    {priceChange.toFixed(2)} ({percentChange.toFixed(2)}%)
+                    {stats.length} data points
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className="font-mono text-[11px] uppercase tracking-[0.18em]"
+                  >
+                    Silver market data
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_16rem]">
+              <div className="min-w-0">
+                <Suspense
+                  fallback={
+                    <PageLoader text="Loading chart..." variant="panel" className="h-[28rem]" />
+                  }
+                >
+                  <CandlestickChart data={stats} height={420} />
+                </Suspense>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-[1.5rem] border border-border/35 bg-background/70 p-4">
+                  <div className="page-kicker">Latest Quote</div>
+                  <div className="mt-2 font-display text-3xl">
+                    {formatPrice(latestPrice?.close)}
+                  </div>
+                  <div className={`mt-2 font-mono text-sm ${quoteToneClass}`}>
+                    {latestPrice && previousPrice
+                      ? `${formatSignedPriceChange(priceChange)} (${formatSignedPercent(percentChange)})`
+                      : '--'}
+                  </div>
+                  <div className="mt-3 text-sm text-muted-foreground">
+                    Session date {formatDate(latestPrice?.date)}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
 
-          {/* Chart Section */}
-          <div className="col-span-12 lg:col-span-8">
-            <Card className="mcm-panel h-[500px] flex flex-col">
-              <CardHeader className="border-b pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-muted-foreground">
-                    <Activity className="h-4 w-4" /> Price Action
-                  </CardTitle>
-                  <div className="flex gap-2">
-                    {['1M', '3M', '6M', '1Y', 'ALL'].map((range) => (
-                      <button
-                        key={range}
-                        className="rounded px-2 py-1 text-[10px] font-bold text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-                      >
-                        {range}
-                      </button>
-                    ))}
+                <div className="rounded-[1.5rem] border border-border/35 bg-background/70 p-4">
+                  <div className="page-kicker">Range</div>
+                  <div className="mt-3 grid gap-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Open</span>
+                      <span className="font-mono">{formatPrice(latestPrice?.open)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">High</span>
+                      <span className="font-mono">{formatPrice(latestPrice?.high)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Low</span>
+                      <span className="font-mono">{formatPrice(latestPrice?.low)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Volume</span>
+                      <span className="font-mono">{formatVolume(latestPrice?.volume)}</span>
+                    </div>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="flex-1 min-h-0 p-4">
-                <CandlestickChart data={stats} height={400} />
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </div>
+          </section>
 
-          {/* Side Data Panel */}
-          <div className="col-span-12 lg:col-span-4 space-y-6">
-            {/* Latest Quote Details */}
-            <Card className="mcm-panel">
-              <CardHeader className="border-b bg-muted/20 pb-3">
-                <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-muted-foreground">
-                  <TableIcon className="h-4 w-4" /> Quote Detail
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
+          <div className="space-y-6">
+            <section className="mcm-panel overflow-hidden">
+              <div className="border-b border-border/40 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <TableIcon className="h-4 w-4 text-mcm-olive" />
+                  <div>
+                    <div className="page-kicker">Quote Detail</div>
+                    <h2 className="text-lg">Quote Detail</h2>
+                  </div>
+                </div>
+              </div>
+              <div className="p-4">
                 <Table>
                   <TableBody>
                     <TableRow>
-                      <TableCell className="text-xs font-bold uppercase text-muted-foreground">
+                      <TableCell className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                         Open
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        ${latestPrice?.open.toFixed(2)}
+                      <TableCell className="text-right font-mono">
+                        {formatPrice(latestPrice?.open)}
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="text-xs font-bold uppercase text-muted-foreground">
+                      <TableCell className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                         High
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        ${latestPrice?.high.toFixed(2)}
+                      <TableCell className="text-right font-mono">
+                        {formatPrice(latestPrice?.high)}
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="text-xs font-bold uppercase text-muted-foreground">
+                      <TableCell className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                         Low
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        ${latestPrice?.low.toFixed(2)}
+                      <TableCell className="text-right font-mono">
+                        {formatPrice(latestPrice?.low)}
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="text-xs font-bold uppercase text-muted-foreground">
+                      <TableCell className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                         Volume
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {latestPrice?.volume.toLocaleString()}
+                      <TableCell className="text-right font-mono">
+                        {formatVolume(latestPrice?.volume)}
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="text-xs font-bold uppercase text-muted-foreground">
+                      <TableCell className="text-xs font-black uppercase tracking-[0.14em] text-muted-foreground">
                         Date
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {latestPrice && new Date(latestPrice.date).toLocaleDateString()}
+                      <TableCell className="text-right font-mono">
+                        {formatDate(latestPrice?.date)}
                       </TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
+              </div>
+            </section>
 
-            {/* Raw Finance Data (if any) */}
-            <Card className="mcm-panel flex-1">
-              <CardHeader className="border-b bg-muted/20 pb-3">
-                <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-muted-foreground">
-                  <TableIcon className="h-4 w-4" /> Fundamental Data
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 max-h-[250px] overflow-y-auto">
-                {finance.length > 0 ? (
+            <section className="mcm-panel overflow-hidden">
+              <div className="border-b border-border/40 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-mcm-teal" />
+                  <div>
+                    <div className="page-kicker">Fundamental Data</div>
+                    <h2 className="text-lg">Fundamental Data</h2>
+                  </div>
+                </div>
+              </div>
+              <div className="max-h-[24rem] overflow-auto p-4">
+                {financeRows.length > 0 ? (
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -261,44 +417,47 @@ export function StockDetailPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {finance.map((row, idx) =>
-                        Object.entries(row).map(
-                          ([k, v]) =>
-                            k !== 'symbol' &&
-                            k !== 'date' &&
-                            k !== 'sub_domain' && (
-                              <TableRow key={`${idx}-${k}`}>
-                                <TableCell className="text-xs font-mono text-muted-foreground">
-                                  {k}
-                                </TableCell>
-                                <TableCell className="text-right font-mono text-xs">
-                                  {String(v)}
-                                </TableCell>
-                              </TableRow>
-                            )
-                        )
-                      )}
+                      {financeRows.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell className="text-xs font-mono text-muted-foreground">
+                            {row.key}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">
+                            {row.value}
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 ) : (
-                  <div className="p-6 text-center text-xs font-mono text-muted-foreground">
+                  <div className="py-8 text-center font-mono text-xs text-muted-foreground">
                     NO FUNDAMENTAL DATA AVAILABLE
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </section>
           </div>
         </div>
       ) : null}
 
-      {!loading && stats.length === 0 && !error && (
-        <div className="mcm-panel flex h-64 flex-col items-center justify-center border-2 border-dashed border-border/50 bg-muted/20">
+      {!loading && !error && stats.length === 0 && financeRows.length > 0 ? (
+        <section className="mcm-panel p-5">
+          <StatePanel
+            tone="warning"
+            title="Price History Unavailable"
+            message="Fundamental records loaded successfully, but market candles are not currently available for this symbol."
+          />
+        </section>
+      ) : null}
+
+      {!loading && stats.length === 0 && financeRows.length === 0 && !error ? (
+        <section className="mcm-panel flex h-64 flex-col items-center justify-center border-2 border-dashed border-border/50 bg-muted/20">
           <TrendingUp className="mb-4 h-12 w-12 text-muted-foreground/60" />
           <p className="font-medium text-muted-foreground">
             Enter a symbol to view live market data
           </p>
-        </div>
-      )}
+        </section>
+      ) : null}
     </div>
   );
 }

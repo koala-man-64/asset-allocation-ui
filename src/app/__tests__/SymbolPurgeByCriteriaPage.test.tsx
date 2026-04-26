@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 
-import { SymbolPurgeByCriteriaPage } from '@/app/components/pages/SymbolPurgeByCriteriaPage';
+import { SymbolPurgeByCriteriaPage } from '@/features/symbol-purge/SymbolPurgeByCriteriaPage';
 import { DataService } from '@/services/DataService';
 import type {
   PurgeBlacklistSymbolsResponse,
@@ -225,6 +225,9 @@ async function previewCandidates(): Promise<void> {
   fireEvent.click(screen.getByRole('button', { name: /preview symbols/i }));
   await waitFor(() => {
     expect(DataService.createPurgeCandidatesOperation).toHaveBeenCalled();
+  });
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /preview symbols/i })).toBeEnabled();
   });
 }
 

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { RankingConfigPage } from '@/app/components/pages/RankingConfigPage';
+import { RankingConfigPage } from '@/features/rankings/RankingConfigPage';
 import { rankingApi } from '@/services/rankingApi';
 import { strategyApi } from '@/services/strategyApi';
 import { universeApi } from '@/services/universeApi';
@@ -253,7 +253,9 @@ describe('RankingConfigPage', () => {
     const groupOverviewCard = screen.getByText('Scoring stack').closest('[data-slot="card"]');
     expect(groupOverviewCard).not.toBeNull();
 
-    fireEvent.click(within(groupOverviewCard as HTMLElement).getByRole('button', { name: /^Duplicate$/i }));
+    fireEvent.click(
+      within(groupOverviewCard as HTMLElement).getByRole('button', { name: /^Duplicate$/i })
+    );
 
     expect(screen.getByText('2 groups / 2 factors')).toBeInTheDocument();
 
@@ -262,14 +264,18 @@ describe('RankingConfigPage', () => {
     await waitFor(() => {
       const copyHeading = within(groupOverviewCard as HTMLElement).getByText('quality-copy');
       const originalHeading = within(groupOverviewCard as HTMLElement).getByText('quality');
-      expect(copyHeading.compareDocumentPosition(originalHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(
+        copyHeading.compareDocumentPosition(originalHeading) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
     });
 
     const duplicateCard = within(groupOverviewCard as HTMLElement)
       .getByText('quality-copy')
       .closest('.rounded-3xl');
     expect(duplicateCard).not.toBeNull();
-    fireEvent.click(within(duplicateCard as HTMLElement).getByRole('button', { name: /^Remove$/i }));
+    fireEvent.click(
+      within(duplicateCard as HTMLElement).getByRole('button', { name: /^Remove$/i })
+    );
 
     await waitFor(() => {
       expect(screen.getByText('1 groups / 1 factors')).toBeInTheDocument();
@@ -282,7 +288,9 @@ describe('RankingConfigPage', () => {
     expect(await screen.findByDisplayValue('Composite ranking')).toBeInTheDocument();
 
     expect(
-      await screen.findByText('The selected strategy is attached to defensive-value, not quality-momentum.')
+      await screen.findByText(
+        'The selected strategy is attached to defensive-value, not quality-momentum.'
+      )
     ).toBeInTheDocument();
 
     expect(screen.getByRole('button', { name: /Materialize Attached Schema/i })).toBeDisabled();

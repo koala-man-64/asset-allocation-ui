@@ -1,0 +1,108 @@
+baseline:
+  branch: main
+
+standards:
+  format:
+    - corepack pnpm format:check
+  lint:
+    - corepack pnpm lint
+  typecheck:
+    - corepack pnpm typecheck
+  test_fast:
+    - corepack pnpm test --run
+  test_full:
+    - corepack pnpm test --run
+    - corepack pnpm build
+
+architecture:
+  layers:
+    - name: app-common
+      path_glob: src/app/components/common/**
+      forbid_imports_from:
+        - src/app/components/layout/**
+    - name: app-layout
+      path_glob: src/app/components/layout/**
+      forbid_imports_from:
+        - src/features/**
+    - name: features
+      path_glob: src/features/**
+      forbid_imports_from:
+        - src/app/components/layout/**
+  module_boundaries: []
+  blessed_patterns:
+    - PageHero
+    - StatCard
+    - StatePanel
+
+dependencies:
+  allowlist:
+    - '@asset-allocation/contracts'
+    - '@azure/*'
+    - '@popperjs/core'
+    - '@radix-ui/*'
+    - '@tanstack/*'
+    - '@types/*'
+    - class-variance-authority
+    - clsx
+    - cmdk
+    - date-fns
+    - embla-carousel-react
+    - fdir
+    - input-otp
+    - js-cookie
+    - lucide-react
+    - motion
+    - next-themes
+    - react
+    - react-*
+    - recharts
+    - sonner
+    - tailwind-merge
+    - tw-animate-css
+    - vaul
+    - zustand
+  denylist:
+    - '@emotion/react'
+    - '@emotion/styled'
+    - '@mui/icons-material'
+    - '@mui/material'
+  lockfile_required: true
+
+api:
+  public_globs:
+    - src/services/**
+    - src/types/**
+  breaking_change_policy: warn
+
+thresholds:
+  drift_score_fail: 40
+
+auto_remediate:
+  enabled: false
+  max_files_changed: 0
+  safe_directories:
+    - src
+  commands: []
+
+risk_controls:
+  protected_globs:
+    - src/services/**
+    - src/types/**
+    - .github/**
+    - deploy/**
+  require_tests_passing_before_automerge: true
+
+reporting:
+  markdown_path: artifacts/drift_report.md
+  json_path: artifacts/drift_report.json
+  patch_path: artifacts/drift_remediation.patch
+
+detection:
+  lookback_days: 7
+  speculative_safeguards:
+    enabled: true
+    patterns:
+      - ':\s*null\b'
+      - '\|\|\s*null\b'
+      - '\?\?\s*null\b'
+      - ':\s*"N/A"'

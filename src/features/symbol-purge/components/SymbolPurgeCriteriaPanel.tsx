@@ -1,8 +1,7 @@
-import { Loader2, RefreshCw, Search } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 
 import type { SymbolPurgeController } from '../hooks/useSymbolPurgeController';
 import {
@@ -25,28 +24,13 @@ export function SymbolPurgeCriteriaPanel({ controller }: Props) {
 
   return (
     <section className="mcm-panel p-4 sm:p-5">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <p className="page-kicker">Live Operations</p>
-          <h1 className="page-title leading-[1.05]">Symbol Purge Console</h1>
-          <p className="page-subtitle mt-1 max-w-[30ch] leading-relaxed">
-            Build a rule, review candidate symbols, then execute a destructive bulk purge.
-          </p>
+      <div className="mb-3">
+        <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+          Rule Builder
         </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 px-4"
-              onClick={() => void actions.runPreview()}
-            >
-              Preview
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Run candidate preview</TooltipContent>
-        </Tooltip>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Define the rule criteria that will produce the candidate purge list.
+        </p>
       </div>
 
       <div className="space-y-3">
@@ -204,11 +188,7 @@ export function SymbolPurgeCriteriaPanel({ controller }: Props) {
           disabled={!derived.canPreview || candidate.loading}
           className="h-10 w-full gap-2"
         >
-          {candidate.loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Search className="h-4 w-4" />
-          )}
+          <Loader2 className={`h-4 w-4 ${candidate.loading ? 'animate-spin' : 'opacity-0'}`} />
           {candidate.loading ? 'Previewing...' : 'Preview symbols'}
         </Button>
 

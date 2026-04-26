@@ -7,13 +7,17 @@ import re
 
 def repo_root() -> Path:
     for candidate in Path(__file__).resolve().parents:
-        if (candidate / "package.json").exists() and (candidate / ".github" / "workflows").is_dir():
+        if (candidate / "package.json").exists() and (
+            candidate / ".github" / "workflows"
+        ).is_dir():
             return candidate
     raise AssertionError("Could not resolve repository root from test path")
 
 
-def contracts_spec() -> str:
-    package_json = json.loads((repo_root() / "package.json").read_text(encoding="utf-8"))
+def contracts_version() -> str:
+    package_json = json.loads(
+        (repo_root() / "package.json").read_text(encoding="utf-8")
+    )
     return package_json["dependencies"]["@asset-allocation/contracts"]
 
 
@@ -42,6 +46,15 @@ def test_lockfile_uses_published_contracts_package() -> None:
     assert f"@asset-allocation/contracts@{version}" in text
     assert "file:../asset-allocation-contracts/ts" not in text
     assert "directory: ../asset-allocation-contracts/ts" not in text
+
+
+def test_broker_account_types_flow_through_published_contracts() -> None:
+    text = (repo_root() / "src" / "types" / "brokerAccounts.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "from '@asset-allocation/contracts'" in text
+    assert "BrokerAccountConfiguration" in text
+    assert "BrokerTradingPolicyUpdateRequest" in text
 
 
 def test_ui_dockerfile_does_not_copy_contracts_repo() -> None:
@@ -93,7 +106,9 @@ def test_contracts_compat_workflow_is_the_only_checkout_exception() -> None:
     assert "compat_dir=/tmp/asset-allocation-ui-compat" in text
     assert "pnpm install --no-frozen-lockfile" in text
     assert "pnpm add --no-save /workspace/asset-allocation-contracts/ts" not in text
-    assert "DISPATCH_CONTRACTS_VERSION" not in text
-    assert "pnpm install --lockfile-only --no-frozen-lockfile" not in text
-    assert "git push origin HEAD:${{ steps.contracts.outputs.ui_ref }}" not in text
-    assert "Pin released contracts version" not in text
+    assert "DISPATCH_CONTRACTS_VERSION" in text
+    assert "pnpm install --lockfile-only --no-frozen-lockfile" in text
+    assert "git push origin HEAD:${{ steps.contracts.outputs.ui_ref }}" in text
+    assert text.index("Pin released contracts version") < text.index(
+        "Run compatibility suite"
+    )

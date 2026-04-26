@@ -6,7 +6,11 @@ import { cn } from './utils';
 
 function Table({ className, ...props }: React.ComponentProps<'table'>) {
   return (
-    <div data-slot="table-container" className="relative w-full overflow-x-auto">
+    <div
+      data-slot="table-container"
+      className="relative w-full overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      tabIndex={0}
+    >
       <table
         data-slot="table"
         className={cn(

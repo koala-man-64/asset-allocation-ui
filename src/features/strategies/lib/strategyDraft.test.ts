@@ -18,7 +18,7 @@ describe('strategyDraft helpers', () => {
     expect(draft.config.exits).toEqual([]);
   });
 
-  it('normalizes incoming strategy detail and fills missing regime exposure defaults', () => {
+  it('normalizes incoming strategy detail and preserves published regime policy fields', () => {
     const strategy = normalizeStrategyDetail({
       name: 'quality-trend',
       type: 'configured',
@@ -34,21 +34,13 @@ describe('strategyDraft helpers', () => {
         exits: [],
         regimePolicy: {
           modelName: 'desk-regime',
-          blockOnTransition: false,
-          blockOnUnclassified: true,
-          honorHaltFlag: true,
-          onBlocked: 'skip_entries',
-          targetGrossExposureByRegime: {
-            trending_bull: 0.8,
-            high_vol: 0.1
-          }
+          mode: 'observe_only'
         }
       }
     });
 
     expect(strategy.config.regimePolicy?.modelName).toBe('desk-regime');
-    expect(strategy.config.regimePolicy?.targetGrossExposureByRegime.trending_bear).toBe(0.5);
-    expect(strategy.config.regimePolicy?.targetGrossExposureByRegime.high_vol).toBe(0.1);
+    expect(strategy.config.regimePolicy?.mode).toBe('observe_only');
   });
 
   it('builds exit rules with type-specific defaults', () => {
@@ -65,9 +57,10 @@ describe('strategyDraft helpers', () => {
     const left = buildDefaultRegimePolicy();
     const right = buildDefaultRegimePolicy();
 
-    left.targetGrossExposureByRegime.trending_bull = 0.2;
+    left.modelName = 'custom-regime';
 
-    expect(right.targetGrossExposureByRegime.trending_bull).toBe(1);
+    expect(right.modelName).toBe('default-regime');
+    expect(right.mode).toBe('observe_only');
   });
 
   it('clears identifying fields when building a duplicate draft', () => {

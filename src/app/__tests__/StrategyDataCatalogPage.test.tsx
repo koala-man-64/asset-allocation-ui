@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import { renderWithProviders } from '@/test/utils';
-import { StrategyDataCatalogPage } from '@/app/components/pages/StrategyDataCatalogPage';
+import { StrategyDataCatalogPage } from '@/features/strategy-exploration/StrategyDataCatalogPage';
 import { useSystemStatusViewQuery } from '@/hooks/useSystemStatusView';
 import { PostgresService } from '@/services/PostgresService';
 

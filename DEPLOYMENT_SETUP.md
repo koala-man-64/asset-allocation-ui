@@ -43,7 +43,8 @@ Use only these workflow entry points:
 - Use manual `deploy-prod.yml` runs from `main` only to redeploy the latest successful main release artifact.
 - Use `rollback-prod.yml` from `main` only when you need to deploy a specific prior digest.
 - Run `contracts-compat.yml` when `contracts_released` is dispatched or when validating a candidate contracts ref manually.
-- Treat `API_UPSTREAM` plus `API_UPSTREAM_SCHEME` as the source of truth for proxied `/config.js` and `/api/*` traffic.
+- Treat `API_UPSTREAM` plus `API_UPSTREAM_SCHEME` as the source of truth for proxied `/api/*`, `/healthz`, and `/readyz` traffic.
+- Treat `/ui-config.js` as the only pre-main runtime bootstrap surface for browser config.
 
 ## Shared Azure Foundation
 
@@ -81,10 +82,16 @@ GitHub variables:
 - `API_UPSTREAM`
 - `API_UPSTREAM_SCHEME`
 - `UI_AUTH_ENABLED`
+- `UI_OIDC_AUTHORITY`
+- `UI_OIDC_CLIENT_ID`
+- `UI_OIDC_SCOPES`
+- `UI_OIDC_AUDIENCE`
 
-`API_UPSTREAM` must point to the control-plane host that serves `/config.js`, `/healthz`, `/readyz`, and `/api/*`. Store the host or host:port only.
+`API_UPSTREAM` must point to the control-plane host that serves `/healthz`, `/readyz`, and `/api/*`. Store the host or host:port only.
 `API_UPSTREAM_SCHEME` controls how the UI proxy reaches that host. Use `https` for the public control-plane ACA FQDN and `http` only for trusted internal upstreams that do not redirect.
-`UI_AUTH_ENABLED` must be `true` in production whenever the proxied control-plane `/config.js` reports `authRequired=true`.
+`UI_AUTH_ENABLED` controls whether the UI advertises browser auth in `/ui-config.js`.
+`UI_OIDC_AUTHORITY`, `UI_OIDC_CLIENT_ID`, and `UI_OIDC_SCOPES` are required when `UI_AUTH_ENABLED=true` because the UI now owns its runtime auth bootstrap.
+`UI_OIDC_AUDIENCE` is optional and is passed through when present.
 
 GitHub secrets:
 
@@ -95,9 +102,13 @@ GitHub secrets:
 ## Deployment Steps
 
 1. Publish the contracts repo first and pin the version consumed here.
-2. Deploy the control-plane first. The UI depends on `/config.js` from the API.
+2. Deploy the control-plane first. The UI still depends on the API, `/api/auth/session`, realtime ticketing, and health endpoints, but not on control-plane `/config.js`.
+   - After the UI Container App has a stable public FQDN, update the control-plane `UI_OIDC_REDIRECT_URI` to `https://<ui-fqdn>/auth/callback`.
+   - Do not leave `UI_OIDC_REDIRECT_URI` pointed at the API Container App. That produces the exact first-run failure where Microsoft Entra returns to `https://<api-fqdn>/auth/callback` and the browser sees `{"detail":"Not Found"}`.
 3. Run `powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1 -NpmrcPath C:\path\to\ui.npmrc` to refresh both `.env.web` and `.env.local`.
+   - The UI OIDC values in `.env.web` should match the sibling `asset-allocation-control-plane` Entra provisioning output. If `provision_entra_oidc.ps1` changed the UI app registration, refresh those values here before syncing.
 4. Run `powershell -ExecutionPolicy Bypass -File scripts\sync-all-to-github.ps1`.
+   - `release.yml`, `deploy-prod.yml`, and `rollback-prod.yml` now run the same GitHub repo-variable preflight before build or rollout work. A failure here means the UI repo variables are out of sync with `.env.web`.
 5. Run the UI validation steps:
    - `python -m pytest tests/test_env_contract.py -q`
    - `$env:NPM_CONFIG_USERCONFIG = "C:\path\to\ui.npmrc"`
@@ -108,10 +119,12 @@ GitHub secrets:
 7. Let the successful main release auto-trigger `.github/workflows/deploy-prod.yml`, or manually run `deploy-prod.yml` from `main` to redeploy the latest successful main release.
 8. Verify:
    - `/`
-   - `/config.js`
+   - `/ui-config.js`
+   - `python scripts/validate_deployed_ui_oidc.py --ui-origin https://<ui-fqdn> --ui-auth-enabled true`
    - `/system-status` loads without `System Link Failure`
    - DevTools show same-origin `/api/...` requests without `301` redirects or CORS/preflight failures
    - browser sign-in flow against the Entra UI app registration
+   - the effective browser callback resolves to the active UI origin, including the final custom domain when one is bound
 
 ## Rollback
 
@@ -124,23 +137,31 @@ GitHub secrets:
 - If `ci.yml`, `security.yml`, or `release.yml` fails with `404` for `@asset-allocation/contracts`, the `NPMRC` secret is missing, malformed, or does not have package read access.
 - If local lockfile refresh fails with `404` for `@asset-allocation/contracts`, set `NPM_CONFIG_USERCONFIG` to a valid `.npmrc` file and rerun `corepack pnpm install --lockfile-only --no-frozen-lockfile`.
 - If Docker build fails before install, verify the build was invoked with `--secret id=npmrc,src=<path-to-npmrc>`.
-- If `deploy-prod.yml` fails before apply, verify the selected release uploaded the `ui-release` artifact, then verify `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APPS_ENVIRONMENT_NAME`, `API_UPSTREAM`, `API_UPSTREAM_SCHEME`, and `UI_AUTH_ENABLED`.
-- If `deploy-prod.yml` fails verification, inspect the public FQDN, `/`, `/config.js`, `/api/system/status-view`, and `/api/realtime/ticket`, then confirm the proxied control-plane host is reachable without redirecting the browser cross-origin.
+- If `release.yml`, `deploy-prod.yml`, or `rollback-prod.yml` fails during repo-variable preflight, refresh `.env.web`, rerun `powershell -ExecutionPolicy Bypass -File scripts\sync-all-to-github.ps1`, and verify `gh variable get UI_OIDC_AUTHORITY`, `UI_OIDC_CLIENT_ID`, and `UI_OIDC_SCOPES` succeed when `UI_AUTH_ENABLED=true`.
+- If `deploy-prod.yml` fails before apply after repo-variable preflight succeeds, verify the selected release uploaded the `ui-release` artifact, then verify `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`, `ACR_NAME`, `CONTAINER_APPS_ENVIRONMENT_NAME`, `API_UPSTREAM`, `API_UPSTREAM_SCHEME`, `UI_AUTH_ENABLED`, `UI_OIDC_AUTHORITY`, `UI_OIDC_CLIENT_ID`, and `UI_OIDC_SCOPES`.
+- If `deploy-prod.yml` fails verification, inspect the public FQDN, `/`, `/ui-config.js`, `/api/system/status-view`, and `/api/realtime/ticket`, then confirm the proxied control-plane host is reachable without redirecting the browser cross-origin.
+- Browser health probes stay rooted at `/healthz` and `/readyz`. The UI no longer proxies `/config.js` or prefixed `/asset-allocation/api/*` routes.
+- If `python scripts/validate_deployed_ui_oidc.py --ui-origin https://<ui-fqdn> --ui-auth-enabled true` fails, inspect the deployed `/ui-config.js` payload first, then verify the Entra app registration still allows the active UI callback origin.
+- If the first sign-in hop lands on `https://<api-fqdn>/auth/callback` and returns `{"detail":"Not Found"}`, the control-plane `UI_OIDC_REDIRECT_URI` is pointed at the API app instead of the UI app. Fix that value in `asset-allocation-control-plane` and redeploy the control plane auth configuration.
+- If Microsoft Entra still returns `AADSTS50011` after the control-plane redirect URI is corrected, rerun `powershell -ExecutionPolicy Bypass -File ..\asset-allocation-control-plane\scripts\ops\provision\provision_entra_oidc.ps1` so the UI SPA app registration is updated with the UI callback URI.
+- The UI container now owns the browser bootstrap in `/ui-config.js` and always derives `/auth/callback` and `/auth/logout-complete` from the current browser origin. The Entra app registration still has to allow that origin.
 
 ## Dependencies
 
 - Published `@asset-allocation/contracts` package plus registry read credentials in `NPMRC`
 - Control-plane host and transport exposed via `API_UPSTREAM` and `API_UPSTREAM_SCHEME`
-- Azure OIDC credentials in GitHub variables
+- UI OIDC authority, client id, scopes, and optional audience in GitHub variables
 - `prod` GitHub environment for deploy workflow
 - Standalone `asset-allocation-ui` Container App in `AssetAllocationRG`
 
 ## Notes
 
-- `API_UPSTREAM`, `API_UPSTREAM_SCHEME`, and `UI_AUTH_ENABLED` are repo-synced GitHub variables consumed directly by the prod deploy and rollback workflows; there is no workflow input override.
+- `API_UPSTREAM`, `API_UPSTREAM_SCHEME`, `UI_AUTH_ENABLED`, `UI_OIDC_AUTHORITY`, `UI_OIDC_CLIENT_ID`, `UI_OIDC_SCOPES`, and `UI_OIDC_AUDIENCE` are repo-synced GitHub variables consumed directly by the prod deploy and rollback workflows; there is no workflow input override.
+- The authoritative source for `UI_OIDC_AUTHORITY`, `UI_OIDC_CLIENT_ID`, and `UI_OIDC_SCOPES` is the sibling `asset-allocation-control-plane` Entra provisioning flow. Re-sync this repo after Entra reprovisioning or UI app-registration changes.
 - Manual `deploy-prod.yml` and `rollback-prod.yml` runs must be started from `main`.
 - `NPMRC` is now a repo-synced GitHub secret and normal install paths use `--frozen-lockfile`.
 - This repo does not own shared Azure provisioning scripts.
+- The UI-owned `/ui-config.js` bootstrap is now the browser runtime source of truth in this repo. If browser sign-in breaks only after the Entra redirect, inspect the allowed redirect URIs in the sibling control-plane provisioning next.
 
 ## Evidence
 

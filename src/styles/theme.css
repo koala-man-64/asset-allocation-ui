@@ -299,6 +299,36 @@
     @apply rounded-[1.5rem] border-2 border-mcm-walnut bg-mcm-paper shadow-[8px_8px_0px_0px_rgba(119,63,26,0.1)];
   }
 
+  .desk-grid-standard {
+    @apply grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)_320px];
+  }
+
+  .desk-grid-explorer {
+    @apply grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)_380px];
+  }
+
+  .desk-grid-portfolio {
+    @apply grid gap-6 2xl:grid-cols-[320px_minmax(0,1.08fr)_360px];
+  }
+
+  .desk-pane {
+    @apply flex min-w-0 flex-col overflow-hidden rounded-[1.5rem] border-2 border-mcm-walnut bg-mcm-paper shadow-[8px_8px_0px_0px_rgba(119,63,26,0.1)];
+  }
+
+  .desk-pane-scroll {
+    @apply flex-1 overflow-visible;
+  }
+
+  @media (min-width: 1280px) {
+    .desk-pane {
+      min-height: clamp(34rem, calc(100vh - 13rem), 46rem);
+    }
+
+    .desk-pane-scroll {
+      overflow: auto;
+    }
+  }
+
   .mcm-subtitle {
     @apply italic text-mcm-olive;
   }

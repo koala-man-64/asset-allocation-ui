@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import App from '../App';
 import { renderWithProviders } from '@/test/utils';
@@ -10,9 +10,17 @@ import { ApiError } from '@/services/apiService';
 const mockUseRealtime = vi.hoisted(() => vi.fn());
 const mockConfig = vi.hoisted(() => ({
   apiBaseUrl: '/api',
-  oidcEnabled: true,
+  authProvider: 'password' as 'password' | 'disabled' | 'oidc',
+  authSessionMode: 'cookie' as 'cookie' | 'bearer',
+  oidcEnabled: false,
   authRequired: true,
-  oidcPostLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
+  uiAuthEnabled: true,
+  oidcAuthority: '',
+  oidcClientId: '',
+  oidcScopes: [] as string[],
+  oidcRedirectUri: '',
+  oidcPostLogoutRedirectUri: '',
+  oidcAudience: [] as string[]
 }));
 
 const mockAuth = vi.hoisted(() => ({
@@ -24,12 +32,31 @@ const mockAuth = vi.hoisted(() => ({
   userLabel: null as string | null,
   error: null as string | null,
   interactionReason: null as string | null,
+  interactionRequest: null as null,
+  getAccessToken: vi.fn(),
+  login: vi.fn(),
+  checkSession: vi.fn(),
   signIn: vi.fn(),
-  signOut: vi.fn()
+  signOut: vi.fn(),
+  signOutAndRestart: vi.fn()
 }));
 
 const consumePostLoginRedirectPath = vi.hoisted(() => vi.fn(() => '/system-status'));
-const peekPostLoginRedirectPath = vi.hoisted(() => vi.fn(() => '/postgres-explorer?foo=1'));
+const peekPostLoginRedirectPath = vi.hoisted(() => vi.fn(() => '/postgres-explorer?foo=1#bar'));
+
+function validSessionResponse(requestId = 'req-1') {
+  return {
+    data: {
+      authMode: 'password',
+      subject: 'shared-password',
+      displayName: 'Shared Operator',
+      username: 'shared',
+      requiredRoles: [],
+      grantedRoles: []
+    },
+    meta: { requestId, status: 200, durationMs: 10, url: '/api/auth/session' }
+  };
+}
 
 vi.mock('@/hooks/useRealtime', () => ({
   useRealtime: mockUseRealtime
@@ -39,6 +66,7 @@ vi.mock('@/contexts/AuthContext', () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
   useAuth: () => mockAuth,
   consumePostLoginRedirectPath,
+  consumePostLogoutRestartPath: () => null,
   peekPostLoginRedirectPath
 }));
 
@@ -48,6 +76,8 @@ vi.mock('@/config', () => ({
 
 vi.mock('@/services/DataService', () => ({
   DataService: {
+    createPasswordAuthSession: vi.fn(),
+    deleteAuthSession: vi.fn(),
     getAuthSessionStatusWithMeta: vi.fn(),
     getSystemHealthWithMeta: vi.fn()
   }
@@ -57,11 +87,19 @@ vi.mock('@/features/system-status/SystemStatusPage', () => ({
   SystemStatusPage: () => <div data-testid="mock-system-status">Mock System Status</div>
 }));
 
-describe('App OIDC access flow', () => {
+vi.mock('@/features/postgres-explorer/PostgresExplorerPage', () => ({
+  PostgresExplorerPage: () => (
+    <div data-testid="mock-postgres-explorer">Mock Postgres Explorer</div>
+  )
+}));
+
+describe('App password auth flow', () => {
   beforeEach(() => {
-    mockConfig.apiBaseUrl = '/api';
-    mockConfig.oidcEnabled = true;
+    mockConfig.authProvider = 'password';
+    mockConfig.authSessionMode = 'cookie';
+    mockConfig.oidcEnabled = false;
     mockConfig.authRequired = true;
+    mockConfig.uiAuthEnabled = true;
     mockAuth.enabled = true;
     mockAuth.ready = true;
     mockAuth.authenticated = false;
@@ -70,14 +108,23 @@ describe('App OIDC access flow', () => {
     mockAuth.userLabel = null;
     mockAuth.error = null;
     mockAuth.interactionReason = null;
+    mockAuth.interactionRequest = null;
     mockUseRealtime.mockReset();
+    mockAuth.login.mockReset();
+    mockAuth.login.mockResolvedValue(validSessionResponse().data);
     mockAuth.signIn.mockReset();
     mockAuth.signOut.mockReset();
+    mockAuth.signOutAndRestart.mockReset();
     consumePostLoginRedirectPath.mockReset();
     consumePostLoginRedirectPath.mockReturnValue('/system-status');
     peekPostLoginRedirectPath.mockReset();
-    peekPostLoginRedirectPath.mockReturnValue('/postgres-explorer?foo=1');
+    peekPostLoginRedirectPath.mockReturnValue('/postgres-explorer?foo=1#bar');
+    vi.mocked(DataService.createPasswordAuthSession).mockReset();
+    vi.mocked(DataService.deleteAuthSession).mockReset();
     vi.mocked(DataService.getAuthSessionStatusWithMeta).mockReset();
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockRejectedValue(
+      new ApiError(401, 'API Error: 401 Unauthorized')
+    );
     vi.mocked(DataService.getSystemHealthWithMeta).mockReset();
   });
 
@@ -85,227 +132,100 @@ describe('App OIDC access flow', () => {
     vi.useRealTimers();
   });
 
-  it('shows a sign-in gate before loading protected routes', async () => {
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    renderWithProviders(<App />);
-
-    expect(await screen.findByText('Sign-in required')).toBeInTheDocument();
-    expect(screen.getByTestId('auth-step-sign-in')).toHaveAttribute('data-state', 'active');
-    expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue sign-in' }));
-    expect(mockAuth.signIn).toHaveBeenCalledWith('/system-status');
-  });
-
-  it('switches the CTA into a disabled redirecting state as soon as sign-in starts', async () => {
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    const view = renderWithProviders(<App />);
-    expect(await screen.findByText('Sign-in required')).toBeInTheDocument();
-
-    mockAuth.signIn.mockImplementation(() => {
-      mockAuth.phase = 'redirecting';
-      mockAuth.busy = true;
-      view.rerender(<App />);
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue sign-in' }));
-
-    expect(mockAuth.signIn).toHaveBeenCalledWith('/system-status');
-    expect(screen.getByRole('button', { name: 'Redirecting...' })).toBeDisabled();
-    expect(screen.getByTestId('auth-step-redirect')).toHaveAttribute('data-state', 'active');
-  });
-
-  it('surfaces sign-in startup errors on the access gate', async () => {
-    mockAuth.error = 'OIDC sign-in could not be started. popup blocked';
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    renderWithProviders(<App />);
-
-    expect(await screen.findByText('Sign-in required')).toBeInTheDocument();
-    expect(screen.getByText(/popup blocked/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
-    expect(screen.getByTestId('auth-step-redirect')).toHaveAttribute('data-state', 'error');
-  });
-
-  it('shows the delayed helper when the redirect state takes too long', async () => {
-    vi.useFakeTimers();
-    mockAuth.phase = 'redirecting';
-    mockAuth.busy = true;
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    renderWithProviders(<App />);
-
-    expect(screen.getByText('Continuing sign-in')).toBeInTheDocument();
-    expect(screen.queryByText(/The redirect is taking longer/i)).not.toBeInTheDocument();
-
-    await act(async () => {
-      vi.advanceTimersByTime(4000);
-    });
-
-    expect(screen.getByText(/The redirect is taking longer/i)).toBeInTheDocument();
-  });
-
-  it('shows a session-expired prompt instead of forcing a background redirect', async () => {
-    mockAuth.phase = 'session-expired';
-    mockAuth.interactionReason = 'API /system/status returned 401.';
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    renderWithProviders(<App />);
-
-    expect(await screen.findByText('Session expired')).toBeInTheDocument();
-    expect(screen.getByText(/API \/system\/status returned 401/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue sign-in' }));
-    expect(mockAuth.signIn).toHaveBeenCalledWith('/system-status');
-  });
-
-  it('shows a deployment misconfiguration screen when auth is required but browser OIDC is unavailable', async () => {
-    mockConfig.oidcEnabled = false;
-    mockAuth.enabled = false;
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    renderWithProviders(<App />);
-
-    expect(await screen.findByText('Deployment auth misconfigured')).toBeInTheDocument();
-    expect(screen.getByText(/UI_OIDC_CLIENT_ID/i)).toBeInTheDocument();
-    expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
-    expect(mockUseRealtime).not.toHaveBeenCalled();
-  });
-
-  it('bypasses the auth gate entirely when browser auth is disabled', async () => {
-    mockConfig.oidcEnabled = false;
-    mockConfig.authRequired = false;
-    mockAuth.enabled = false;
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    renderWithProviders(<App />);
-
-    expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
-    expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
-    expect(mockUseRealtime).toHaveBeenCalled();
-  });
-
-  it('shows the API access step while the protected access probe is running', async () => {
-    mockAuth.authenticated = true;
-    mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockImplementation(() => new Promise(() => {}));
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    renderWithProviders(<App />);
-
-    expect(await screen.findByText('Checking access')).toBeInTheDocument();
-    expect(screen.getByTestId('auth-step-access')).toHaveAttribute('data-state', 'active');
-  });
-
-  it('renders the protected route after the access probe succeeds', async () => {
-    mockAuth.authenticated = true;
-    mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue({
-      data: {
-        authMode: 'oidc',
-        subject: 'user-123',
-        displayName: 'Ada Lovelace',
-        username: 'ada@example.com',
-        requiredRoles: ['AssetAllocation.Access'],
-        grantedRoles: ['AssetAllocation.Access']
-      },
-      meta: { requestId: 'req-1', status: 200, durationMs: 10, url: '/api/auth/session' }
-    });
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    renderWithProviders(<App />);
-
-    expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
-    expect(DataService.getAuthSessionStatusWithMeta).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows an access denied screen when the API returns 403', async () => {
-    mockAuth.authenticated = true;
-    mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockRejectedValue(
-      new ApiError(403, 'API Error: 403 Forbidden [requestId=req-1] - {"detail":"Missing required roles."}')
-    );
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    renderWithProviders(<App />);
-
-    expect(await screen.findByText('Access denied')).toBeInTheDocument();
-    expect(screen.getByText(/AssetAllocation.Access role/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
-    expect(screen.getByTestId('auth-step-access')).toHaveAttribute('data-state', 'error');
-  });
-
-  it('keeps retry and sign-out actions when the access probe fails generically', async () => {
-    mockAuth.authenticated = true;
-    mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockRejectedValue(new Error('Gateway timeout'));
-    window.history.pushState({}, 'System Status', '/system-status');
-
-    renderWithProviders(<App />);
-
-    expect(await screen.findByText('Access check failed')).toBeInTheDocument();
-    expect(screen.getByText(/Gateway timeout/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
-    expect(screen.getByTestId('auth-step-access')).toHaveAttribute('data-state', 'error');
-  });
-
-  it('shows the callback route as an in-progress Microsoft redirect while auth settles', async () => {
-    mockAuth.ready = false;
-    mockAuth.phase = 'redirecting';
-    mockAuth.busy = true;
-    window.history.pushState({}, 'Callback', '/auth/callback');
-
-    renderWithProviders(<App />);
-
-    expect(await screen.findByText('Signing you in')).toBeInTheDocument();
-    expect(screen.getByTestId('auth-step-redirect')).toHaveAttribute('data-state', 'active');
-  });
-
-  it('completes the callback route and returns to the saved location', async () => {
-    mockAuth.authenticated = true;
-    mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue({
-      data: {
-        authMode: 'oidc',
-        subject: 'user-123',
-        requiredRoles: [],
-        grantedRoles: []
-      },
-      meta: { requestId: 'req-2', status: 200, durationMs: 10, url: '/api/auth/session' }
-    });
-    window.history.pushState({}, 'Callback', '/auth/callback');
+  it('redirects protected deep links to /login when no API session exists', async () => {
+    window.history.pushState({}, 'System Status', '/system-status?tab=health#latency');
 
     renderWithProviders(<App />);
 
     await waitFor(() => {
-      expect(consumePostLoginRedirectPath).toHaveBeenCalledTimes(1);
-      expect(screen.getByTestId('mock-system-status')).toBeInTheDocument();
+      expect(window.location.pathname).toBe('/login');
+    });
+    expect(new URLSearchParams(window.location.search).get('returnTo')).toBe(
+      '/system-status?tab=health#latency'
+    );
+  });
+
+  it('sends /login users with a valid API session back to their return path', async () => {
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue(validSessionResponse());
+    window.history.pushState(
+      {},
+      'Login',
+      `/login?returnTo=${encodeURIComponent('/postgres-explorer?foo=1#bar')}`
+    );
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-postgres-explorer')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/postgres-explorer');
+    expect(window.location.search).toBe('?foo=1');
+    expect(window.location.hash).toBe('#bar');
+  });
+
+  it('shows the password form on /login after the session check returns 401', async () => {
+    window.history.pushState(
+      {},
+      'Login',
+      `/login?returnTo=${encodeURIComponent('/system-status')}`
+    );
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByLabelText('Shared password')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+  });
+
+  it('submits the shared password through the auth context and navigates on success', async () => {
+    window.history.pushState(
+      {},
+      'Login',
+      `/login?returnTo=${encodeURIComponent('/system-status')}`
+    );
+
+    renderWithProviders(<App />);
+
+    const passwordInput = await screen.findByLabelText('Shared password');
+    fireEvent.change(passwordInput, { target: { value: 'shared-password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() => {
+      expect(mockAuth.login).toHaveBeenCalledWith('shared-password');
+      expect(window.location.pathname).toBe('/system-status');
     });
   });
 
-  it('falls back to the legacy system-health probe while /api/auth/session is unavailable', async () => {
-    mockAuth.authenticated = true;
-    mockAuth.phase = 'authenticated';
-    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockRejectedValue(
-      new ApiError(404, 'API Error: 404 Not Found [requestId=req-3] - {"detail":"Not Found"}')
-    );
-    vi.mocked(DataService.getSystemHealthWithMeta).mockResolvedValue({
-      data: {} as never,
-      meta: { requestId: 'req-4', status: 200, durationMs: 10, url: '/api/system/health' }
-    });
+  it('renders a misconfiguration screen when the runtime auth provider is not password', async () => {
+    mockConfig.authProvider = 'oidc';
+    window.history.pushState({}, 'Login', '/login');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByText('Deployment auth misconfigured')).toBeInTheDocument();
+    expect(screen.getByText(/authProvider=password/i)).toBeInTheDocument();
+  });
+
+  it('renders protected content only after the API session probe succeeds', async () => {
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue(validSessionResponse());
     window.history.pushState({}, 'System Status', '/system-status');
 
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
     expect(DataService.getAuthSessionStatusWithMeta).toHaveBeenCalledTimes(1);
-    expect(DataService.getSystemHealthWithMeta).toHaveBeenCalledTimes(1);
+    expect(mockUseRealtime).toHaveBeenCalledWith({ enabled: true });
   });
 
-  it('shows a neutral signed-out screen on the logout-complete route', async () => {
+  it('shows access denied when the API session exists but the backend rejects access', async () => {
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockRejectedValue(
+      new ApiError(403, 'API Error: 403 Forbidden [requestId=req-1] - {"detail":"Forbidden"}')
+    );
+    window.history.pushState({}, 'System Status', '/system-status');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByText('Your account is not authorized')).toBeInTheDocument();
+  });
+
+  it('shows a signed-out message on the logout compatibility route', async () => {
     window.history.pushState({}, 'Logout Complete', '/auth/logout-complete');
 
     renderWithProviders(<App />);
@@ -314,16 +234,13 @@ describe('App OIDC access flow', () => {
     expect(screen.getByText(/Signed out successfully/i)).toBeInTheDocument();
   });
 
-  it('retries callback sign-in with the preserved deep link', async () => {
-    mockAuth.ready = true;
-    mockAuth.phase = 'signed-out';
-    mockAuth.error = 'OIDC sign-in could not be completed. correlation-id=123';
+  it('redirects the callback compatibility route back to /login', async () => {
     window.history.pushState({}, 'Callback', '/auth/callback');
 
     renderWithProviders(<App />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
-    expect(peekPostLoginRedirectPath).toHaveBeenCalledTimes(1);
-    expect(mockAuth.signIn).toHaveBeenCalledWith('/postgres-explorer?foo=1');
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/login');
+    });
   });
 });

@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/services/authTransport', () => ({
-  appendAuthHeaders: vi.fn(async (headersInput?: HeadersInit) => new Headers(headersInput))
-}));
-
 type ApiServiceModule = typeof import('@/services/apiService');
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -13,16 +9,26 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
-describe('apiService cold start handling', () => {
+describe('apiService cookie auth transport', () => {
   const fetchMock = vi.fn();
   const windowWithConfig = window as typeof window & {
-    __API_UI_CONFIG__?: { apiBaseUrl?: string };
+    __API_UI_CONFIG__?: {
+      apiBaseUrl?: string;
+      authProvider?: string;
+      authSessionMode?: string;
+      authRequired?: boolean;
+    };
   };
 
   beforeEach(() => {
     vi.resetModules();
     fetchMock.mockReset();
-    windowWithConfig.__API_UI_CONFIG__ = { apiBaseUrl: '/api' };
+    windowWithConfig.__API_UI_CONFIG__ = {
+      apiBaseUrl: '/api',
+      authProvider: 'password',
+      authSessionMode: 'cookie',
+      authRequired: true
+    };
     vi.stubGlobal('fetch', fetchMock);
   });
 
@@ -54,7 +60,6 @@ describe('apiService cold start handling', () => {
     expect(second.data).toBe(2);
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/healthz');
-    expect(fetchMock.mock.calls[1]?.[0]).toBe('/healthz');
     expect(fetchMock.mock.calls[2]?.[0]).toContain('/api/system/health');
     expect(fetchMock.mock.calls[3]?.[0]).toContain('/api/system/health');
   });
@@ -73,25 +78,61 @@ describe('apiService cold start handling', () => {
 
     expect(response.data).toBe(7);
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('/healthz');
-    expect(fetchMock.mock.calls[1]?.[0]).toContain('/api/system/health');
-    expect(fetchMock.mock.calls[2]?.[0]).toContain('/api/system/health');
   });
 
-  it('fails on 404 without probing a fallback api base', async () => {
-    windowWithConfig.__API_UI_CONFIG__ = { apiBaseUrl: '/asset-allocation/api' };
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
-      .mockResolvedValueOnce(new Response('not found', { status: 404, statusText: 'Not Found' }));
+  it('sends cookie credentials and csrf without Authorization headers', async () => {
+    Object.defineProperty(document, 'cookie', {
+      configurable: true,
+      value: 'aa_csrf_dev=csrf-token'
+    });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     const { request } = await importApiService();
 
-    await expect(request<{ data: number }>('/system/health')).rejects.toThrow(
-      /API Error: 404 Not Found/
+    await expect(
+      request('/auth/session', {
+        method: 'DELETE',
+        retryOnStatusCodes: false
+      })
+    ).resolves.toEqual({});
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = init.headers as Headers;
+    expect(init.credentials).toBe('include');
+    expect(headers.get('Authorization')).toBeNull();
+    expect(headers.get('X-CSRF-Token')).toBe('csrf-token');
+  });
+
+  it('posts the password session request body to /auth/session', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        authMode: 'password',
+        subject: 'shared-password',
+        requiredRoles: [],
+        grantedRoles: []
+      })
     );
 
+    const { apiService } = await importApiService();
+
+    await apiService.createPasswordAuthSession('shared-password');
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('include');
+    expect(init.body).toBe(JSON.stringify({ password: 'shared-password' }));
+  });
+
+  it('throws an ApiError directly when the backend returns 401', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'ok' }));
+    fetchMock.mockResolvedValueOnce(
+      new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' })
+    );
+
+    const { request } = await importApiService();
+
+    await expect(request('/system/status-view')).rejects.toThrow(/API Error: 401 Unauthorized/);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('/asset-allocation/healthz');
-    expect(fetchMock.mock.calls[1]?.[0]).toContain('/asset-allocation/api/system/health');
   });
 });

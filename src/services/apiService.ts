@@ -3,11 +3,13 @@
 import { FinanceData, MarketData } from '@/types/data';
 import { DomainMetadata, SystemHealth } from '@/types/strategy';
 import { config as uiConfig } from '@/config';
+import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
 import {
-  appendAuthHeaders,
-  hasInteractiveAuthHandler,
-  requestInteractiveReauth
-} from '@/services/authTransport';
+  clipTextForLogs,
+  logUiDiagnostic,
+  summarizeHeadersForLogs,
+  summarizeUrlForLogs
+} from '@/services/uiDiagnostics';
 
 const API_WARMUP_PATH = '/healthz';
 const API_COLD_START_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -18,9 +20,73 @@ const API_WARMUP_TIMEOUT_MS = 5000;
 const API_REQUEST_MAX_ATTEMPTS = 3;
 const API_REQUEST_RETRY_BASE_DELAY_MS = 500;
 const API_REQUEST_RETRY_MAX_DELAY_MS = 4000;
+const AUTH_SESSION_STATUS_ENDPOINT = '/auth/session';
+const CSRF_COOKIE_NAMES = ['__Host-aa_csrf', 'aa_csrf_dev'] as const;
 
 const apiWarmupAttempted = new Set<string>();
 const apiWarmupInFlight = new Map<string, Promise<void>>();
+
+function logApiRequest(
+  event: string,
+  detail: Record<string, unknown> = {},
+  level: 'info' | 'warn' | 'error' = 'info'
+): void {
+  logUiDiagnostic('API', event, detail, level);
+}
+
+function summarizeResponseForLogs(response: Response): Record<string, unknown> {
+  return {
+    status: response.status,
+    statusText: response.statusText,
+    responseUrl: response.url || null,
+    redirected: response.redirected,
+    type: response.type,
+    server: response.headers.get('Server') ?? null,
+    wwwAuthenticate: response.headers.get('Www-Authenticate') ?? null,
+    accessControlAllowOrigin: response.headers.get('Access-Control-Allow-Origin') ?? null,
+    accessControlAllowCredentials:
+      response.headers.get('Access-Control-Allow-Credentials') ?? null,
+    vary: response.headers.get('Vary') ?? null
+  };
+}
+
+function shouldWarmUpBeforeRequest(endpoint: string): boolean {
+  return endpoint !== AUTH_SESSION_STATUS_ENDPOINT && endpoint !== '/realtime/ticket';
+}
+
+function readCookie(name: string): string {
+  if (typeof document === 'undefined') {
+    return '';
+  }
+
+  const target = `${name}=`;
+  return document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(target))
+    ?.slice(target.length) ?? '';
+}
+
+function readCsrfToken(): string {
+  for (const name of CSRF_COOKIE_NAMES) {
+    const token = readCookie(name);
+    if (token) {
+      return decodeURIComponent(token);
+    }
+  }
+  return '';
+}
+
+function appendCookieAuthHeaders(headers: Headers, method: string): Headers {
+  const nextHeaders = new Headers(headers);
+  if (!isSafeReplayMethod(method) && !nextHeaders.has('X-CSRF-Token')) {
+    const csrfToken = readCsrfToken();
+    if (csrfToken) {
+      nextHeaders.set('X-CSRF-Token', csrfToken);
+    }
+  }
+  return nextHeaders;
+}
 
 function isRetryableStatusCode(statusCode: number): boolean {
   return API_COLD_START_RETRYABLE_STATUS_CODES.has(statusCode);
@@ -53,8 +119,22 @@ function isRetryableFetchError(error: unknown, externalSignal?: AbortSignal | nu
 }
 
 function resolveWarmupUrl(apiBaseUrl: string): string {
-  const base = apiBaseUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
-  return `${base || ''}${API_WARMUP_PATH}`;
+  const trimmed = apiBaseUrl.replace(/\/+$/, '');
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      return `${new URL(trimmed).origin}${API_WARMUP_PATH}`;
+    } catch {
+      return API_WARMUP_PATH;
+    }
+  }
+  return API_WARMUP_PATH;
+}
+
+function isSafeReplayMethod(method?: string): boolean {
+  const normalizedMethod = String(method ?? 'GET')
+    .trim()
+    .toUpperCase();
+  return normalizedMethod === 'GET' || normalizedMethod === 'HEAD';
 }
 
 function buildRequestUrl(
@@ -87,61 +167,6 @@ async function wait(delayMs: number): Promise<void> {
   });
 }
 
-async function fetchWithOptionalTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number | undefined,
-  endpointLabel: string,
-  requestId: string
-): Promise<Response> {
-  let timeoutController: AbortController | undefined;
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  let mergedSignal: AbortSignal | null | undefined = init.signal;
-  let removeExternalAbortListener: (() => void) | undefined;
-
-  if (typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0) {
-    timeoutController = new AbortController();
-    timeoutHandle = setTimeout(
-      () => {
-        timeoutController?.abort();
-      },
-      Math.max(1, Math.floor(timeoutMs))
-    );
-
-    if (init.signal) {
-      if (init.signal.aborted) {
-        timeoutController.abort();
-      } else {
-        const relayAbort = () => timeoutController?.abort();
-        init.signal.addEventListener('abort', relayAbort, { once: true });
-        removeExternalAbortListener = () => init.signal?.removeEventListener('abort', relayAbort);
-      }
-    }
-    mergedSignal = timeoutController.signal;
-  }
-
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: mergedSignal ?? undefined
-    });
-  } catch (error) {
-    if (timeoutController?.signal.aborted && !init.signal?.aborted) {
-      throw new Error(
-        `API timeout after ${Math.floor(timeoutMs || 0)}ms [requestId=${requestId}] - ${endpointLabel}`
-      );
-    }
-    throw error;
-  } finally {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-    if (removeExternalAbortListener) {
-      removeExternalAbortListener();
-    }
-  }
-}
-
 async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
   if (apiWarmupAttempted.has(apiBaseUrl)) {
     return;
@@ -151,6 +176,13 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
     const warmupPromise = (async () => {
       let delayMs = API_WARMUP_BASE_DELAY_MS;
       const warmupUrl = resolveWarmupUrl(apiBaseUrl);
+      const warmupRequestId = createRequestId();
+
+      logApiRequest('warmup-start', {
+        apiBaseUrl,
+        warmupUrl: summarizeUrlForLogs(warmupUrl),
+        requestId: warmupRequestId
+      });
 
       try {
         for (let attempt = 1; attempt <= API_WARMUP_MAX_ATTEMPTS; attempt += 1) {
@@ -160,12 +192,27 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
               warmupUrl,
               {
                 method: 'GET',
-                headers: new Headers({ 'X-Request-ID': createRequestId() }),
+                headers: new Headers({ 'X-Request-ID': warmupRequestId }),
                 cache: 'no-store'
               },
-              API_WARMUP_TIMEOUT_MS,
-              API_WARMUP_PATH,
-              'warmup'
+              {
+                timeoutMs: API_WARMUP_TIMEOUT_MS,
+                label: API_WARMUP_PATH,
+                requestId: 'warmup',
+                timeoutMessagePrefix: 'API timeout after'
+              }
+            );
+            logApiRequest(
+              'warmup-response',
+              {
+                apiBaseUrl,
+                warmupUrl: summarizeUrlForLogs(warmupUrl),
+                requestId: warmupRequestId,
+                attempt,
+                shouldRetry,
+                ...summarizeResponseForLogs(response)
+              },
+              response.status < 400 ? 'info' : 'warn'
             );
             if (response.status < 400) {
               return;
@@ -174,15 +221,39 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
               return;
             }
           } catch (error) {
+            logApiRequest(
+              'warmup-error',
+              {
+                apiBaseUrl,
+                warmupUrl: summarizeUrlForLogs(warmupUrl),
+                requestId: warmupRequestId,
+                attempt,
+                shouldRetry,
+                error
+              },
+              'warn'
+            );
             if (!shouldRetry || !isRetryableFetchError(error)) {
               return;
             }
           }
 
+          logApiRequest('warmup-retry-scheduled', {
+            apiBaseUrl,
+            warmupUrl: summarizeUrlForLogs(warmupUrl),
+            requestId: warmupRequestId,
+            attempt,
+            delayMs
+          });
           await wait(delayMs);
           delayMs = Math.min(API_WARMUP_MAX_DELAY_MS, Math.max(delayMs * 2, 100));
         }
       } finally {
+        logApiRequest('warmup-complete', {
+          apiBaseUrl,
+          warmupUrl: summarizeUrlForLogs(warmupUrl),
+          requestId: warmupRequestId
+        });
         apiWarmupAttempted.add(apiBaseUrl);
         apiWarmupInFlight.delete(apiBaseUrl);
       }
@@ -259,6 +330,10 @@ async function performRequest<T>(
   let url = buildRequestUrl(apiBaseUrl, endpoint, params);
 
   const requestHeaders = new Headers(headers);
+  const requestMethod = String(customConfig.method ?? 'GET')
+    .trim()
+    .toUpperCase() || 'GET';
+  const useCookieSession = uiConfig.authSessionMode === 'cookie';
   const hasBody = customConfig.body !== undefined && customConfig.body !== null;
   if (hasBody && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json');
@@ -266,30 +341,99 @@ async function performRequest<T>(
   if (!requestHeaders.has('X-Request-ID')) {
     requestHeaders.set('X-Request-ID', createRequestId());
   }
-  const authHeaders = await appendAuthHeaders(requestHeaders);
+  const authHeaders = useCookieSession
+    ? appendCookieAuthHeaders(requestHeaders, requestMethod)
+    : new Headers(requestHeaders);
   const requestId = authHeaders.get('X-Request-ID') || '';
-  await warmUpApiOnce(apiBaseUrl);
+  logApiRequest('request-prepared', {
+    endpoint,
+    method: requestMethod,
+    requestId,
+    apiBaseUrl,
+    apiBaseUrlMode: /^https?:\/\//i.test(apiBaseUrl) ? 'absolute' : 'same-origin',
+    authSessionMode: uiConfig.authSessionMode,
+    url: summarizeUrlForLogs(url),
+    retryAttempts: maxAttempts,
+    retryOnStatusCodes: Array.from(retryableStatusCodes.values()),
+    timeoutMs: timeoutMs ?? null,
+    hasBody,
+    requestHeaders: summarizeHeadersForLogs(requestHeaders),
+    outboundHeaders: summarizeHeadersForLogs(authHeaders)
+  });
+  if (shouldWarmUpBeforeRequest(endpoint)) {
+    await warmUpApiOnce(apiBaseUrl);
+  }
 
   let retryDelayMs = API_REQUEST_RETRY_BASE_DELAY_MS;
   let response: Response | null = null;
   const startedAt = performance.now();
+  let completedAttempts = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    completedAttempts = attempt;
     const shouldRetry = attempt < maxAttempts;
+    const attemptStartedAt = performance.now();
+    logApiRequest('request-attempt', {
+      endpoint,
+      method: requestMethod,
+      requestId,
+      attempt,
+      shouldRetry,
+      url: summarizeUrlForLogs(url),
+      headers: summarizeHeadersForLogs(authHeaders)
+    });
     try {
       response = await fetchWithOptionalTimeout(
         url,
         {
+          ...customConfig,
           headers: authHeaders,
-          ...customConfig
+          credentials: useCookieSession ? 'include' : customConfig.credentials
         },
-        timeoutMs,
-        endpoint,
-        requestId
+        {
+          timeoutMs,
+          label: endpoint,
+          requestId,
+          timeoutMessagePrefix: 'API timeout after'
+        }
+      );
+      logApiRequest(
+        'request-response',
+        {
+          endpoint,
+          method: requestMethod,
+          requestId,
+          attempt,
+          attemptDurationMs: Math.max(0, Math.round(performance.now() - attemptStartedAt)),
+          ...summarizeResponseForLogs(response)
+        },
+        response.ok ? 'info' : response.status >= 500 ? 'error' : 'warn'
       );
     } catch (error) {
-      if (!shouldRetry || !isRetryableFetchError(error, customConfig.signal)) {
+      const retryable = shouldRetry && isRetryableFetchError(error, customConfig.signal);
+      logApiRequest(
+        'request-network-error',
+        {
+          endpoint,
+          method: requestMethod,
+          requestId,
+          attempt,
+          attemptDurationMs: Math.max(0, Math.round(performance.now() - attemptStartedAt)),
+          retryable,
+          retryDelayMs,
+          error
+        },
+        retryable ? 'warn' : 'error'
+      );
+      if (!retryable) {
         throw error;
       }
+      logApiRequest('request-retry-scheduled', {
+        endpoint,
+        method: requestMethod,
+        requestId,
+        attempt,
+        retryDelayMs
+      });
       await wait(retryDelayMs);
       retryDelayMs = Math.min(API_REQUEST_RETRY_MAX_DELAY_MS, Math.max(retryDelayMs * 2, 100));
       continue;
@@ -303,6 +447,14 @@ async function performRequest<T>(
       break;
     }
 
+    logApiRequest('request-retry-scheduled', {
+      endpoint,
+      method: requestMethod,
+      requestId,
+      attempt,
+      retryDelayMs,
+      status: response.status
+    });
     await wait(retryDelayMs);
     retryDelayMs = Math.min(API_REQUEST_RETRY_MAX_DELAY_MS, Math.max(retryDelayMs * 2, 100));
   }
@@ -315,12 +467,19 @@ async function performRequest<T>(
 
   if (!response.ok) {
     const errorBody = await response.text();
-    if (response.status === 401 && hasInteractiveAuthHandler()) {
-      await requestInteractiveReauth({
-        reason: `API ${endpoint} returned 401.`,
-        source: `api:${endpoint}`
-      });
-    }
+    logApiRequest(
+      'request-failed',
+      {
+        endpoint,
+        method: requestMethod,
+        requestId,
+        attempts: completedAttempts,
+        durationMs,
+        errorBodyPreview: clipTextForLogs(errorBody, 400),
+        ...summarizeResponseForLogs(response)
+      },
+      response.status >= 500 ? 'error' : 'warn'
+    );
     throw new ApiError(
       response.status,
       `API Error: ${response.status} ${response.statusText} [requestId=${requestId}] - ${errorBody}`
@@ -333,6 +492,17 @@ async function performRequest<T>(
   } else {
     data = (await response.json()) as T;
   }
+
+  logApiRequest('request-succeeded', {
+    endpoint,
+    method: requestMethod,
+    requestId,
+    attempts: completedAttempts,
+    durationMs,
+    cacheHint: response.headers.get('X-System-Health-Cache') || null,
+    cacheDegraded: response.headers.get('X-System-Health-Cache-Degraded') === '1',
+    ...summarizeResponseForLogs(response)
+  });
 
   return {
     data,
@@ -860,6 +1030,21 @@ export const apiService = {
 
   getAuthSessionStatusWithMeta(): Promise<ResponseWithMeta<AuthSessionStatus>> {
     return requestWithMeta<AuthSessionStatus>('/auth/session');
+  },
+
+  createPasswordAuthSession(password: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
+    return requestWithMeta<AuthSessionStatus>('/auth/session', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+      retryOnStatusCodes: false
+    });
+  },
+
+  deleteAuthSession(): Promise<Record<string, never>> {
+    return request<Record<string, never>>('/auth/session', {
+      method: 'DELETE',
+      retryOnStatusCodes: false
+    });
   },
 
   getDomainMetadata(

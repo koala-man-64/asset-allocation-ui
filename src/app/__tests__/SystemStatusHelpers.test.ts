@@ -8,7 +8,7 @@ import {
   isSuspendedJobRunningState,
   normalizeJobStatus,
   selectAnchoredJobRun
-} from '@/app/components/pages/system-status/SystemStatusHelpers';
+} from '@/features/system-status/lib/SystemStatusHelpers';
 
 describe('SystemStatusHelpers', () => {
   it('prefers active live running state over the last completed run', () => {
@@ -17,6 +17,11 @@ describe('SystemStatusHelpers', () => {
 
   it('maps suspended live state to pending', () => {
     expect(effectiveJobStatus('success', 'Suspended')).toBe('pending');
+  });
+
+  it('uses terminal live running state when no recent run is available', () => {
+    expect(effectiveJobStatus(null, 'Failed')).toBe('failed');
+    expect(effectiveJobStatus(undefined, 'Succeeded')).toBe('success');
   });
 
   it('shares running-state detection across helpers', () => {

@@ -6,11 +6,23 @@ import {
   mergeSystemHealthWithJobOverrides,
   useSystemHealthJobOverrides
 } from '@/hooks/useSystemHealthJobOverrides';
-import type { SystemStatusViewResponse } from '@/services/apiService';
+import { ApiError, type SystemStatusViewResponse } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
 
 const SYSTEM_STATUS_VIEW_REFETCH_INTERVAL_MS = 10_000;
 const SYSTEM_STATUS_VIEW_STORAGE_KEY = 'asset-allocation.systemStatusView';
+
+function isTerminalSystemStatusAuthError(error: unknown): boolean {
+  if (error instanceof ApiError) {
+    return error.status === 401 || error.status === 403 || error.status === 404;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.includes('API Error: 401');
+}
 
 function readStoredSystemStatusView(): SystemStatusViewResponse | undefined {
   if (typeof window === 'undefined') {
@@ -85,7 +97,8 @@ export function useSystemStatusViewQuery(options: UseSystemStatusViewQueryOption
       queryClient.getQueryData<SystemStatusViewResponse>(queryKeys.systemStatusView()) ??
       initialViewRef.current,
     placeholderData: (previousData) => previousData ?? initialViewRef.current,
-    retry: 3,
+    retry: (failureCount, error) =>
+      isTerminalSystemStatusAuthError(error) ? false : failureCount < 3,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false
   });

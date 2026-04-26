@@ -10,6 +10,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
@@ -24,6 +25,9 @@ jobs:
     env:
       API_UPSTREAM: ${{ vars.API_UPSTREAM }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Validate dispatch branch and repo deploy vars
         shell: bash
         run: |
@@ -33,6 +37,17 @@ jobs:
             exit 1
           fi
           : "${API_UPSTREAM:?vars.API_UPSTREAM is required}"
+
+      - name: Validate required repo deploy vars
+        env:
+          REPO_VARS_JSON: ${{ toJson(vars) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/validate_github_deploy_vars.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --mode prod-runtime \
+            --vars-json "${REPO_VARS_JSON}"
 
   rollback-prod:
     name: rollback-prod

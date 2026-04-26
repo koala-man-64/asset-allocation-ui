@@ -11,12 +11,15 @@ import type {
 export type {
   CurveState,
   RegimeInputRow,
+  RegimeModelConfig,
   RegimeModelDetailResponse,
   RegimeModelRevision,
   RegimeModelSummary,
+  RegimeSignal,
+  RegimeSignalState,
   RegimeSnapshot,
-  RegimeStatus,
   RegimeTransitionRow,
+  RegimeTransitionType,
   TrendState
 } from '@/types/regime';
 

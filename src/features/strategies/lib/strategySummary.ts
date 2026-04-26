@@ -73,20 +73,7 @@ export function describeRegimePolicy(strategy: StrategyDetail): string {
     return 'No regime gating configured.';
   }
 
-  const constraints: string[] = [];
-  if (policy.blockOnTransition) {
-    constraints.push('blocks transitions');
-  }
-  if (policy.blockOnUnclassified) {
-    constraints.push('blocks unclassified');
-  }
-  if (policy.honorHaltFlag) {
-    constraints.push('honors halt flag');
-  }
-
-  return [policy.modelName, constraints.join(', '), `blocked action ${policy.onBlocked}`]
-    .filter(Boolean)
-    .join(' | ');
+  return [policy.modelName, policy.mode.replaceAll('_', ' ')].filter(Boolean).join(' | ');
 }
 
 export function getStrategySearchText(strategy: StrategySummary): string {
