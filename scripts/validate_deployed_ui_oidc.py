@@ -13,18 +13,19 @@ CONFIG_ASSIGNMENT_PATTERN = re.compile(
     r"window\.__API_UI_CONFIG__\s*=\s*(\{.*?\})\s*;",
     re.S,
 )
-REQUIRED_UI_CONFIG_FRAGMENTS = (
-    "window.location.origin",
-    "oidcRedirectUri",
-    "/auth/callback",
-    "oidcPostLogoutRedirectUri",
-    "/auth/logout-complete",
-)
 TRUTHY_VALUES = {"1", "true", "yes", "y", "on"}
+AUTH_PROVIDERS = {"disabled", "oidc", "password"}
+OIDC_FIELDS = (
+    "oidcAuthority",
+    "oidcClientId",
+    "oidcScopes",
+    "oidcRedirectUri",
+    "oidcPostLogoutRedirectUri",
+)
 
 
 class ValidationError(RuntimeError):
-    """Raised when the deployed UI OIDC configuration is unsafe to ship."""
+    """Raised when the deployed UI runtime configuration is unsafe to ship."""
 
 
 def parse_bool(value: str | bool) -> bool:
@@ -48,7 +49,9 @@ def normalize_ui_origin(ui_origin: str) -> str:
 
 
 def fetch_text(url: str, timeout_seconds: float) -> str:
-    request = Request(url, headers={"User-Agent": "asset-allocation-ui/oidc-validator"})
+    request = Request(
+        url, headers={"User-Agent": "asset-allocation-ui/runtime-validator"}
+    )
     with urlopen(request, timeout=timeout_seconds) as response:
         status = getattr(response, "status", None) or response.getcode()
         if status != 200:
@@ -78,19 +81,6 @@ def parse_runtime_config(script_text: str, source_label: str) -> dict[str, Any]:
     return payload
 
 
-def validate_ui_config_override(script_text: str) -> None:
-    missing = [
-        fragment
-        for fragment in REQUIRED_UI_CONFIG_FRAGMENTS
-        if fragment not in script_text
-    ]
-    if missing:
-        raise ValidationError(
-            "ui-config.js is missing the runtime same-origin OIDC override fragments: "
-            + ", ".join(missing)
-        )
-
-
 def validate_required_string(config: dict[str, Any], key: str) -> str:
     value = str(config.get(key) or "").strip()
     if not value:
@@ -98,20 +88,34 @@ def validate_required_string(config: dict[str, Any], key: str) -> str:
     return value
 
 
+def validate_absent_oidc_fields(config: dict[str, Any]) -> None:
+    present = [key for key in OIDC_FIELDS if str(config.get(key) or "").strip()]
+    if present:
+        raise ValidationError(
+            "ui-config.js must not publish OIDC bootstrap fields for password auth: "
+            + ", ".join(sorted(present))
+        )
+
+
 def validate_deployed_ui_oidc(
     ui_origin: str,
     ui_auth_enabled: bool = True,
     expected_api_base_url: str = "/api",
+    ui_auth_provider: str = "password",
     timeout_seconds: float = 20.0,
     fetcher: Callable[[str, float], str] | None = None,
 ) -> dict[str, Any]:
     origin = normalize_ui_origin(ui_origin)
     fetch = fetcher or fetch_text
 
-    ui_config_js = fetch(f"{origin}/ui-config.js", timeout_seconds)
+    normalized_provider = ui_auth_provider.strip().lower()
+    if normalized_provider not in AUTH_PROVIDERS:
+        raise ValidationError(
+            f"--ui-auth-provider must be one of {', '.join(sorted(AUTH_PROVIDERS))}."
+        )
 
+    ui_config_js = fetch(f"{origin}/ui-config.js", timeout_seconds)
     config = parse_runtime_config(ui_config_js, f"{origin}/ui-config.js")
-    validate_ui_config_override(ui_config_js)
 
     advertised_api_base_url = str(config.get("apiBaseUrl") or "").strip()
     if advertised_api_base_url != expected_api_base_url:
@@ -120,8 +124,6 @@ def validate_deployed_ui_oidc(
             f"expected {expected_api_base_url}."
         )
 
-    expected_redirect_uri = f"{origin}/auth/callback"
-    expected_post_logout_redirect_uri = f"{origin}/auth/logout-complete"
     advertised_ui_auth_enabled = parse_bool(config.get("uiAuthEnabled", False))
     if advertised_ui_auth_enabled != ui_auth_enabled:
         raise ValidationError(
@@ -134,31 +136,50 @@ def validate_deployed_ui_oidc(
             f"ui-config.js advertises authRequired={advertised_auth_required}, expected {ui_auth_enabled}."
         )
 
-    advertised_oidc_enabled = parse_bool(config.get("oidcEnabled", False))
-    if ui_auth_enabled:
+    advertised_auth_provider = str(config.get("authProvider") or "").strip().lower()
+    if advertised_auth_provider != normalized_provider:
+        raise ValidationError(
+            f"ui-config.js advertises authProvider={advertised_auth_provider or '<empty>'}, "
+            f"expected {normalized_provider}."
+        )
+
+    advertised_auth_session_mode = (
+        str(config.get("authSessionMode") or "").strip().lower()
+    )
+
+    if normalized_provider == "password":
+        if advertised_auth_session_mode != "cookie":
+            raise ValidationError(
+                "ui-config.js must advertise authSessionMode=cookie for password auth."
+            )
+        if parse_bool(config.get("oidcEnabled", False)):
+            raise ValidationError(
+                "ui-config.js must advertise oidcEnabled=false for password auth."
+            )
+        validate_absent_oidc_fields(config)
+    elif normalized_provider == "oidc":
+        if not parse_bool(config.get("oidcEnabled", False)):
+            raise ValidationError(
+                "ui-config.js must advertise oidcEnabled=true when authProvider=oidc."
+            )
         validate_required_string(config, "oidcAuthority")
         validate_required_string(config, "oidcClientId")
         validate_required_string(config, "oidcScopes")
-        if not advertised_oidc_enabled:
+    else:
+        if advertised_auth_session_mode not in {"", "bearer", "cookie"}:
             raise ValidationError(
-                "ui-config.js must advertise oidcEnabled=true when UI auth is enabled."
+                f"Unexpected authSessionMode={advertised_auth_session_mode} for disabled auth."
             )
-    elif advertised_oidc_enabled:
-        raise ValidationError(
-            "ui-config.js must advertise oidcEnabled=false when UI auth is disabled."
-        )
 
     return {
         "ui_origin": origin,
-        "expected_redirect_uri": expected_redirect_uri,
-        "expected_post_logout_redirect_uri": expected_post_logout_redirect_uri,
         "config": config,
     }
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Validate the deployed UI OIDC runtime config against the expected UI origin."
+        description="Validate the deployed UI runtime config against the expected auth mode."
     )
     parser.add_argument(
         "--ui-origin",
@@ -169,6 +190,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--ui-auth-enabled",
         default="true",
         help="Whether the deployed UI is expected to require browser auth. Defaults to true.",
+    )
+    parser.add_argument(
+        "--ui-auth-provider",
+        default="password",
+        help="Expected deployed UI auth provider. Defaults to password.",
     )
     parser.add_argument(
         "--expected-api-base-url",
@@ -192,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         result = validate_deployed_ui_oidc(
             ui_origin=args.ui_origin,
             ui_auth_enabled=parse_bool(args.ui_auth_enabled),
+            ui_auth_provider=args.ui_auth_provider,
             expected_api_base_url=args.expected_api_base_url,
             timeout_seconds=args.timeout_seconds,
         )
@@ -200,14 +227,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     config = result["config"]
-    print(f"Validated deployed UI OIDC for {result['ui_origin']}")
+    print(f"Validated deployed UI runtime config for {result['ui_origin']}")
     print(f"apiBaseUrl={config.get('apiBaseUrl')}")
     print(
-        f"authRequired={config.get('authRequired')} oidcEnabled={config.get('oidcEnabled')}"
-    )
-    print(f"expectedOidcRedirectUri={result['expected_redirect_uri']}")
-    print(
-        f"expectedOidcPostLogoutRedirectUri={result['expected_post_logout_redirect_uri']}"
+        f"authProvider={config.get('authProvider')} authSessionMode={config.get('authSessionMode')}"
     )
     return 0
 
