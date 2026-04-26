@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/services/authTransport', () => ({
-  appendAuthHeaders: vi.fn(async (headersInput?: HeadersInit) => new Headers(headersInput))
-}));
-
 type BacktestApiModule = typeof import('@/services/backtestApi');
 
 function jsonResponse(payload: unknown, status = 200): Response {

@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/app/components/ui/button';
+import { Input } from '@/app/components/ui/input';
 import { config } from '@/config';
 import {
   consumePostLoginRedirectPath,
-  consumePostLogoutRestartPath,
   peekPostLoginRedirectPath,
   useAuth
 } from '@/contexts/AuthContext';
@@ -17,9 +17,9 @@ export type AuthPageMode = 'login' | 'callback' | 'logout-complete';
 
 type AuthPageState =
   | 'checking-session'
-  | 'starting-oidc'
-  | 'exchanging-session'
-  | 'signed-out'
+  | 'ready'
+  | 'submitting'
+  | 'redirecting'
   | 'access-denied'
   | 'misconfigured'
   | 'error';
@@ -50,8 +50,8 @@ function getReturnTo(location: ReturnType<typeof useLocation>, mode: AuthPageMod
 }
 
 function titleForState(mode: AuthPageMode, state: AuthPageState): string {
-  if (mode === 'logout-complete') {
-    return 'Signed out';
+  if (mode === 'callback') {
+    return 'Redirecting to login';
   }
   if (state === 'misconfigured') {
     return 'Deployment auth misconfigured';
@@ -59,11 +59,8 @@ function titleForState(mode: AuthPageMode, state: AuthPageState): string {
   if (state === 'checking-session') {
     return 'Checking session';
   }
-  if (state === 'starting-oidc') {
-    return 'Starting sign-in';
-  }
-  if (state === 'exchanging-session') {
-    return 'Creating secure session';
+  if (state === 'submitting') {
+    return 'Signing in';
   }
   if (state === 'access-denied') {
     return 'Access denied';
@@ -71,23 +68,21 @@ function titleForState(mode: AuthPageMode, state: AuthPageState): string {
   if (state === 'error') {
     return 'Sign-in failed';
   }
-  return 'Signed out';
+  if (mode === 'logout-complete') {
+    return 'Signed out';
+  }
+  return 'Restricted access';
 }
 
-function getBrowserOidcMisconfiguration(): string | null {
+function getMisconfigurationMessage(): string | null {
   if (!config.authRequired) {
     return null;
   }
-  if (!config.oidcEnabled) {
-    return 'Browser OIDC is disabled or missing required runtime settings while authentication is required.';
+  if (config.authProvider !== 'password') {
+    return `This deployment requires authProvider=password for the UI, but the runtime advertised authProvider=${config.authProvider}.`;
   }
-  try {
-    const redirectUrl = new URL(config.oidcRedirectUri, window.location.origin);
-    if (redirectUrl.origin !== window.location.origin) {
-      return `OIDC redirect URI ${redirectUrl.toString()} points at a different origin than this UI.`;
-    }
-  } catch {
-    return 'OIDC redirect URI is not a valid URL.';
+  if (config.authSessionMode !== 'cookie') {
+    return `This deployment requires cookie auth for the UI, but the runtime advertised authSessionMode=${config.authSessionMode}.`;
   }
   return null;
 }
@@ -98,65 +93,23 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
   const auth = useAuth();
   const returnTo = useMemo(() => getReturnTo(location, mode), [location, mode]);
   const [state, setState] = useState<AuthPageState>(
-    mode === 'logout-complete' ? 'signed-out' : 'checking-session'
+    mode === 'callback' ? 'redirecting' : 'checking-session'
   );
   const [message, setMessage] = useState('');
+  const [password, setPassword] = useState('');
   const checkedSessionRef = useRef(false);
-  const exchangeStartedRef = useRef(false);
-  const restartStartedRef = useRef(false);
-  const signInStartedRef = useRef(false);
-
-  const completeLogin = useCallback(async () => {
-    if (exchangeStartedRef.current) {
-      return;
-    }
-    exchangeStartedRef.current = true;
-    setState('exchanging-session');
-    setMessage('');
-
-    try {
-      if (config.authSessionMode === 'cookie') {
-        const accessToken = await auth.getAccessToken();
-        if (!accessToken) {
-          throw new Error('OIDC sign-in completed but no API access token was available.');
-        }
-        await DataService.createAuthSessionWithBearerToken(accessToken);
-      }
-
-      const nextReturnTo =
-        mode === 'callback' ? sanitizeReturnTo(consumePostLoginRedirectPath()) : returnTo;
-      logUiDiagnostic('AuthPage', 'login-complete', {
-        mode,
-        returnTo: nextReturnTo,
-        authSessionMode: config.authSessionMode
-      });
-      navigate(nextReturnTo, { replace: true });
-    } catch (error) {
-      exchangeStartedRef.current = false;
-      setState(error instanceof ApiError && error.status === 403 ? 'access-denied' : 'error');
-      setMessage(error instanceof Error ? error.message : String(error ?? 'Unknown error'));
-    }
-  }, [auth, mode, navigate, returnTo]);
 
   useEffect(() => {
-    if (mode !== 'logout-complete' || restartStartedRef.current) {
+    if (mode !== 'callback') {
       return;
     }
 
-    const restartPath = consumePostLogoutRestartPath();
-    if (restartPath) {
-      restartStartedRef.current = true;
-      setState('starting-oidc');
-      auth.signIn(sanitizeReturnTo(restartPath));
-      return;
-    }
-
-    setState('signed-out');
-    setMessage('Signed out successfully.');
-  }, [auth, mode]);
+    const nextReturnTo = sanitizeReturnTo(consumePostLoginRedirectPath());
+    navigate(`/login?returnTo=${encodeURIComponent(nextReturnTo)}`, { replace: true });
+  }, [mode, navigate]);
 
   useEffect(() => {
-    if (mode !== 'login' || checkedSessionRef.current) {
+    if (mode === 'callback' || checkedSessionRef.current) {
       return;
     }
     checkedSessionRef.current = true;
@@ -166,7 +119,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
       return;
     }
 
-    const misconfiguration = getBrowserOidcMisconfiguration();
+    const misconfiguration = getMisconfigurationMessage();
     if (misconfiguration) {
       setState('misconfigured');
       setMessage(misconfiguration);
@@ -175,95 +128,125 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
 
     setState('checking-session');
     DataService.getAuthSessionStatusWithMeta()
-      .then(() => {
+      .then((response) => {
+        logUiDiagnostic('AuthPage', 'session-already-valid', {
+          mode,
+          returnTo,
+          authMode: response.data.authMode,
+          requestId: response.meta.requestId
+        });
         navigate(returnTo, { replace: true });
       })
-      .catch((error) => {
-        if (error instanceof ApiError && error.status === 403) {
+      .catch((sessionError) => {
+        if (sessionError instanceof ApiError && sessionError.status === 401) {
+          setState('ready');
+          if (mode === 'logout-complete') {
+            setMessage('Signed out successfully.');
+          }
+          return;
+        }
+        if (sessionError instanceof ApiError && sessionError.status === 403) {
           setState('access-denied');
-          setMessage(error.message);
+          setMessage(sessionError.message);
           return;
         }
-        if (!(error instanceof ApiError) || error.status !== 401) {
-          setState('error');
-          setMessage(error instanceof Error ? error.message : String(error ?? 'Unknown error'));
-          return;
-        }
-
-        if (auth.authenticated) {
-          void completeLogin();
-          return;
-        }
-        setState('starting-oidc');
-        if (auth.ready && !signInStartedRef.current) {
-          signInStartedRef.current = true;
-          auth.signIn(returnTo);
-        }
+        setState('error');
+        setMessage(
+          sessionError instanceof Error ? sessionError.message : String(sessionError ?? 'Unknown error')
+        );
       });
-  }, [auth, completeLogin, mode, navigate, returnTo]);
+  }, [mode, navigate, returnTo]);
 
-  useEffect(() => {
-    if (mode === 'logout-complete') {
-      return;
-    }
-    if (!auth.ready || !config.authRequired) {
-      return;
-    }
-    const misconfiguration = getBrowserOidcMisconfiguration();
-    if (misconfiguration) {
-      setState('misconfigured');
-      setMessage(misconfiguration);
-      return;
-    }
-    if (auth.authenticated) {
-      void completeLogin();
-      return;
-    }
-    if (mode === 'login' && state === 'starting-oidc' && !signInStartedRef.current) {
-      signInStartedRef.current = true;
-      auth.signIn(returnTo);
-      return;
-    }
-    if (mode === 'callback' && auth.phase === 'signed-out') {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextPassword = password;
+    if (!nextPassword) {
       setState('error');
-      setMessage(auth.error || 'Microsoft Entra did not return an authenticated session.');
+      setMessage('Password is required.');
+      return;
     }
-  }, [auth, auth.authenticated, auth.error, auth.phase, auth.ready, completeLogin, mode, returnTo, state]);
+
+    setState('submitting');
+    setMessage('');
+    try {
+      await auth.login(nextPassword);
+      setPassword('');
+      logUiDiagnostic('AuthPage', 'password-login-success', {
+        mode,
+        returnTo
+      });
+      navigate(returnTo, { replace: true });
+    } catch (loginError) {
+      setPassword('');
+      setState(loginError instanceof ApiError && loginError.status === 403 ? 'access-denied' : 'error');
+      setMessage(loginError instanceof Error ? loginError.message : String(loginError ?? 'Unknown error'));
+    }
+  }
 
   const title = titleForState(mode, state);
-  const busy =
-    state === 'checking-session' || state === 'starting-oidc' || state === 'exchanging-session';
+  const busy = state === 'checking-session' || state === 'submitting' || state === 'redirecting';
+  const showPasswordForm =
+    mode !== 'callback' && config.authRequired && (state === 'ready' || state === 'error');
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
       <section className="w-full max-w-2xl rounded-lg border border-border bg-card p-8 shadow-lg">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
-          Secure access
+          Restricted access
         </p>
         <h1 className="mt-3 font-display text-4xl text-foreground">{title}</h1>
         <p className="mt-4 text-sm leading-6 text-muted-foreground">
           {message ||
             (busy
-              ? 'The login page is validating your API session and Microsoft Entra sign-in state.'
-              : 'You can start a new sign-in when you are ready.')}
+              ? 'The login page is validating your secure session before protected routes load.'
+              : 'Enter the shared password to continue to the protected UI.')}
         </p>
 
         {auth.error && state !== 'error' ? (
           <p className="mt-4 text-sm text-destructive">{auth.error}</p>
         ) : null}
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          {state === 'signed-out' || state === 'error' ? (
-            <Button onClick={() => auth.signIn(returnTo)} disabled={auth.busy}>
-              Sign in
+        {showPasswordForm ? (
+          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground" htmlFor="shared-password">
+                Shared password
+              </label>
+              <Input
+                autoComplete="current-password"
+                autoFocus
+                id="shared-password"
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Enter the operator password"
+                type="password"
+                value={password}
+              />
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button disabled={auth.busy || !password} type="submit">
+                Sign in
+              </Button>
+              {mode === 'logout-complete' ? (
+                <Button
+                  disabled={auth.busy}
+                  onClick={() => navigate(returnTo, { replace: true })}
+                  type="button"
+                  variant="outline"
+                >
+                  Return to app
+                </Button>
+              ) : null}
+            </div>
+          </form>
+        ) : null}
+
+        {state === 'access-denied' ? (
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button onClick={() => auth.signOut()} variant="outline">
+              Clear session
             </Button>
-          ) : null}
-          {state === 'access-denied' ? (
-            <Button variant="outline" onClick={() => auth.signOut()}>
-              Sign out
-            </Button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </section>
     </main>
   );

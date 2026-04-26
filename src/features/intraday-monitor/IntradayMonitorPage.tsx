@@ -181,6 +181,13 @@ function eventSeverityVariant(severity: IntradayMonitorEvent['severity']) {
   return 'outline' as const;
 }
 
+function appendRunSkippedReasonText(reason: string): string {
+  if (reason === 'watchlist_disabled') return 'watchlist paused';
+  if (reason === 'no_new_symbols') return 'no new symbols';
+  if (reason === 'queue_run_disabled') return 'run queue disabled';
+  return reason.replaceAll('_', ' ');
+}
+
 function latestDetail(summary?: IntradayWatchlistSummary | null): string {
   if (!summary) return 'No watchlists configured yet.';
   if (summary.lastRunAt) {
@@ -216,6 +223,7 @@ export function IntradayMonitorPage() {
   const [selectedWatchlistId, setSelectedWatchlistId] = useState<string | null>(null);
   const [isCreatingWatchlist, setIsCreatingWatchlist] = useState(false);
   const [draft, setDraft] = useState<WatchlistDraft>(createEmptyDraft);
+  const [appendSymbolsText, setAppendSymbolsText] = useState('');
   const [statusSearch, setStatusSearch] = useState('');
   const deferredStatusSearch = useDeferredValue(statusSearch.trim());
 
@@ -293,10 +301,12 @@ export function IntradayMonitorPage() {
   useEffect(() => {
     if (isCreatingWatchlist) {
       setDraft(createEmptyDraft());
+      setAppendSymbolsText('');
       return;
     }
     if (watchlistDetailQuery.data) {
       setDraft(buildDraftFromWatchlist(watchlistDetailQuery.data));
+      setAppendSymbolsText('');
     }
   }, [isCreatingWatchlist, watchlistDetailQuery.data]);
 
@@ -353,6 +363,41 @@ export function IntradayMonitorPage() {
     },
     onError: (error) => {
       toast.error(`Failed to delete intraday watchlist: ${formatSystemStatusText(error)}`);
+    }
+  });
+
+  const appendSymbolsMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedWatchlistId || isCreatingWatchlist) {
+        throw new Error('Select an existing watchlist before adding symbols.');
+      }
+      const symbols = parseSymbols(appendSymbolsText);
+      if (!symbols.length) {
+        throw new Error('Add at least one symbol.');
+      }
+      return intradayMonitorApi.appendSymbols(selectedWatchlistId, {
+        symbols,
+        queueRun: true
+      });
+    },
+    onSuccess: async (result) => {
+      setAppendSymbolsText('');
+      setDraft(buildDraftFromWatchlist(result.watchlist));
+      const duplicateText = result.alreadyPresentSymbols.length
+        ? ` ${result.alreadyPresentSymbols.length} already present.`
+        : '';
+      const runText = result.queuedRun
+        ? ` Queued run ${result.queuedRun.runId}.`
+        : result.runSkippedReason
+          ? ` No run queued: ${appendRunSkippedReasonText(result.runSkippedReason)}.`
+          : '';
+      toast.success(
+        `Added ${result.addedSymbols.length} symbols to ${result.watchlist.name}.${duplicateText}${runText}`
+      );
+      await refreshAllQueries();
+    },
+    onError: (error) => {
+      toast.error(`Failed to add symbols: ${formatSystemStatusText(error)}`);
     }
   });
 
@@ -435,6 +480,7 @@ export function IntradayMonitorPage() {
   const selectedWatchlist = watchlists.find((item) => item.watchlistId === selectedWatchlistId) || null;
   const isMutating =
     saveWatchlistMutation.isPending ||
+    appendSymbolsMutation.isPending ||
     deleteWatchlistMutation.isPending ||
     runWatchlistMutation.isPending;
 
@@ -618,6 +664,37 @@ export function IntradayMonitorPage() {
                 One symbol per line or comma-separated.
               </p>
             </div>
+
+            {!isCreatingWatchlist ? (
+              <div className="grid gap-3 rounded-[1rem] border border-mcm-walnut/15 bg-mcm-paper/70 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                <div className="space-y-2">
+                  <Label htmlFor="intraday-watchlist-add-symbols">Add Symbols</Label>
+                  <Textarea
+                    id="intraday-watchlist-add-symbols"
+                    value={appendSymbolsText}
+                    onChange={(event) => setAppendSymbolsText(event.target.value)}
+                    placeholder="AMD TSLA"
+                    rows={2}
+                  />
+                </div>
+                <Button
+                  onClick={() => appendSymbolsMutation.mutate()}
+                  disabled={
+                    !selectedWatchlistId ||
+                    isCreatingWatchlist ||
+                    isMutating ||
+                    !appendSymbolsText.trim()
+                  }
+                >
+                  {appendSymbolsMutation.isPending ? (
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="mr-2 h-4 w-4" />
+                  )}
+                  Add Symbols
+                </Button>
+              </div>
+            ) : null}
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="space-y-2">

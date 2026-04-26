@@ -22,6 +22,8 @@ jobs:
       API_UPSTREAM: ${{ vars.API_UPSTREAM }}
       API_UPSTREAM_SCHEME: ${{ vars.API_UPSTREAM_SCHEME || 'https' }}
       UI_AUTH_ENABLED: ${{ vars.UI_AUTH_ENABLED || 'true' }}
+      UI_AUTH_PROVIDER: ${{ vars.UI_AUTH_PROVIDER || 'password' }}
+      UI_ALLOWED_INGRESS_CIDRS: ${{ vars.UI_ALLOWED_INGRESS_CIDRS }}
       UI_OIDC_AUTHORITY: ${{ vars.UI_OIDC_AUTHORITY }}
       UI_OIDC_CLIENT_ID: ${{ vars.UI_OIDC_CLIENT_ID }}
       UI_OIDC_SCOPES: ${{ vars.UI_OIDC_SCOPES }}
@@ -46,8 +48,11 @@ jobs:
           api_upstream="${API_UPSTREAM}"
           api_upstream_scheme="$(printf '%s' "${API_UPSTREAM_SCHEME}" | tr '[:upper:]' '[:lower:]')"
           ui_auth_enabled="$(printf '%s' "${UI_AUTH_ENABLED}" | tr '[:upper:]' '[:lower:]')"
+          ui_auth_provider="$(printf '%s' "${UI_AUTH_PROVIDER}" | tr '[:upper:]' '[:lower:]')"
+          ui_allowed_ingress_cidrs="${UI_ALLOWED_INGRESS_CIDRS}"
           : "${image_digest:?image_digest is required}"
           : "${api_upstream:?vars.API_UPSTREAM is required}"
+          : "${ui_allowed_ingress_cidrs:?vars.UI_ALLOWED_INGRESS_CIDRS is required}"
           case "${api_upstream_scheme}" in
             http|https) ;;
             *)
@@ -55,17 +60,30 @@ jobs:
               exit 1
               ;;
           esac
-          case "${ui_auth_enabled}" in
-            1|true|yes|y|on|t)
-              : "${UI_OIDC_AUTHORITY:?vars.UI_OIDC_AUTHORITY is required when UI_AUTH_ENABLED=true}"
-              : "${UI_OIDC_CLIENT_ID:?vars.UI_OIDC_CLIENT_ID is required when UI_AUTH_ENABLED=true}"
-              : "${UI_OIDC_SCOPES:?vars.UI_OIDC_SCOPES is required when UI_AUTH_ENABLED=true}"
+          case "${ui_auth_provider}" in
+            disabled|password|oidc) ;;
+            *)
+              echo "vars.UI_AUTH_PROVIDER must be disabled, password, or oidc (received: ${ui_auth_provider})." >&2
+              exit 1
               ;;
           esac
+          case "${ui_auth_enabled}" in
+            1|true|yes|y|on|t)
+              if [ "${ui_auth_provider}" = "oidc" ]; then
+                : "${UI_OIDC_AUTHORITY:?vars.UI_OIDC_AUTHORITY is required when UI_AUTH_PROVIDER=oidc}"
+                : "${UI_OIDC_CLIENT_ID:?vars.UI_OIDC_CLIENT_ID is required when UI_AUTH_PROVIDER=oidc}"
+                : "${UI_OIDC_SCOPES:?vars.UI_OIDC_SCOPES is required when UI_AUTH_PROVIDER=oidc}"
+              fi
+              ;;
+          esac
+          python scripts/validate_github_deploy_vars.py \
+            --mode prod-runtime \
+            --vars-json '${{ toJson(vars) }}'
           {
             echo "image_digest=${image_digest}"
             echo "api_upstream=${api_upstream}"
             echo "api_upstream_scheme=${api_upstream_scheme}"
+            echo "ui_auth_provider=${ui_auth_provider}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Azure login
@@ -98,6 +116,8 @@ jobs:
           API_UPSTREAM: ${{ steps.rollout.outputs.api_upstream }}
           API_UPSTREAM_SCHEME: ${{ steps.rollout.outputs.api_upstream_scheme }}
           UI_AUTH_ENABLED: ${{ env.UI_AUTH_ENABLED }}
+          UI_AUTH_PROVIDER: ${{ env.UI_AUTH_PROVIDER }}
+          UI_ALLOWED_INGRESS_CIDRS: ${{ env.UI_ALLOWED_INGRESS_CIDRS }}
           UI_OIDC_AUTHORITY: ${{ env.UI_OIDC_AUTHORITY }}
           UI_OIDC_CLIENT_ID: ${{ env.UI_OIDC_CLIENT_ID }}
           UI_OIDC_SCOPES: ${{ env.UI_OIDC_SCOPES }}
@@ -109,12 +129,39 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
+          from ipaddress import ip_network
           from pathlib import Path
           import os
 
           template = Path("deploy/app_ui.yaml").read_text(encoding="utf-8")
           for key, value in os.environ.items():
               template = template.replace("${" + key + "}", value)
+
+          raw_cidrs = os.environ["UI_ALLOWED_INGRESS_CIDRS"]
+          cidrs = []
+          for chunk in raw_cidrs.replace("\n", ",").split(","):
+              candidate = chunk.strip()
+              if not candidate:
+                  continue
+              ip_network(candidate, strict=False)
+              cidrs.append(candidate)
+          if not cidrs:
+              raise SystemExit("UI_ALLOWED_INGRESS_CIDRS must include at least one valid CIDR.")
+
+          restriction_lines = []
+          for index, cidr in enumerate(cidrs, start=1):
+              restriction_lines.extend(
+                  [
+                      f"        - name: allow-{index:03d}",
+                      f"          description: Trusted UI ingress {index}",
+                      f'          ipAddressRange: "{cidr}"',
+                      "          action: Allow",
+                  ]
+              )
+          template = template.replace(
+              "__UI_IP_SECURITY_RESTRICTIONS__",
+              "\n".join(restriction_lines),
+          )
           Path("rendered-app_ui.yaml").write_text(template, encoding="utf-8")
           PY
 
@@ -160,7 +207,8 @@ jobs:
           expect_one_of GET "https://${fqdn}/ui-config.js" 200
           python scripts/validate_deployed_ui_oidc.py \
             --ui-origin "https://${fqdn}" \
-            --ui-auth-enabled "${UI_AUTH_ENABLED}"
+            --ui-auth-enabled "${UI_AUTH_ENABLED}" \
+            --ui-auth-provider "${UI_AUTH_PROVIDER}"
           expect_one_of GET "https://${fqdn}/api/system/status-view" 200 401 403 405
           expect_one_of POST "https://${fqdn}/api/realtime/ticket" 200 401 403 405
           echo "fqdn=${fqdn}" >> "$GITHUB_OUTPUT"
@@ -197,7 +245,8 @@ jobs:
           curl --fail --retry 18 --retry-delay 10 --retry-connrefused "https://${UI_PUBLIC_HOSTNAME}/ui-config.js" > /dev/null
           python scripts/validate_deployed_ui_oidc.py \
             --ui-origin "https://${UI_PUBLIC_HOSTNAME}" \
-            --ui-auth-enabled "${UI_AUTH_ENABLED}"
+            --ui-auth-enabled "${UI_AUTH_ENABLED}" \
+            --ui-auth-provider "${UI_AUTH_PROVIDER}"
 
           {
             echo "bound_hostname=${UI_PUBLIC_HOSTNAME}"
@@ -216,7 +265,9 @@ jobs:
             echo "- API upstream scheme: \`${{ steps.rollout.outputs.api_upstream_scheme }}\`"
             echo "- API upstream: \`${{ steps.rollout.outputs.api_upstream }}\`"
             echo "- UI auth enabled: \`${UI_AUTH_ENABLED}\`"
+            echo "- UI auth provider: \`${UI_AUTH_PROVIDER}\`"
             echo "- UI bootstrap: \`/ui-config.js\`"
+            echo "- Ingress CIDRs: \`${UI_ALLOWED_INGRESS_CIDRS}\`"
             echo "- FQDN: https://${{ steps.verify.outputs.fqdn }}"
             if [ -n "${{ steps.custom-domain.outputs.bound_hostname }}" ]; then
               echo "- Stable hostname: https://${{ steps.custom-domain.outputs.bound_hostname }}"

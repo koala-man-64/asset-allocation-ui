@@ -9,6 +9,7 @@ from collections.abc import Mapping
 
 
 TRUTHY_VALUES = {"1", "true", "yes", "y", "on", "t"}
+AUTH_PROVIDERS = {"disabled", "oidc", "password"}
 PROD_RUNTIME_ALWAYS_REQUIRED = (
     "AZURE_CLIENT_ID",
     "AZURE_TENANT_ID",
@@ -21,8 +22,10 @@ PROD_RUNTIME_ALWAYS_REQUIRED = (
     "API_UPSTREAM",
     "API_UPSTREAM_SCHEME",
     "UI_AUTH_ENABLED",
+    "UI_AUTH_PROVIDER",
+    "UI_ALLOWED_INGRESS_CIDRS",
 )
-PROD_RUNTIME_AUTH_REQUIRED = (
+PROD_RUNTIME_OIDC_REQUIRED = (
     "UI_OIDC_AUTHORITY",
     "UI_OIDC_CLIENT_ID",
     "UI_OIDC_SCOPES",
@@ -104,10 +107,17 @@ def missing_prod_runtime_vars(variable_map: Mapping[str, str]) -> list[str]:
         for name in PROD_RUNTIME_ALWAYS_REQUIRED
         if not normalize_text(variable_map.get(name, ""))
     ]
-    if parse_bool(variable_map.get("UI_AUTH_ENABLED")):
+
+    auth_provider = normalize_text(variable_map.get("UI_AUTH_PROVIDER")).lower()
+    if auth_provider and auth_provider not in AUTH_PROVIDERS:
+        raise ValidationError(
+            "vars.UI_AUTH_PROVIDER must be one of disabled, oidc, or password."
+        )
+
+    if parse_bool(variable_map.get("UI_AUTH_ENABLED")) and auth_provider == "oidc":
         missing.extend(
             name
-            for name in PROD_RUNTIME_AUTH_REQUIRED
+            for name in PROD_RUNTIME_OIDC_REQUIRED
             if not normalize_text(variable_map.get(name, ""))
         )
     return missing
@@ -170,12 +180,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Validated GitHub repo deploy vars for {repo} ({args.mode})")
     print(f"UI_AUTH_ENABLED={variable_map.get('UI_AUTH_ENABLED', '')}")
+    print(f"UI_AUTH_PROVIDER={variable_map.get('UI_AUTH_PROVIDER', '')}")
     if parse_bool(variable_map.get("UI_AUTH_ENABLED")):
-        print("UI auth enabled: verified required OIDC repo vars are present.")
+        print("UI auth enabled: verified provider-specific repo vars are present.")
     else:
-        print(
-            "UI auth disabled: OIDC repo vars not required by prod-runtime preflight."
-        )
+        print("UI auth disabled: provider-specific auth vars are not required.")
     return 0
 
 

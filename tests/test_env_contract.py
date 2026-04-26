@@ -86,6 +86,8 @@ SYNTHETIC_ENV_VALUES = {
     "API_UPSTREAM": "example.internal.test",
     "API_UPSTREAM_SCHEME": "https",
     "UI_AUTH_ENABLED": "true",
+    "UI_AUTH_PROVIDER": "password",
+    "UI_ALLOWED_INGRESS_CIDRS": "203.0.113.10/32,198.51.100.0/24",
     "UI_OIDC_AUTHORITY": "https://login.microsoftonline.com/example-tenant",
     "UI_OIDC_CLIENT_ID": "example-client-id",
     "UI_OIDC_SCOPES": "openid profile api://asset-allocation-api/user_impersonation",
@@ -145,12 +147,14 @@ def test_sync_all_to_github_uses_body_flags_for_gh_cli() -> None:
 def test_ui_deploy_workflow_is_release_driven_and_uses_repo_var() -> None:
     text = workflow_text("deploy-prod.yml")
     assert "workflow_dispatch:\n    inputs:" not in text
-    assert "repository_dispatch:" not in text
+    assert "repository_dispatch:" in text
+    assert "- control_plane_released" in text
     assert "deploy_runtime" not in text
     assert "workflow_run:" in text
     assert "- UI Release" in text
     assert "branches:\n      - main" in text
     assert "actions: read" in text
+    assert "github.event.action == 'control_plane_released'" in text
     assert "validate-runtime-repo-vars" in text
     assert "REPO_VARS_JSON: ${{ toJson(vars) }}" in text
     assert '--vars-json "${REPO_VARS_JSON}"' in text
@@ -168,6 +172,8 @@ def test_ui_runtime_deploy_workflow_uses_repo_var_only() -> None:
     assert "vars.API_UPSTREAM" in text
     assert "vars.API_UPSTREAM_SCHEME" in text
     assert "vars.UI_AUTH_ENABLED" in text
+    assert "vars.UI_AUTH_PROVIDER" in text
+    assert "vars.UI_ALLOWED_INGRESS_CIDRS" in text
     assert "vars.UI_OIDC_AUTHORITY" in text
     assert "vars.UI_OIDC_CLIENT_ID" in text
     assert "vars.UI_OIDC_SCOPES" in text
@@ -195,12 +201,16 @@ def test_setup_env_discovers_api_upstream_host_and_scheme() -> None:
     assert 'return (New-Resolution -Value "https" -Source "azure")' in text
 
 
-def test_ui_manifest_carries_upstream_and_oidc_runtime_env() -> None:
+def test_ui_manifest_carries_upstream_and_auth_runtime_env() -> None:
     text = (repo_root() / "deploy" / "app_ui.yaml").read_text(encoding="utf-8")
     assert "- name: API_UPSTREAM" in text
     assert 'value: "${API_UPSTREAM}"' in text
     assert "- name: API_UPSTREAM_SCHEME" in text
     assert 'value: "${API_UPSTREAM_SCHEME}"' in text
+    assert "- name: UI_AUTH_PROVIDER" in text
+    assert 'value: "${UI_AUTH_PROVIDER}"' in text
+    assert "ipSecurityRestrictions:" in text
+    assert "__UI_IP_SECURITY_RESTRICTIONS__" in text
     assert "- name: UI_OIDC_AUTHORITY" in text
     assert 'value: "${UI_OIDC_AUTHORITY}"' in text
     assert "- name: UI_OIDC_CLIENT_ID" in text
@@ -235,12 +245,15 @@ def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None
     ).read_text(encoding="utf-8")
     assert "vars.API_UPSTREAM_SCHEME || 'https'" in text
     assert "vars.UI_AUTH_ENABLED || 'true'" in text
+    assert "vars.UI_AUTH_PROVIDER || 'password'" in text
+    assert "vars.UI_ALLOWED_INGRESS_CIDRS" in text
     assert "vars.UI_OIDC_AUTHORITY" in text
     assert "vars.UI_OIDC_CLIENT_ID" in text
     assert "vars.UI_OIDC_SCOPES" in text
     assert "python scripts/validate_deployed_ui_oidc.py \\" in text
     assert '--ui-origin "https://${fqdn}"' in text
     assert '--ui-auth-enabled "${UI_AUTH_ENABLED}"' in text
+    assert '--ui-auth-provider "${UI_AUTH_PROVIDER}"' in text
     assert "https://${fqdn}/ui-config.js" in text
     assert "https://${fqdn}/api/system/status-view" in text
     assert "https://${fqdn}/api/realtime/ticket" in text
@@ -251,20 +264,30 @@ def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None
     assert "Allowed: $*" in text
 
 
-def test_ui_runtime_config_sources_publish_same_origin_oidc_overrides() -> None:
-    required_fragments = [
-        '"apiBaseUrl": "/api"',
-        "window.location.origin",
-        "oidcRedirectUri",
-        "/auth/callback",
-        "oidcPostLogoutRedirectUri",
-        "/auth/logout-complete",
-    ]
-    for relative_path in ("public/ui-config.js", "docker/write-ui-runtime-config.sh"):
+def test_ui_runtime_config_sources_publish_same_origin_api_bootstrap_and_auth_provider() -> (
+    None
+):
+    required_fragments = {
+        "public/ui-config.js": [
+            "apiBaseUrl: '/api'",
+            "authProvider: 'disabled'",
+            "authSessionMode: 'bearer'",
+            "uiAuthEnabled: 'false'",
+            "authRequired: 'false'",
+        ],
+        "docker/write-ui-runtime-config.sh": [
+            '"apiBaseUrl": "/api"',
+            '"authProvider": "${escaped_auth_provider}"',
+            '"authSessionMode": "${escaped_auth_session_mode}"',
+            "UI_AUTH_PROVIDER",
+            "resolved_auth_session_mode='cookie'",
+        ],
+    }
+    for relative_path, fragments in required_fragments.items():
         text = (repo_root() / relative_path).read_text(encoding="utf-8")
-        missing = [fragment for fragment in required_fragments if fragment not in text]
+        missing = [fragment for fragment in fragments if fragment not in text]
         assert not missing, (
-            f"{relative_path} is missing the same-origin OIDC override fragments: {missing}"
+            f"{relative_path} is missing auth bootstrap fragments: {missing}"
         )
 
 
@@ -305,6 +328,7 @@ def test_setup_env_dry_run_reports_sources_without_prompting() -> None:
     assert "prompt_required=" in stdout
     assert "# Preview (.env.local)" in stdout
     assert "VITE_API_PROXY_TARGET=" in stdout
+    assert "VITE_UI_AUTH_PROVIDER=password" in stdout
     assert "VITE_OIDC_AUTHORITY=" in stdout
     assert "VITE_PROXY_CONFIG_JS=" not in stdout
 
@@ -337,6 +361,7 @@ def test_setup_env_writes_local_vite_env_file(tmp_path: Path) -> None:
     assert "VITE_API_BASE_URL=/api" in local_env_text
     assert "VITE_API_PROXY_TARGET=https://example.internal.test" in local_env_text
     assert "VITE_UI_AUTH_ENABLED=true" in local_env_text
+    assert "VITE_UI_AUTH_PROVIDER=password" in local_env_text
     assert (
         "VITE_OIDC_AUTHORITY=https://login.microsoftonline.com/example-tenant"
         in local_env_text

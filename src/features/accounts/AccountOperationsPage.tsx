@@ -28,13 +28,19 @@ import {
   accountOperationsApi,
   accountOperationsKeys
 } from '@/services/accountOperationsApi';
+import { AccountConfigurationPanel } from '@/features/accounts/components/AccountConfigurationPanel';
 import type {
   BrokerAccountAlert,
+  BrokerAccountConfiguration,
   BrokerAccountDetail,
   BrokerAccountSummary,
+  BrokerTradingPolicyUpdateRequest,
+  BrokerAccountAllocationUpdateRequest,
   BrokerVendor
 } from '@/types/brokerAccounts';
 import {
+  accountAssignmentDetail,
+  accountAssignmentTitle,
   alertToneClass,
   brokerAccentClass,
   compactMetricToneClass,
@@ -50,7 +56,7 @@ import { toast } from 'sonner';
 
 type BrokerFilter = 'all' | BrokerVendor;
 type HealthFilter = 'all' | 'needs-action' | 'healthy' | 'paused' | 'disconnected';
-type DetailTab = 'overview' | 'connectivity' | 'risk' | 'activity';
+type DetailTab = 'overview' | 'connectivity' | 'risk' | 'activity' | 'configuration';
 const EMPTY_ACCOUNTS: readonly BrokerAccountSummary[] = [];
 
 function brokerLabel(broker: BrokerVendor): string {
@@ -336,8 +342,7 @@ function AccountCard({
           <div>
             <h3 className="font-display text-xl text-foreground">{account.name}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              {account.activePortfolioName || 'No portfolio assignment'}
-              {account.strategyLabel ? ` · ${account.strategyLabel}` : ''}
+              {accountAssignmentTitle(account)} | {accountAssignmentDetail(account)}
             </p>
           </div>
         </div>
@@ -398,7 +403,7 @@ function AccountCard({
             {formatCurrency(account.cash, account.baseCurrency)}
           </div>
           <div className="mt-1 text-sm text-muted-foreground">
-            {formatNumber(account.openPositionCount)} positions · {formatNumber(account.openOrderCount)} open orders
+            {formatNumber(account.openPositionCount)} positions | {formatNumber(account.openOrderCount)} open orders
           </div>
         </div>
 
@@ -449,6 +454,9 @@ function AccountDetailSheet({
   onOpenChange,
   account,
   detail,
+  configuration,
+  configurationLoading,
+  configurationError,
   loading,
   error,
   activeTab,
@@ -457,12 +465,21 @@ function AccountDetailSheet({
   onReconnect,
   onTogglePause,
   onAcknowledgeAlert,
+  onReloadConfiguration,
+  onSaveTradingPolicy,
+  onSaveAllocation,
+  onConfigurationDirtyChange,
+  configurationSavingPolicy,
+  configurationSavingAllocation,
   mutationBusy
 }: {
   open: boolean;
   onOpenChange: (value: boolean) => void;
   account: BrokerAccountSummary | null;
   detail: BrokerAccountDetail | null;
+  configuration: BrokerAccountConfiguration | null;
+  configurationLoading: boolean;
+  configurationError: string | null;
   loading: boolean;
   error: string | null;
   activeTab: DetailTab;
@@ -471,11 +488,24 @@ function AccountDetailSheet({
   onReconnect: () => void;
   onTogglePause: () => void;
   onAcknowledgeAlert: (alert: BrokerAccountAlert) => void;
+  onReloadConfiguration: () => void;
+  onSaveTradingPolicy: (
+    payload: BrokerTradingPolicyUpdateRequest
+  ) => Promise<BrokerAccountConfiguration>;
+  onSaveAllocation: (
+    payload: BrokerAccountAllocationUpdateRequest
+  ) => Promise<BrokerAccountConfiguration>;
+  onConfigurationDirtyChange: (dirty: boolean) => void;
+  configurationSavingPolicy: boolean;
+  configurationSavingAllocation: boolean;
   mutationBusy: boolean;
 }) {
   const subject = detail?.account ?? account;
   const activeAlerts = detail?.alerts.filter((alert) => alert.status !== 'resolved') ?? [];
   const capabilities = detail?.capabilities;
+  const capabilityEntries = Object.entries(detail?.capabilities ?? {}).filter(
+    ([, value]) => typeof value === 'boolean'
+  ) as Array<[string, boolean]>;
   const reconnectDisabled =
     mutationBusy ||
     subject?.connectionHealth.connectionState === 'connected' ||
@@ -540,6 +570,7 @@ function AccountDetailSheet({
                 <TabsTrigger value="connectivity">Connectivity</TabsTrigger>
                 <TabsTrigger value="risk">Risk</TabsTrigger>
                 <TabsTrigger value="activity">Activity</TabsTrigger>
+                <TabsTrigger value="configuration">Configuration</TabsTrigger>
               </TabsList>
 
               <TabsContent value="overview" className="mt-4 space-y-4">
@@ -557,8 +588,8 @@ function AccountDetailSheet({
                   />
                   <DetailSection
                     label="Assignment"
-                    value={subject.activePortfolioName || 'No portfolio assignment'}
-                    detail={subject.strategyLabel || 'No strategy label'}
+                    value={accountAssignmentTitle(subject)}
+                    detail={accountAssignmentDetail(subject)}
                   />
                   <DetailSection
                     label="Open Inventory"
@@ -604,7 +635,7 @@ function AccountDetailSheet({
                     Capability Flags
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {Object.entries(detail.capabilities).map(([key, enabled]) => (
+                    {capabilityEntries.map(([key, enabled]) => (
                       <Badge
                         key={key}
                         variant={enabled ? 'default' : 'outline'}
@@ -701,7 +732,7 @@ function AccountDetailSheet({
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <div className="font-medium text-foreground">
-                              {run.trigger} · {run.scope}
+                              {run.trigger} | {run.scope}
                             </div>
                             <div className="mt-1 text-sm text-muted-foreground">
                               Requested {formatTimestamp(run.requestedAt)}
@@ -737,7 +768,7 @@ function AccountDetailSheet({
                           <div>
                             <div className="font-medium text-foreground">{activity.summary}</div>
                             <div className="mt-1 text-sm text-muted-foreground">
-                              {activity.actor || 'system'} · {formatTimestamp(activity.requestedAt)}
+                              {activity.actor || 'system'} | {formatTimestamp(activity.requestedAt)}
                             </div>
                           </div>
                           <Badge variant={statusBadgeVariant(activity.status)}>{activity.status}</Badge>
@@ -752,6 +783,22 @@ function AccountDetailSheet({
                     />
                   )}
                 </div>
+              </TabsContent>
+
+              <TabsContent value="configuration" className="mt-4">
+                <AccountConfigurationPanel
+                  key={subject.accountId}
+                  account={subject}
+                  configuration={configuration}
+                  loading={configurationLoading}
+                  error={configurationError}
+                  savingPolicy={configurationSavingPolicy}
+                  savingAllocation={configurationSavingAllocation}
+                  onReload={onReloadConfiguration}
+                  onSavePolicy={onSaveTradingPolicy}
+                  onSaveAllocation={onSaveAllocation}
+                  onDirtyChange={onConfigurationDirtyChange}
+                />
               </TabsContent>
             </Tabs>
           ) : (
@@ -844,7 +891,7 @@ function DeskVerdictRail({
                 className={`rounded-[1.2rem] border px-3 py-3 text-sm ${compactMetricToneClass(account.overallStatus)}`}
               >
                 <div className="font-medium text-foreground">
-                  {account.name} · {brokerLabel(account.broker)}
+                  {account.name} | {brokerLabel(account.broker)}
                 </div>
                 <div className="mt-1 text-muted-foreground">
                   {account.tradeReadinessReason ||
@@ -886,6 +933,7 @@ export function AccountOperationsPage() {
   const [searchText, setSearchText] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
+  const [configurationDirty, setConfigurationDirty] = useState(false);
   const deferredSearchText = useDeferredValue(searchText);
 
   const listQuery = useQuery({
@@ -898,6 +946,14 @@ export function AccountOperationsPage() {
   const detailQuery = useQuery({
     queryKey: accountOperationsKeys.detail(selectedAccountId),
     queryFn: ({ signal }) => accountOperationsApi.getAccountDetail(String(selectedAccountId), signal),
+    enabled: Boolean(selectedAccountId),
+    refetchInterval: selectedAccountId ? 60000 : false,
+    refetchOnWindowFocus: true
+  });
+
+  const configurationQuery = useQuery({
+    queryKey: accountOperationsKeys.configuration(selectedAccountId),
+    queryFn: ({ signal }) => accountOperationsApi.getConfiguration(String(selectedAccountId), signal),
     enabled: Boolean(selectedAccountId),
     refetchInterval: selectedAccountId ? 60000 : false,
     refetchOnWindowFocus: true
@@ -976,6 +1032,40 @@ export function AccountOperationsPage() {
     }
   });
 
+  const saveTradingPolicyMutation = useMutation({
+    mutationFn: (payload: {
+      accountId: string;
+      body: BrokerTradingPolicyUpdateRequest;
+    }) => accountOperationsApi.saveTradingPolicy(payload.accountId, payload.body),
+    onSuccess: async (configuration, payload) => {
+      queryClient.setQueryData(accountOperationsKeys.configuration(payload.accountId), configuration);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.list() }),
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.detail(payload.accountId) }),
+        queryClient.invalidateQueries({
+          queryKey: accountOperationsKeys.configuration(payload.accountId)
+        })
+      ]);
+    }
+  });
+
+  const saveAllocationMutation = useMutation({
+    mutationFn: (payload: {
+      accountId: string;
+      body: BrokerAccountAllocationUpdateRequest;
+    }) => accountOperationsApi.saveAllocation(payload.accountId, payload.body),
+    onSuccess: async (configuration, payload) => {
+      queryClient.setQueryData(accountOperationsKeys.configuration(payload.accountId), configuration);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.list() }),
+        queryClient.invalidateQueries({ queryKey: accountOperationsKeys.detail(payload.accountId) }),
+        queryClient.invalidateQueries({
+          queryKey: accountOperationsKeys.configuration(payload.accountId)
+        })
+      ]);
+    }
+  });
+
   const accounts = listQuery.data?.accounts ?? EMPTY_ACCOUNTS;
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.accountId === selectedAccountId) ?? null,
@@ -1017,8 +1107,54 @@ export function AccountOperationsPage() {
     acknowledgeMutation.isPending;
 
   const handleOpenDetail = (accountId: string) => {
+    if (
+      selectedAccountId &&
+      selectedAccountId !== accountId &&
+      configurationDirty &&
+      !window.confirm('Discard unsaved configuration changes?')
+    ) {
+      return;
+    }
     setSelectedAccountId(accountId);
     setDetailTab('overview');
+    setConfigurationDirty(false);
+  };
+
+  const selectedConfiguration = configurationQuery.data ?? detailQuery.data?.configuration ?? null;
+
+  const handleCloseDetail = (open: boolean) => {
+    if (open) {
+      return;
+    }
+    if (configurationDirty && !window.confirm('Discard unsaved configuration changes?')) {
+      return;
+    }
+    setSelectedAccountId(null);
+    setConfigurationDirty(false);
+  };
+
+  const handleSaveTradingPolicy = async (
+    payload: BrokerTradingPolicyUpdateRequest
+  ): Promise<BrokerAccountConfiguration> => {
+    if (!selectedAccountId) {
+      throw new Error('No broker account is selected.');
+    }
+    return saveTradingPolicyMutation.mutateAsync({
+      accountId: selectedAccountId,
+      body: payload
+    });
+  };
+
+  const handleSaveAllocation = async (
+    payload: BrokerAccountAllocationUpdateRequest
+  ): Promise<BrokerAccountConfiguration> => {
+    if (!selectedAccountId) {
+      throw new Error('No broker account is selected.');
+    }
+    return saveAllocationMutation.mutateAsync({
+      accountId: selectedAccountId,
+      body: payload
+    });
   };
 
   if (listQuery.isLoading) {
@@ -1143,7 +1279,7 @@ export function AccountOperationsPage() {
               filteredAccounts.map((account) => (
                 <AccountCard
                   key={account.accountId}
-                  account={account}
+                  account={account.allocationSummary ? { ...account, strategyLabel: null } : account}
                   busy={mutationBusy}
                   onOpenDetail={() => handleOpenDetail(account.accountId)}
                   onRefresh={() => refreshMutation.mutate(account.accountId)}
@@ -1165,13 +1301,12 @@ export function AccountOperationsPage() {
 
       <AccountDetailSheet
         open={Boolean(selectedAccountId)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedAccountId(null);
-          }
-        }}
+        onOpenChange={handleCloseDetail}
         account={selectedAccount}
         detail={detailQuery.data ?? null}
+        configuration={selectedConfiguration}
+        configurationLoading={configurationQuery.isLoading}
+        configurationError={configurationQuery.error ? String(configurationQuery.error) : null}
         loading={detailQuery.isLoading}
         error={detailQuery.error ? String(detailQuery.error) : null}
         activeTab={detailTab}
@@ -1189,8 +1324,15 @@ export function AccountOperationsPage() {
         onAcknowledgeAlert={(alert) =>
           acknowledgeMutation.mutate({ accountId: alert.accountId, alertId: alert.alertId })
         }
+        onReloadConfiguration={() => void configurationQuery.refetch()}
+        onSaveTradingPolicy={handleSaveTradingPolicy}
+        onSaveAllocation={handleSaveAllocation}
+        onConfigurationDirtyChange={setConfigurationDirty}
+        configurationSavingPolicy={saveTradingPolicyMutation.isPending}
+        configurationSavingAllocation={saveAllocationMutation.isPending}
         mutationBusy={mutationBusy}
       />
     </div>
   );
 }
+

@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { config } from '@/config';
 import { Button } from '@/app/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
 import { useRealtime } from '@/hooks/useRealtime';
 import { ApiError } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
@@ -27,6 +28,7 @@ function RealtimeEnabledContent({ children }: { children: ReactNode }) {
 }
 
 export function RequireSession({ children }: { children: ReactNode }) {
+  const auth = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const route = useMemo(() => currentRoute(location), [location]);
@@ -39,6 +41,12 @@ export function RequireSession({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!config.authRequired) {
       setState('allowed');
+      setErrorMessage('');
+      return;
+    }
+
+    if (config.oidcEnabled && !auth.ready) {
+      setState('checking');
       setErrorMessage('');
       return;
     }
@@ -84,7 +92,7 @@ export function RequireSession({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [navigate, retryToken, route]);
+  }, [auth.ready, navigate, retryToken, route]);
 
   if (state === 'allowed') {
     return <RealtimeEnabledContent>{children}</RealtimeEnabledContent>;
@@ -96,7 +104,7 @@ export function RequireSession({ children }: { children: ReactNode }) {
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-destructive">Access denied</p>
         <h1 className="mt-3 font-display text-3xl text-foreground">Your account is not authorized</h1>
         <p className="mt-3 text-sm text-muted-foreground">
-          The API session is valid, but it does not include the required role assignment.
+          The backend accepted your login but denied access to this protected route.
         </p>
         {errorMessage ? <p className="mt-4 text-sm text-muted-foreground">{errorMessage}</p> : null}
       </section>

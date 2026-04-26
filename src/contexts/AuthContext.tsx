@@ -1,37 +1,26 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react';
-import type { AccountInfo } from '@azure/msal-browser';
-import { InteractionRequiredAuthError } from '@azure/msal-browser';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { config } from '@/config';
-import { getMsalSession } from '@/contexts/msalSession';
-import {
-  clearReauthRequestState,
-  createInteractionRequiredError,
-  setAccessTokenProvider,
-  setInteractiveAuthHandler,
-  type AccessTokenRequestOptions,
-  type InteractiveAuthRequest
-} from '@/services/authTransport';
-import { logUiDiagnostic } from '@/services/uiDiagnostics';
 import { DataService } from '@/services/DataService';
+import type { AuthSessionStatus } from '@/services/apiService';
+import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
 const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
 const POST_LOGOUT_RESTART_PATH_STORAGE_KEY = 'asset-allocation.post-logout-restart-path';
 const DEFAULT_POST_LOGIN_PATH = '/system-status';
 const LOGIN_PATH = '/login';
-const CALLBACK_PATH = '/auth/callback';
-const LOGOUT_COMPLETE_PATH = '/auth/logout-complete';
-const SILENT_AUTH_REDIRECT_PATH = '/auth/silent-callback.html';
 
-let consumedPostLoginRedirectPath: string | null = null;
+type InteractiveAuthRequest = {
+  reason?: string;
+  returnPath?: string;
+  source?: string;
+  endpoint?: string;
+  status?: number;
+  requestId?: string;
+  recoveryAttempt?: number;
+  resetOidcSession?: boolean;
+};
 
 export type AuthPhase =
   | 'initializing'
@@ -40,78 +29,6 @@ export type AuthPhase =
   | 'redirecting'
   | 'authenticated'
   | 'signing-out';
-
-function describeAuthError(prefix: string, err: unknown): string {
-  const detail = err instanceof Error ? err.message.trim() : String(err ?? '').trim();
-  return detail ? `${prefix} ${detail}` : prefix;
-}
-
-function summarizeAccountForLogs(account: AccountInfo | null | undefined): Record<string, unknown> {
-  if (!account) {
-    return { present: false };
-  }
-
-  return {
-    present: true,
-    username: account.username ?? null,
-    name: account.name ?? null,
-    tenantId: account.tenantId ?? null,
-    homeAccountId: account.homeAccountId ?? null
-  };
-}
-
-function decodeBase64UrlJsonSegment(segment: string): Record<string, unknown> | null {
-  const normalized = segment.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-
-  try {
-    return JSON.parse(atob(padded)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function summarizeJwtClaimsForLogs(token: string | null | undefined): Record<string, unknown> | null {
-  const raw = String(token ?? '').trim();
-  if (!raw) {
-    return null;
-  }
-
-  const parts = raw.split('.');
-  if (parts.length < 2) {
-    return null;
-  }
-
-  const claims = decodeBase64UrlJsonSegment(parts[1] ?? '');
-  if (!claims) {
-    return null;
-  }
-
-  const roles = Array.isArray(claims.roles)
-    ? claims.roles.map((role) => String(role ?? '').trim()).filter(Boolean)
-    : [];
-
-  return {
-    iss: claims.iss ?? null,
-    aud: claims.aud ?? null,
-    azp: claims.azp ?? claims.appid ?? null,
-    tid: claims.tid ?? null,
-    oid: claims.oid ?? null,
-    sub: claims.sub ?? null,
-    scp: claims.scp ?? null,
-    roles,
-    exp: claims.exp ?? null,
-    nbf: claims.nbf ?? null
-  };
-}
-
-function logAuthTransition(
-  event: string,
-  detail: Record<string, unknown> = {},
-  level: 'info' | 'warn' | 'error' = 'info'
-): void {
-  logUiDiagnostic('Auth', event, detail, level);
-}
 
 export interface AuthContextType {
   enabled: boolean;
@@ -123,305 +40,150 @@ export interface AuthContextType {
   error: string | null;
   interactionReason: string | null;
   interactionRequest: InteractiveAuthRequest | null;
-  getAccessToken: (options?: AccessTokenRequestOptions) => Promise<string | null>;
+  getAccessToken: () => Promise<string | null>;
+  login: (password: string) => Promise<AuthSessionStatus>;
+  checkSession: () => Promise<AuthSessionStatus | null>;
   signIn: (returnPath?: string) => void;
   signOut: () => void;
   signOutAndRestart: (returnPath?: string) => void;
 }
 
-function isCallbackPath(pathname: string): boolean {
-  return pathname === CALLBACK_PATH;
-}
-
-function isLoginPath(pathname: string): boolean {
-  return pathname === LOGIN_PATH;
-}
-
-function isLogoutCompletePath(pathname: string): boolean {
-  return pathname === LOGOUT_COMPLETE_PATH;
-}
-
-function getCurrentPath(): string {
-  if (typeof window === 'undefined') {
-    return DEFAULT_POST_LOGIN_PATH;
-  }
-
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
-}
-
 function resolveReturnPath(fallback?: string): string {
   const trimmed = String(fallback ?? '').trim();
-  if (trimmed) {
+  if (trimmed && trimmed.startsWith('/') && !trimmed.startsWith('//')) {
     return trimmed;
   }
-
   if (typeof window === 'undefined') {
     return DEFAULT_POST_LOGIN_PATH;
   }
-
-  const currentPath = getCurrentPath();
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (
     !currentPath ||
-    isCallbackPath(window.location.pathname) ||
-    isLogoutCompletePath(window.location.pathname)
+    currentPath === LOGIN_PATH ||
+    currentPath.startsWith('/auth/callback') ||
+    currentPath.startsWith('/auth/logout-complete')
   ) {
     return DEFAULT_POST_LOGIN_PATH;
   }
-
   return currentPath;
 }
 
-function removeStoredPostLoginRedirectPath(): void {
+function removeStoredValue(key: string): void {
   if (typeof window === 'undefined') {
     return;
   }
-
   try {
-    window.sessionStorage.removeItem(POST_LOGIN_PATH_STORAGE_KEY);
+    window.sessionStorage.removeItem(key);
   } catch {
-    // Ignore sessionStorage failures; they do not block auth state transitions.
+    // Ignore sessionStorage failures and continue with a safe default flow.
   }
 }
 
-function storePostLoginRedirectPath(path: string): void {
+function storeValue(key: string, value: string): void {
   if (typeof window === 'undefined') {
     return;
   }
-
-  consumedPostLoginRedirectPath = null;
   try {
-    window.sessionStorage.setItem(POST_LOGIN_PATH_STORAGE_KEY, resolveReturnPath(path));
+    window.sessionStorage.setItem(key, value);
   } catch {
-    // Ignore sessionStorage failures and fall back to the default route after login.
+    // Ignore sessionStorage failures and continue with a safe default flow.
   }
 }
 
-function clearPostLoginRedirectPath(): void {
-  consumedPostLoginRedirectPath = null;
-  removeStoredPostLoginRedirectPath();
-}
-
-function removeStoredPostLogoutRestartPath(): void {
+function readValue(key: string): string {
   if (typeof window === 'undefined') {
-    return;
+    return '';
   }
-
   try {
-    window.sessionStorage.removeItem(POST_LOGOUT_RESTART_PATH_STORAGE_KEY);
+    return String(window.sessionStorage.getItem(key) ?? '').trim();
   } catch {
-    // Ignore sessionStorage failures; they do not block auth state transitions.
+    return '';
   }
-}
-
-function storePostLogoutRestartPath(path: string): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    window.sessionStorage.setItem(
-      POST_LOGOUT_RESTART_PATH_STORAGE_KEY,
-      resolveReturnPath(path)
-    );
-  } catch {
-    // Ignore sessionStorage failures and fall back to a normal signed-out screen.
-  }
-}
-
-function clearPostLogoutRestartPath(): void {
-  removeStoredPostLogoutRestartPath();
 }
 
 export function peekPostLoginRedirectPath(): string {
-  if (consumedPostLoginRedirectPath) {
-    return consumedPostLoginRedirectPath;
-  }
-
-  if (typeof window === 'undefined') {
-    return DEFAULT_POST_LOGIN_PATH;
-  }
-
-  try {
-    const stored = String(window.sessionStorage.getItem(POST_LOGIN_PATH_STORAGE_KEY) ?? '').trim();
-    return stored || DEFAULT_POST_LOGIN_PATH;
-  } catch {
-    return DEFAULT_POST_LOGIN_PATH;
-  }
+  return readValue(POST_LOGIN_PATH_STORAGE_KEY) || DEFAULT_POST_LOGIN_PATH;
 }
 
 export function consumePostLoginRedirectPath(): string {
-  if (consumedPostLoginRedirectPath) {
-    return consumedPostLoginRedirectPath;
-  }
-
-  const stored = peekPostLoginRedirectPath();
-  consumedPostLoginRedirectPath = stored;
-  removeStoredPostLoginRedirectPath();
-  return stored;
+  const value = peekPostLoginRedirectPath();
+  removeStoredValue(POST_LOGIN_PATH_STORAGE_KEY);
+  return value;
 }
 
 export function consumePostLogoutRestartPath(): string | null {
-  if (typeof window === 'undefined') {
+  const value = readValue(POST_LOGOUT_RESTART_PATH_STORAGE_KEY);
+  removeStoredValue(POST_LOGOUT_RESTART_PATH_STORAGE_KEY);
+  return value || null;
+}
+
+function buildLoginPath(returnPath?: string, options: { loggedOut?: boolean } = {}): string {
+  const params = new URLSearchParams();
+  const nextReturnPath = resolveReturnPath(returnPath);
+  if (nextReturnPath) {
+    params.set('returnTo', nextReturnPath);
+  }
+  if (options.loggedOut) {
+    params.set('loggedOut', '1');
+  }
+  const search = params.toString();
+  return search ? `${LOGIN_PATH}?${search}` : LOGIN_PATH;
+}
+
+function sessionUserLabel(status: AuthSessionStatus | null): string | null {
+  if (!status) {
     return null;
   }
-
-  try {
-    const stored = String(
-      window.sessionStorage.getItem(POST_LOGOUT_RESTART_PATH_STORAGE_KEY) ?? ''
-    ).trim();
-    removeStoredPostLogoutRestartPath();
-    return stored || null;
-  } catch {
-    return null;
-  }
-}
-
-function resolvePostLogoutRedirectUri(
-  explicitPostLogoutRedirectUri: string,
-  redirectUri: string
-): string {
-  const explicit = String(explicitPostLogoutRedirectUri ?? '').trim();
-  if (explicit) {
-    return explicit;
-  }
-
-  const redirect = String(redirectUri ?? '').trim();
-  if (!redirect) {
-    return '';
-  }
-
-  try {
-    return new URL(LOGOUT_COMPLETE_PATH, redirect).toString();
-  } catch {
-    return '';
-  }
-}
-
-function resolveSilentRedirectUri(redirectUri: string): string {
-  const normalizedRedirectUri = String(redirectUri ?? '').trim();
-  if (!normalizedRedirectUri) {
-    return '';
-  }
-
-  try {
-    return new URL(SILENT_AUTH_REDIRECT_PATH, normalizedRedirectUri).toString();
-  } catch {
-    return '';
-  }
-}
-
-function resolveInteractionReason(request?: InteractiveAuthRequest): string {
-  const reason = String(request?.reason ?? '').trim();
-  return reason || 'Your secure session needs to be refreshed before protected data can load.';
+  return status.displayName || status.username || status.subject || null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const oidcClientId = config.oidcClientId;
-  const oidcAuthority = config.oidcAuthority;
-  const oidcScopes = config.oidcScopes;
-  const oidcRedirectUri = config.oidcRedirectUri;
-  const authRequired = config.authRequired;
-  const oidcPostLogoutRedirectUri = resolvePostLogoutRedirectUri(
-    config.oidcPostLogoutRedirectUri,
-    oidcRedirectUri
-  );
-  const oidcSilentRedirectUri = resolveSilentRedirectUri(oidcRedirectUri);
-
-  const enabled =
-    config.oidcEnabled &&
-    Boolean(oidcClientId && oidcAuthority && oidcRedirectUri && oidcScopes.length > 0);
-
-  const msalSession = useMemo(
-    () =>
-      getMsalSession({
-        enabled,
-        clientId: oidcClientId,
-        authority: oidcAuthority,
-        redirectUri: oidcRedirectUri,
-        postLogoutRedirectUri: oidcPostLogoutRedirectUri || oidcRedirectUri,
-        silentRedirectUri: oidcSilentRedirectUri,
-        scopes: oidcScopes
-      }),
-    [
-      enabled,
-      oidcAuthority,
-      oidcClientId,
-      oidcPostLogoutRedirectUri,
-      oidcRedirectUri,
-      oidcSilentRedirectUri,
-      oidcScopes
-    ]
-  );
-
-  const [account, setAccount] = useState<AccountInfo | null>(null);
+  const navigate = useNavigate();
+  const enabled = config.authRequired;
   const [ready, setReady] = useState(false);
-  const [phase, setPhase] = useState<AuthPhase>(
-    enabled && typeof window !== 'undefined' && isCallbackPath(window.location.pathname)
-      ? 'redirecting'
-      : enabled && typeof window !== 'undefined' && isLoginPath(window.location.pathname) && authRequired
-        ? 'initializing'
-        : 'signed-out'
-  );
+  const [authenticated, setAuthenticated] = useState(!enabled);
+  const [phase, setPhase] = useState<AuthPhase>(enabled ? 'signed-out' : 'authenticated');
+  const [busy, setBusy] = useState(false);
+  const [userLabel, setUserLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [interactionReason, setInteractionReason] = useState<string | null>(null);
-  const [interactionRequest, setInteractionRequest] = useState<InteractiveAuthRequest | null>(null);
-  const phaseRef = useRef<AuthPhase>(phase);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    phaseRef.current = phase;
-  }, [phase]);
-
-  useEffect(() => {
-    logAuthTransition('provider-config', {
-      enabled,
-      authRequired,
-      oidcEnabled: config.oidcEnabled,
-      apiBaseUrl: config.apiBaseUrl,
-      authority: oidcAuthority || null,
-      redirectUri: oidcRedirectUri || null,
-      postLogoutRedirectUri: oidcPostLogoutRedirectUri || null,
-      silentRedirectUri: oidcSilentRedirectUri || null,
-      scopes: oidcScopes
-    });
-  }, [
-    authRequired,
-    enabled,
-    oidcAuthority,
-    oidcPostLogoutRedirectUri,
-    oidcRedirectUri,
-    oidcSilentRedirectUri,
-    oidcScopes
-  ]);
-
-  const beginLoginRedirect = useMemo(() => {
-    if (!msalSession) {
-      return null;
+    mountedRef.current = true;
+    setReady(true);
+    if (!enabled) {
+      setAuthenticated(true);
+      setPhase('authenticated');
     }
+    logUiDiagnostic('Auth', 'provider-config', {
+      enabled,
+      authRequired: config.authRequired,
+      authProvider: config.authProvider,
+      authSessionMode: config.authSessionMode
+    });
 
-    return async (returnPath?: string) => {
-      if (msalSession.getRedirectInFlight()) {
-        logAuthTransition('redirect-start-suppressed', {
-          returnPath: resolveReturnPath(returnPath)
-        });
-        return;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [enabled]);
+
+  const checkSession = useMemo(
+    () => async (): Promise<AuthSessionStatus | null> => {
+      if (!enabled) {
+        if (!mountedRef.current) {
+          return null;
+        }
+        setAuthenticated(true);
+        setPhase('authenticated');
+        setUserLabel(null);
+        setError(null);
+        return null;
       }
 
-      const nextReturnPath = resolveReturnPath(returnPath);
-      clearReauthRequestState();
-      msalSession.setRedirectInFlight(true);
+      setBusy(true);
       setError(null);
-      setInteractionReason(null);
-      setInteractionRequest(null);
-      setPhase('redirecting');
-      setReady(true);
-      storePostLoginRedirectPath(nextReturnPath);
-      logAuthTransition('redirect-start', {
-        returnPath: nextReturnPath,
-        scopes: oidcScopes
-      });
-
       try {
         const instance = await msalSession.ensureInitialized();
         await instance.loginRedirect({
@@ -472,7 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const onLoginPath = isLoginPath(pathname);
     const onLogoutCompletePath = isLogoutCompletePath(pathname);
 
-    if (!onLoginPath && !onCallbackPath && !onLogoutCompletePath) {
+    if (!authRequired && !onLoginPath && !onCallbackPath && !onLogoutCompletePath) {
       setReady(true);
       setPhase('signed-out');
       setError(null);
@@ -518,338 +280,172 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setInteractionRequest(null);
         setError(null);
         setPhase('authenticated');
-        setReady(true);
-        logAuthTransition('bootstrap-authenticated', {
-          callback: onCallbackPath,
-          redirectResult: Boolean(result.redirectResult),
-          returnPath: peekPostLoginRedirectPath(),
-          account: summarizeAccountForLogs(result.account)
+        setUserLabel(sessionUserLabel(response.data));
+        logUiDiagnostic('Auth', 'session-valid', {
+          authMode: response.data.authMode,
+          userLabel: sessionUserLabel(response.data),
+          requestId: response.meta.requestId
         });
-        return;
-      }
-
-      setAccount(null);
-      setInteractionReason(null);
-      setInteractionRequest(null);
-      setError(null);
-      setPhase('signed-out');
-      setReady(true);
-      logAuthTransition(
-        result.interactionRequired ? 'bootstrap-interaction-required' : 'bootstrap-signed-out',
-        {
-          pathname,
-          callback: onCallbackPath,
-          interactionRequired: result.interactionRequired
+        return response.data;
+      } catch (sessionError) {
+        if (!mountedRef.current) {
+          throw sessionError;
         }
-      );
-    };
-
-    bootstrap().catch((err) => {
-      msalSession.setRedirectInFlight(false);
-      console.error('OIDC bootstrap failed', err);
-      logAuthTransition(
-        'bootstrap-failed',
-        {
-          pathname,
-          callback: onCallbackPath,
-          logoutComplete: onLogoutCompletePath,
-          error: err
-        },
-        'error'
-      );
-      if (!cancelled) {
-        setAccount(null);
-        setInteractionReason(null);
-        setInteractionRequest(null);
-        setError(describeAuthError('OIDC sign-in could not be completed.', err));
+        setAuthenticated(false);
         setPhase('signed-out');
-        setReady(true);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authRequired, enabled, msalSession]);
-
-  const getAccessToken = useCallback(
-    async (options: AccessTokenRequestOptions = {}) => {
-      logAuthTransition('access-token-request-start', {
-        account: summarizeAccountForLogs(account),
-        scopes: oidcScopes,
-        forceRefresh: Boolean(options.forceRefresh)
-      });
-      if (!account || !msalSession) {
-        logAuthTransition(
-          'access-token-request-no-account',
-          {
-            scopes: oidcScopes,
-            forceRefresh: Boolean(options.forceRefresh)
-          },
-          'warn'
-        );
-        return null;
-      }
-
-      try {
-        const instance = await msalSession.ensureInitialized();
-        const result = await instance.acquireTokenSilent({
-          account,
-          scopes: oidcScopes,
-          forceRefresh: Boolean(options.forceRefresh)
-        });
-        logAuthTransition('access-token-request-success', {
-          account: summarizeAccountForLogs(result.account ?? account),
-          scopes: result.scopes ?? oidcScopes,
-          expiresOn: result.expiresOn?.toISOString() ?? null,
-          forceRefresh: Boolean(options.forceRefresh),
-          hasAccessToken: Boolean(result.accessToken),
-          tokenClaims: summarizeJwtClaimsForLogs(result.accessToken)
-        });
-        return result.accessToken || null;
-      } catch (err) {
-        if (err instanceof InteractionRequiredAuthError) {
-          logAuthTransition(
-            'access-token-request-interaction-required',
-            {
-              account: summarizeAccountForLogs(account),
-              scopes: oidcScopes,
-              forceRefresh: Boolean(options.forceRefresh),
-              error: err
-            },
-            'warn'
-          );
-          throw createInteractionRequiredError('OIDC session refresh requires sign-in.');
+        setUserLabel(null);
+        if (sessionError instanceof Error) {
+          setError(sessionError.message);
         }
-        console.error('Failed to acquire access token', err);
-        logAuthTransition(
-          'access-token-request-failed',
-          {
-            account: summarizeAccountForLogs(account),
-            scopes: oidcScopes,
-            forceRefresh: Boolean(options.forceRefresh),
-            error: err
-          },
-          'error'
-        );
-        throw new Error(describeAuthError('OIDC access token acquisition failed.', err), {
-          cause: err
-        });
+        throw sessionError;
+      } finally {
+        if (mountedRef.current) {
+          setBusy(false);
+        }
       }
     },
-    [account, msalSession, oidcScopes]
+    [enabled]
   );
 
-  useEffect(() => {
-    if (!msalSession) {
-      logAuthTransition('access-token-provider-cleared', {
-        reason: 'msal-session-unavailable'
-      });
-      setAccessTokenProvider(null);
-      return;
-    }
-
-    logAuthTransition('access-token-provider-registered', {
-      account: summarizeAccountForLogs(account),
-      scopes: oidcScopes
-    });
-    setAccessTokenProvider(getAccessToken);
-
-    return () => {
-      logAuthTransition('access-token-provider-cleared', {
-        reason: 'effect-cleanup'
-      });
-      setAccessTokenProvider(null);
-    };
-  }, [account, getAccessToken, msalSession, oidcScopes]);
-
-  const beginSignOut = useCallback(
-    (restartReturnPath?: string | null) => {
-      const currentPhase = phaseRef.current;
-      if (!msalSession || currentPhase === 'redirecting' || currentPhase === 'signing-out') {
-        logAuthTransition(
-          'sign-out-ignored',
-          {
-            user: account?.username ?? null,
-            phase: currentPhase,
-            hasMsalSession: Boolean(msalSession)
-          },
-          'warn'
-        );
-        return;
-      }
-
-      if (restartReturnPath) {
-        storePostLogoutRestartPath(restartReturnPath);
-      } else {
-        clearPostLogoutRestartPath();
-      }
-      clearReauthRequestState();
-      msalSession.setRedirectInFlight(false);
-      clearPostLoginRedirectPath();
-      setInteractionReason(null);
-      setInteractionRequest(null);
+  const login = useMemo(
+    () => async (password: string): Promise<AuthSessionStatus> => {
+      const trimmedPassword = String(password ?? '');
+      setBusy(true);
+      setPhase('initializing');
       setError(null);
+      try {
+        const response = await DataService.createPasswordAuthSession(trimmedPassword);
+        if (!mountedRef.current) {
+          return response.data;
+        }
+        setAuthenticated(true);
+        setPhase('authenticated');
+        setUserLabel(sessionUserLabel(response.data));
+        removeStoredValue(POST_LOGIN_PATH_STORAGE_KEY);
+        removeStoredValue(POST_LOGOUT_RESTART_PATH_STORAGE_KEY);
+        logUiDiagnostic('Auth', 'login-success', {
+          authMode: response.data.authMode,
+          userLabel: sessionUserLabel(response.data),
+          requestId: response.meta.requestId
+        });
+        return response.data;
+      } catch (loginError) {
+        if (mountedRef.current) {
+          setAuthenticated(false);
+          setPhase('signed-out');
+          setUserLabel(null);
+          setError(loginError instanceof Error ? loginError.message : String(loginError ?? 'Unknown error'));
+        }
+        throw loginError;
+      } finally {
+        if (mountedRef.current) {
+          setBusy(false);
+        }
+      }
+    },
+    []
+  );
+
+  const signIn = useMemo(
+    () => (returnPath?: string) => {
+      const nextReturnPath = resolveReturnPath(returnPath);
+      storeValue(POST_LOGIN_PATH_STORAGE_KEY, nextReturnPath);
+      setPhase('redirecting');
+      setError(null);
+      navigate(buildLoginPath(nextReturnPath), { replace: true });
+    },
+    [navigate]
+  );
+
+  const signOut = useMemo(
+    () => async () => {
+      let shouldFinalize = true;
+      setBusy(true);
       setPhase('signing-out');
-      logAuthTransition('sign-out-start', {
-        user: account?.username ?? null,
-        restartReturnPath: restartReturnPath ?? null
-      });
-
-      void msalSession
-        .ensureInitialized()
-        .then(async (instance) => {
-          if (config.authSessionMode === 'cookie') {
-            await DataService.deleteAuthSession().catch((err) => {
-              logAuthTransition(
-                'api-session-delete-failed',
-                {
-                  restartReturnPath: restartReturnPath ?? null,
-                  error: err
-                },
-                'warn'
-              );
-            });
-          }
-          return instance;
-        })
-        .then((instance) => {
-          logAuthTransition('sign-out-redirect-dispatched', {
-            user: account?.username ?? null,
-            postLogoutRedirectUri: oidcPostLogoutRedirectUri || null,
-            restartReturnPath: restartReturnPath ?? null
-          });
-          return instance.logoutRedirect({
-            account: account ?? undefined,
-            postLogoutRedirectUri: oidcPostLogoutRedirectUri || undefined
-          });
-        })
-        .catch((err) => {
-          console.error('OIDC sign-out failed', err);
-          logAuthTransition(
-            'sign-out-failed',
-            {
-              user: account?.username ?? null,
-              restartReturnPath: restartReturnPath ?? null,
-              error: err
-            },
-            'error'
-          );
-          clearPostLogoutRestartPath();
-          setPhase(account ? 'authenticated' : 'signed-out');
-          setError(describeAuthError('OIDC sign-out could not be completed.', err));
-        });
+      setError(null);
+      removeStoredValue(POST_LOGIN_PATH_STORAGE_KEY);
+      removeStoredValue(POST_LOGOUT_RESTART_PATH_STORAGE_KEY);
+      try {
+        if (enabled) {
+          await DataService.deleteAuthSession();
+        }
+      } catch (logoutError) {
+        if (mountedRef.current) {
+          setError(logoutError instanceof Error ? logoutError.message : String(logoutError ?? 'Unknown error'));
+        }
+      } finally {
+        if (!mountedRef.current) {
+          shouldFinalize = false;
+        }
+      }
+      if (!shouldFinalize) {
+        return;
+      }
+      setAuthenticated(false);
+      setUserLabel(null);
+      setBusy(false);
+      setPhase('signed-out');
+      navigate(buildLoginPath(undefined, { loggedOut: true }), { replace: true });
     },
-    [account, msalSession, oidcPostLogoutRedirectUri]
+    [enabled, navigate]
   );
 
-  useEffect(() => {
-    if (!enabled || !authRequired) {
-      logAuthTransition('interactive-auth-handler-cleared', {
-        enabled,
-        authRequired
-      });
-      setInteractiveAuthHandler(null);
-      return;
-    }
-
-    logAuthTransition('interactive-auth-handler-registered', {
-      enabled,
-      authRequired
-    });
-    setInteractiveAuthHandler((request = {}) => {
-      if (typeof window !== 'undefined' && isLogoutCompletePath(window.location.pathname)) {
-        logAuthTransition('reauth-suppressed-on-logout-route', {
-          source: request.source ?? null
-        });
-        return;
-      }
-
-      const nextReturnPath = resolveReturnPath(request.returnPath);
-      if (request.resetOidcSession) {
-        logAuthTransition('reauth-reset-session-requested', {
-          source: request.source ?? null,
-          reason: request.reason ?? null,
-          returnPath: nextReturnPath,
-          endpoint: request.endpoint ?? null,
-          status: request.status ?? null,
-          requestId: request.requestId ?? null,
-          recoveryAttempt: request.recoveryAttempt ?? null
-        });
-        beginSignOut(nextReturnPath);
-        return;
-      }
-
-      storePostLoginRedirectPath(nextReturnPath);
-      msalSession?.setRedirectInFlight(false);
-      setAccount(null);
-      setReady(true);
+  const signOutAndRestart = useMemo(
+    () => async (returnPath?: string) => {
+      let shouldFinalize = true;
+      const nextReturnPath = resolveReturnPath(returnPath);
+      storeValue(POST_LOGOUT_RESTART_PATH_STORAGE_KEY, nextReturnPath);
+      setBusy(true);
+      setPhase('signing-out');
       setError(null);
-      setInteractionReason(resolveInteractionReason(request));
-      setInteractionRequest(request);
-      setPhase('session-expired');
-      logAuthTransition('reauth-required', {
-        source: request.source ?? null,
-        reason: request.reason ?? null,
-        returnPath: nextReturnPath,
-        endpoint: request.endpoint ?? null,
-        status: request.status ?? null,
-        requestId: request.requestId ?? null,
-        recoveryAttempt: request.recoveryAttempt ?? null
-      });
-    });
-
-    return () => {
-      logAuthTransition('interactive-auth-handler-cleared', {
-        reason: 'effect-cleanup'
-      });
-      setInteractiveAuthHandler(null);
-    };
-  }, [authRequired, beginSignOut, enabled, msalSession]);
-
-  const signIn = (returnPath?: string) => {
-    if (!beginLoginRedirect) {
-      logAuthTransition(
-        'sign-in-ignored',
-        {
-          returnPath: resolveReturnPath(returnPath),
-          reason: 'login-redirect-unavailable'
-        },
-        'warn'
-      );
-      return;
-    }
-
-    void beginLoginRedirect(returnPath).catch(() => undefined);
-  };
-
-  const signOut = () => {
-    beginSignOut(null);
-  };
-
-  const signOutAndRestart = (returnPath?: string) => {
-    beginSignOut(resolveReturnPath(returnPath));
-  };
-
-  const userLabel = account?.name || account?.username || null;
-  const busy = phase === 'initializing' || phase === 'redirecting' || phase === 'signing-out';
+      removeStoredValue(POST_LOGIN_PATH_STORAGE_KEY);
+      try {
+        if (enabled) {
+          await DataService.deleteAuthSession();
+        }
+      } catch (logoutError) {
+        if (mountedRef.current) {
+          setError(logoutError instanceof Error ? logoutError.message : String(logoutError ?? 'Unknown error'));
+        }
+      } finally {
+        if (!mountedRef.current) {
+          shouldFinalize = false;
+        }
+      }
+      if (!shouldFinalize) {
+        return;
+      }
+      setAuthenticated(false);
+      setUserLabel(null);
+      setBusy(false);
+      setPhase('signed-out');
+      navigate(buildLoginPath(nextReturnPath), { replace: true });
+    },
+    [enabled, navigate]
+  );
 
   return (
     <AuthContext.Provider
       value={{
         enabled,
         ready,
-        authenticated: Boolean(account) && phase === 'authenticated',
+        authenticated,
         phase,
         busy,
         userLabel,
         error,
-        interactionReason,
-        interactionRequest,
-        getAccessToken,
+        interactionReason: null,
+        interactionRequest: null,
+        getAccessToken: async () => null,
+        login,
+        checkSession,
         signIn,
-        signOut,
-        signOutAndRestart
+        signOut: () => {
+          void signOut();
+        },
+        signOutAndRestart: (returnPath?: string) => {
+          void signOutAndRestart(returnPath);
+        }
       }}
     >
       {children}
@@ -862,6 +458,5 @@ export function useAuth(): AuthContextType {
   if (!context) {
     throw new Error('useAuth must be used within AuthProvider');
   }
-
   return context;
 }

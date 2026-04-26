@@ -3,11 +3,6 @@
 import { FinanceData, MarketData } from '@/types/data';
 import { DomainMetadata, SystemHealth } from '@/types/strategy';
 import { config as uiConfig } from '@/config';
-import {
-  appendAuthHeaders,
-  hasInteractiveAuthHandler,
-  requestInteractiveReauth
-} from '@/services/authTransport';
 import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
 import {
   clipTextForLogs,
@@ -26,20 +21,10 @@ const API_REQUEST_MAX_ATTEMPTS = 3;
 const API_REQUEST_RETRY_BASE_DELAY_MS = 500;
 const API_REQUEST_RETRY_MAX_DELAY_MS = 4000;
 const AUTH_SESSION_STATUS_ENDPOINT = '/auth/session';
-const RECENT_AUTH_SESSION_VALIDATION_WINDOW_MS = 60_000;
 const CSRF_COOKIE_NAMES = ['__Host-aa_csrf', 'aa_csrf_dev'] as const;
 
 const apiWarmupAttempted = new Set<string>();
 const apiWarmupInFlight = new Map<string, Promise<void>>();
-let lastSuccessfulAuthSessionValidationAt = 0;
-
-function logAuthRecovery(
-  event: string,
-  detail: Record<string, unknown> = {},
-  level: 'info' | 'warn' | 'error' = 'info'
-): void {
-  logUiDiagnostic('AuthRecovery', event, detail, level);
-}
 
 function logApiRequest(
   event: string,
@@ -63,81 +48,6 @@ function summarizeResponseForLogs(response: Response): Record<string, unknown> {
       response.headers.get('Access-Control-Allow-Credentials') ?? null,
     vary: response.headers.get('Vary') ?? null
   };
-}
-
-function noteAuthSessionValidation(endpoint: string, ok: boolean): void {
-  if (endpoint !== AUTH_SESSION_STATUS_ENDPOINT) {
-    return;
-  }
-
-  lastSuccessfulAuthSessionValidationAt = ok ? Date.now() : 0;
-}
-
-function getRecentAuthSessionValidationAgeMs(endpoint: string): number | null {
-  if (
-    endpoint === AUTH_SESSION_STATUS_ENDPOINT ||
-    lastSuccessfulAuthSessionValidationAt <= 0
-  ) {
-    return null;
-  }
-
-  const ageMs = Date.now() - lastSuccessfulAuthSessionValidationAt;
-  if (ageMs < 0 || ageMs > RECENT_AUTH_SESSION_VALIDATION_WINDOW_MS) {
-    return null;
-  }
-
-  return ageMs;
-}
-
-function buildRecentSessionSuppressedAuthMessage(
-  response: Response,
-  requestId: string,
-  errorBody: string
-): string {
-  const detail = String(errorBody ?? '').trim();
-  const suffix = detail ? ` - ${detail}` : '';
-  return `API Error: ${response.status} ${response.statusText} [requestId=${requestId}]${suffix} Interactive sign-in was suppressed because /auth/session succeeded recently; check API authorization or upstream auth configuration.`;
-}
-
-function buildMissingBearerTokenMessage(
-  endpoint: string,
-  requestId: string,
-  options: { forceRefresh?: boolean } = {}
-): string {
-  const prefix = options.forceRefresh
-    ? 'OIDC token refresh did not produce a bearer token'
-    : 'OIDC token acquisition did not produce a bearer token';
-  return `${prefix} [requestId=${requestId}] - ${endpoint}. The UI refused to send the protected API call without authorization.`;
-}
-
-function canReplayWithBrowserSession(url: string, headers: Headers): boolean {
-  if (uiConfig.oidcEnabled || !headers.has('Authorization') || typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    return new URL(url, window.location.origin).origin === window.location.origin;
-  } catch {
-    return false;
-  }
-}
-
-function buildBrowserSessionReplayHeaders(headers: Headers): Headers {
-  const replayHeaders = new Headers(headers);
-  replayHeaders.delete('Authorization');
-  return replayHeaders;
-}
-
-function requiresOidcBearerToken(endpoint: string): boolean {
-  return (
-    uiConfig.oidcEnabled &&
-    uiConfig.authSessionMode !== 'cookie' &&
-    endpoint !== AUTH_SESSION_STATUS_ENDPOINT
-  );
-}
-
-function usesCookieAuth(headers: Headers): boolean {
-  return uiConfig.authSessionMode === 'cookie' && !headers.has('Authorization');
 }
 
 function shouldWarmUpBeforeRequest(endpoint: string): boolean {
@@ -371,54 +281,6 @@ export class ApiError extends Error {
   }
 }
 
-async function buildRecentSessionSuppressedApiError(
-  endpoint: string,
-  method: string,
-  requestId: string,
-  response: Response,
-  recoveryAttempt: number,
-  knownErrorBody?: string
-): Promise<ApiError | null> {
-  const recentSessionValidationAgeMs = getRecentAuthSessionValidationAgeMs(endpoint);
-  if (recentSessionValidationAgeMs === null) {
-    return null;
-  }
-
-  let errorBody = knownErrorBody ?? '';
-  if (knownErrorBody === undefined) {
-    try {
-      errorBody = await response.clone().text();
-    } catch (error) {
-      logAuthRecovery(
-        'suppressed-reauth-error-body-unavailable',
-        {
-          endpoint,
-          method,
-          requestId,
-          status: response.status,
-          recoveryAttempt,
-          error
-        },
-        'warn'
-      );
-    }
-  }
-
-  logAuthRecovery('interactive-reauth-suppressed', {
-    endpoint,
-    method,
-    requestId,
-    status: response.status,
-    recoveryAttempt,
-    recentSessionValidationAgeMs
-  });
-
-  return new ApiError(
-    response.status,
-    buildRecentSessionSuppressedAuthMessage(response, requestId, errorBody)
-  );
-}
-
 export interface RequestMeta {
   requestId: string;
   status: number;
@@ -471,7 +333,7 @@ async function performRequest<T>(
   const requestMethod = String(customConfig.method ?? 'GET')
     .trim()
     .toUpperCase() || 'GET';
-  const allowSilentAuthRecovery = isSafeReplayMethod(requestMethod);
+  const useCookieSession = uiConfig.authSessionMode === 'cookie';
   const hasBody = customConfig.body !== undefined && customConfig.body !== null;
   if (hasBody && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json');
@@ -479,19 +341,10 @@ async function performRequest<T>(
   if (!requestHeaders.has('X-Request-ID')) {
     requestHeaders.set('X-Request-ID', createRequestId());
   }
-  let authHeaders = usesCookieAuth(requestHeaders)
+  const authHeaders = useCookieSession
     ? appendCookieAuthHeaders(requestHeaders, requestMethod)
-    : await appendAuthHeaders(requestHeaders);
+    : new Headers(requestHeaders);
   const requestId = authHeaders.get('X-Request-ID') || '';
-  if (requiresOidcBearerToken(endpoint) && !authHeaders.has('Authorization')) {
-    const error = new Error(buildMissingBearerTokenMessage(endpoint, requestId));
-    logAuthRecovery('request-missing-bearer-token', {
-      endpoint,
-      method: requestMethod,
-      requestId
-    });
-    throw error;
-  }
   logApiRequest('request-prepared', {
     endpoint,
     method: requestMethod,
@@ -500,7 +353,6 @@ async function performRequest<T>(
     apiBaseUrlMode: /^https?:\/\//i.test(apiBaseUrl) ? 'absolute' : 'same-origin',
     authSessionMode: uiConfig.authSessionMode,
     url: summarizeUrlForLogs(url),
-    allowSilentAuthRecovery,
     retryAttempts: maxAttempts,
     retryOnStatusCodes: Array.from(retryableStatusCodes.values()),
     timeoutMs: timeoutMs ?? null,
@@ -514,8 +366,6 @@ async function performRequest<T>(
 
   let retryDelayMs = API_REQUEST_RETRY_BASE_DELAY_MS;
   let response: Response | null = null;
-  let attemptedSilentAuthRecovery = false;
-  let attemptedBrowserSessionReplay = false;
   const startedAt = performance.now();
   let completedAttempts = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -529,9 +379,7 @@ async function performRequest<T>(
       attempt,
       shouldRetry,
       url: summarizeUrlForLogs(url),
-      headers: summarizeHeadersForLogs(authHeaders),
-      attemptedSilentAuthRecovery,
-      attemptedBrowserSessionReplay
+      headers: summarizeHeadersForLogs(authHeaders)
     });
     try {
       response = await fetchWithOptionalTimeout(
@@ -539,10 +387,7 @@ async function performRequest<T>(
         {
           ...customConfig,
           headers: authHeaders,
-          credentials:
-            uiConfig.authSessionMode === 'cookie'
-              ? 'include'
-              : customConfig.credentials
+          credentials: useCookieSession ? 'include' : customConfig.credentials
         },
         {
           timeoutMs,
@@ -595,107 +440,7 @@ async function performRequest<T>(
     }
 
     if (response.ok) {
-      if (attemptedBrowserSessionReplay) {
-        logAuthRecovery('browser-session-recovery-success', {
-          endpoint,
-          method: requestMethod,
-          requestId,
-          recoveryAttempt: attemptedSilentAuthRecovery ? 2 : 1
-        });
-      }
-      noteAuthSessionValidation(endpoint, true);
       break;
-    }
-
-    if (
-      uiConfig.authSessionMode !== 'cookie' &&
-      response.status === 401 &&
-      allowSilentAuthRecovery &&
-      !attemptedSilentAuthRecovery
-    ) {
-      attemptedSilentAuthRecovery = true;
-      logAuthRecovery('silent-recovery-start', {
-        endpoint,
-        method: requestMethod,
-        requestId,
-        recoveryAttempt: 1
-      });
-      try {
-        authHeaders = await appendAuthHeaders(requestHeaders, { forceRefresh: true });
-        if (!authHeaders.has('Authorization')) {
-          const error = new Error(
-            buildMissingBearerTokenMessage(endpoint, requestId, { forceRefresh: true })
-          );
-          logAuthRecovery('silent-recovery-missing-token', {
-            endpoint,
-            method: requestMethod,
-            requestId,
-            recoveryAttempt: 1,
-            error: error.message
-          });
-          if (hasInteractiveAuthHandler()) {
-            const suppressedAuthError = await buildRecentSessionSuppressedApiError(
-              endpoint,
-              requestMethod,
-              requestId,
-              response,
-              1
-            );
-            if (suppressedAuthError) {
-              throw suppressedAuthError;
-            }
-
-            await requestInteractiveReauth({
-              reason: error.message,
-              source: 'silent-auth-recovery-missing-token',
-              endpoint,
-              status: response.status,
-              requestId,
-              recoveryAttempt: 1,
-              resetOidcSession: true
-            });
-          }
-          throw error;
-        }
-        logAuthRecovery('silent-recovery-success', {
-          endpoint,
-          method: requestMethod,
-          requestId,
-          recoveryAttempt: 1
-        });
-        continue;
-      } catch (error) {
-        logAuthRecovery('silent-recovery-failed', {
-          endpoint,
-          method: requestMethod,
-          requestId,
-          recoveryAttempt: 1,
-          error: error instanceof Error ? error.message : String(error ?? 'Unknown error')
-        });
-        throw error;
-      }
-    }
-
-    if (
-      uiConfig.authSessionMode !== 'cookie' &&
-      response.status === 401 &&
-      allowSilentAuthRecovery &&
-      !attemptedBrowserSessionReplay &&
-      canReplayWithBrowserSession(url, authHeaders)
-    ) {
-      const recentSessionValidationAgeMs = getRecentAuthSessionValidationAgeMs(endpoint);
-      if (recentSessionValidationAgeMs !== null) {
-        attemptedBrowserSessionReplay = true;
-        authHeaders = buildBrowserSessionReplayHeaders(requestHeaders);
-        logAuthRecovery('browser-session-recovery-start', {
-          endpoint,
-          method: requestMethod,
-          requestId,
-          recoveryAttempt: attemptedSilentAuthRecovery ? 2 : 1,
-          recentSessionValidationAgeMs
-        });
-        continue;
-      }
     }
 
     if (!shouldRetry || !retryableStatusCodes.has(response.status)) {
@@ -721,49 +466,7 @@ async function performRequest<T>(
   const durationMs = Math.max(0, Math.round(performance.now() - startedAt));
 
   if (!response.ok) {
-    noteAuthSessionValidation(endpoint, false);
     const errorBody = await response.text();
-    if (attemptedBrowserSessionReplay && response.status === 401) {
-      logAuthRecovery('browser-session-recovery-failed', {
-        endpoint,
-        method: requestMethod,
-        requestId,
-        status: response.status,
-        recoveryAttempt: attemptedSilentAuthRecovery ? 2 : 1
-      });
-    }
-    if (response.status === 401 && hasInteractiveAuthHandler()) {
-      const suppressedAuthError = await buildRecentSessionSuppressedApiError(
-        endpoint,
-        requestMethod,
-        requestId,
-        response,
-        attemptedSilentAuthRecovery ? 1 : 0,
-        errorBody
-      );
-      if (suppressedAuthError) {
-        throw suppressedAuthError;
-      }
-
-      const recoveryAttempt = attemptedSilentAuthRecovery ? 1 : 0;
-      logAuthRecovery('interactive-reauth-required', {
-        endpoint,
-        method: requestMethod,
-        requestId,
-        status: response.status,
-        recoveryAttempt
-      });
-      await requestInteractiveReauth({
-        reason: attemptedSilentAuthRecovery
-          ? `API ${endpoint} returned 401 after a silent session refresh.`
-          : `API ${endpoint} returned 401.`,
-        source: `api:${endpoint}`,
-        endpoint,
-        status: response.status,
-        requestId,
-        recoveryAttempt
-      });
-    }
     logApiRequest(
       'request-failed',
       {
@@ -772,8 +475,6 @@ async function performRequest<T>(
         requestId,
         attempts: completedAttempts,
         durationMs,
-        attemptedSilentAuthRecovery,
-        attemptedBrowserSessionReplay,
         errorBodyPreview: clipTextForLogs(errorBody, 400),
         ...summarizeResponseForLogs(response)
       },
@@ -1331,12 +1032,10 @@ export const apiService = {
     return requestWithMeta<AuthSessionStatus>('/auth/session');
   },
 
-  createAuthSessionWithBearerToken(accessToken: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
+  createPasswordAuthSession(password: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
     return requestWithMeta<AuthSessionStatus>('/auth/session', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      },
+      body: JSON.stringify({ password }),
       retryOnStatusCodes: false
     });
   },

@@ -298,101 +298,506 @@ const tradeFreshnessPayload = {
   staleReason: null
 };
 
-const tradeAccountPayload = {
-  accountId: 'acct-paper',
-  name: 'Core Paper',
-  provider: 'alpaca',
-  environment: 'paper',
-  accountNumberMasked: '****1234',
-  baseCurrency: 'USD',
-  readiness: 'ready',
-  readinessReason: null,
-  capabilities: {
-    canReadAccount: true,
-    canReadPositions: true,
-    canReadOrders: true,
-    canReadHistory: true,
-    canPreview: true,
-    canSubmitPaper: true,
-    canSubmitSandbox: false,
-    canSubmitLive: false,
-    canCancel: true,
-    supportsMarketOrders: true,
-    supportsLimitOrders: true,
-    supportsStopOrders: false,
-    supportsFractionalQuantity: false,
-    supportsNotionalOrders: true,
-    supportsEquities: true,
-    supportsEtfs: true,
-    readOnly: false,
-    unsupportedReason: null
+const tradeAccounts = [
+  {
+    accountId: 'acct-paper',
+    name: 'Core Paper',
+    provider: 'alpaca',
+    environment: 'paper',
+    accountNumberMasked: '****1234',
+    baseCurrency: 'USD',
+    readiness: 'ready',
+    readinessReason: null,
+    capabilities: {
+      canReadAccount: true,
+      canReadPositions: true,
+      canReadOrders: true,
+      canReadHistory: true,
+      canPreview: true,
+      canSubmitPaper: true,
+      canSubmitSandbox: false,
+      canSubmitLive: false,
+      canCancel: true,
+      supportsMarketOrders: true,
+      supportsLimitOrders: true,
+      supportsStopOrders: false,
+      supportsFractionalQuantity: false,
+      supportsNotionalOrders: true,
+      supportsEquities: true,
+      supportsEtfs: true,
+      supportsOptions: false,
+      readOnly: false,
+      unsupportedReason: null
+    },
+    cash: 100000,
+    buyingPower: 100000,
+    equity: 125000,
+    openOrderCount: 1,
+    positionCount: 1,
+    unresolvedAlertCount: 0,
+    killSwitchActive: false,
+    confirmationRequired: false,
+    lastSyncedAt: NOW,
+    snapshotAsOf: NOW,
+    freshness: tradeFreshnessPayload,
+    pnl: {
+      realizedPnl: 1200,
+      unrealizedPnl: 100,
+      dayPnl: 45,
+      grossExposure: 21000,
+      netExposure: 18000,
+      asOf: NOW
+    },
+    lastTradeAt: NOW
   },
-  cash: 100000,
-  buyingPower: 100000,
-  equity: 125000,
-  openOrderCount: 1,
-  positionCount: 1,
-  unresolvedAlertCount: 0,
-  killSwitchActive: false,
-  lastSyncedAt: NOW,
-  snapshotAsOf: NOW,
-  freshness: tradeFreshnessPayload
+  {
+    accountId: 'acct-live',
+    name: 'Live Alpha',
+    provider: 'schwab',
+    environment: 'live',
+    accountNumberMasked: '****9876',
+    baseCurrency: 'USD',
+    readiness: 'review',
+    readinessReason: 'Supervisor acknowledgement required before live execution.',
+    capabilities: {
+      canReadAccount: true,
+      canReadPositions: true,
+      canReadOrders: true,
+      canReadHistory: true,
+      canPreview: true,
+      canSubmitPaper: false,
+      canSubmitSandbox: false,
+      canSubmitLive: true,
+      canCancel: true,
+      supportsMarketOrders: true,
+      supportsLimitOrders: true,
+      supportsStopOrders: true,
+      supportsFractionalQuantity: false,
+      supportsNotionalOrders: false,
+      supportsEquities: true,
+      supportsEtfs: true,
+      supportsOptions: false,
+      readOnly: false,
+      unsupportedReason: null
+    },
+    cash: 250000,
+    buyingPower: 250000,
+    equity: 300000,
+    openOrderCount: 2,
+    positionCount: 1,
+    unresolvedAlertCount: 1,
+    killSwitchActive: false,
+    confirmationRequired: true,
+    lastSyncedAt: NOW,
+    snapshotAsOf: NOW,
+    freshness: {
+      ...tradeFreshnessPayload,
+      ordersState: 'stale',
+      staleReason: 'Order feed lag is under review.'
+    },
+    pnl: {
+      realizedPnl: 3200,
+      unrealizedPnl: -240,
+      dayPnl: -60,
+      grossExposure: 61000,
+      netExposure: 45000,
+      asOf: NOW
+    },
+    lastTradeAt: NOW
+  }
+];
+
+const tradeAccountById = Object.fromEntries(
+  tradeAccounts.map((account) => [account.accountId, account])
+);
+
+const tradeOrdersByAccountId = {
+  'acct-paper': [
+    {
+      orderId: 'order-paper-1',
+      accountId: 'acct-paper',
+      provider: 'alpaca',
+      environment: 'paper',
+      status: 'accepted',
+      symbol: 'MSFT',
+      side: 'buy',
+      orderType: 'market',
+      timeInForce: 'day',
+      assetClass: 'equity',
+      clientRequestId: 'client-paper-1',
+      idempotencyKey: 'idem-paper-1',
+      correlationId: null,
+      providerOrderId: 'alpaca-paper-1',
+      providerCorrelationId: null,
+      quantity: 1,
+      notional: null,
+      limitPrice: null,
+      stopPrice: null,
+      estimatedPrice: null,
+      estimatedNotional: null,
+      filledQuantity: 0,
+      averageFillPrice: null,
+      submittedAt: NOW,
+      acceptedAt: NOW,
+      filledAt: null,
+      cancelledAt: null,
+      expiresAt: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+      statusReason: null,
+      riskChecks: [],
+      reconciliationRequired: false
+    }
+  ],
+  'acct-live': [
+    {
+      orderId: 'order-live-1',
+      accountId: 'acct-live',
+      provider: 'schwab',
+      environment: 'live',
+      status: 'accepted',
+      symbol: 'TSLA',
+      side: 'sell',
+      orderType: 'limit',
+      timeInForce: 'day',
+      assetClass: 'equity',
+      clientRequestId: 'client-live-1',
+      idempotencyKey: 'idem-live-1',
+      correlationId: null,
+      providerOrderId: 'schwab-live-1',
+      providerCorrelationId: null,
+      quantity: 5,
+      notional: null,
+      limitPrice: 215,
+      stopPrice: null,
+      estimatedPrice: null,
+      estimatedNotional: 1075,
+      filledQuantity: 0,
+      averageFillPrice: null,
+      submittedAt: NOW,
+      acceptedAt: NOW,
+      filledAt: null,
+      cancelledAt: null,
+      expiresAt: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+      statusReason: null,
+      riskChecks: [],
+      reconciliationRequired: false
+    }
+  ]
 };
 
-const tradeOrderPayload = {
-  orderId: 'order-1',
-  accountId: 'acct-paper',
-  provider: 'alpaca',
-  environment: 'paper',
-  status: 'accepted',
-  symbol: 'MSFT',
-  side: 'buy',
-  orderType: 'market',
-  timeInForce: 'day',
-  assetClass: 'equity',
-  clientRequestId: 'client-1',
-  idempotencyKey: 'idem-1',
-  correlationId: null,
-  providerOrderId: 'alpaca-paper-1',
-  providerCorrelationId: null,
-  quantity: 1,
-  notional: null,
-  limitPrice: null,
-  stopPrice: null,
-  estimatedPrice: null,
-  estimatedNotional: null,
-  filledQuantity: 0,
-  averageFillPrice: null,
-  submittedAt: NOW,
-  acceptedAt: NOW,
-  filledAt: null,
-  cancelledAt: null,
-  expiresAt: null,
-  createdAt: NOW,
-  updatedAt: NOW,
-  statusReason: null,
-  riskChecks: [],
-  reconciliationRequired: false
+const tradeHistoryByAccountId = {
+  'acct-paper': [
+    ...tradeOrdersByAccountId['acct-paper'],
+    {
+      orderId: 'order-paper-filled-1',
+      accountId: 'acct-paper',
+      provider: 'alpaca',
+      environment: 'paper',
+      status: 'filled',
+      symbol: 'AAPL',
+      side: 'buy',
+      orderType: 'market',
+      timeInForce: 'day',
+      assetClass: 'equity',
+      clientRequestId: 'client-paper-filled-1',
+      idempotencyKey: 'idem-paper-filled-1',
+      correlationId: null,
+      providerOrderId: 'alpaca-paper-filled-1',
+      providerCorrelationId: null,
+      quantity: 2,
+      notional: null,
+      limitPrice: null,
+      stopPrice: null,
+      estimatedPrice: null,
+      estimatedNotional: null,
+      filledQuantity: 2,
+      averageFillPrice: 180,
+      submittedAt: NOW,
+      acceptedAt: NOW,
+      filledAt: NOW,
+      cancelledAt: null,
+      expiresAt: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+      statusReason: null,
+      riskChecks: [],
+      reconciliationRequired: false
+    }
+  ],
+  'acct-live': [
+    ...tradeOrdersByAccountId['acct-live'],
+    {
+      orderId: 'order-live-filled-1',
+      accountId: 'acct-live',
+      provider: 'schwab',
+      environment: 'live',
+      status: 'filled',
+      symbol: 'TSLA',
+      side: 'sell',
+      orderType: 'limit',
+      timeInForce: 'day',
+      assetClass: 'equity',
+      clientRequestId: 'client-live-filled-1',
+      idempotencyKey: 'idem-live-filled-1',
+      correlationId: null,
+      providerOrderId: 'schwab-live-filled-1',
+      providerCorrelationId: null,
+      quantity: 3,
+      notional: null,
+      limitPrice: 212,
+      stopPrice: null,
+      estimatedPrice: null,
+      estimatedNotional: null,
+      filledQuantity: 3,
+      averageFillPrice: 212,
+      submittedAt: NOW,
+      acceptedAt: NOW,
+      filledAt: NOW,
+      cancelledAt: null,
+      expiresAt: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+      statusReason: null,
+      riskChecks: [],
+      reconciliationRequired: false
+    }
+  ]
 };
 
-const tradePreviewPayload = {
-  previewId: 'preview-1',
-  accountId: 'acct-paper',
-  provider: 'alpaca',
-  environment: 'paper',
-  order: { ...tradeOrderPayload, status: 'previewed', providerOrderId: null },
-  generatedAt: NOW,
-  expiresAt: '2026-04-18T14:35:00Z',
-  estimatedCost: null,
-  estimatedFees: 0,
-  cashAfter: null,
-  buyingPowerAfter: null,
-  riskChecks: [],
-  warnings: [],
-  blocked: false,
-  blockReason: null,
-  freshness: tradeFreshnessPayload
+const tradePositionsByAccountId = {
+  'acct-paper': [
+    {
+      accountId: 'acct-paper',
+      symbol: 'MSFT',
+      assetClass: 'equity',
+      quantity: 10,
+      marketValue: 1000,
+      averageEntryPrice: 90,
+      lastPrice: 100,
+      costBasis: 900,
+      unrealizedPnl: 100,
+      unrealizedPnlPercent: 0.11,
+      dayPnl: 5,
+      weight: 0.01,
+      asOf: NOW
+    }
+  ],
+  'acct-live': [
+    {
+      accountId: 'acct-live',
+      symbol: 'TSLA',
+      assetClass: 'equity',
+      quantity: 20,
+      marketValue: 4200,
+      averageEntryPrice: 205,
+      lastPrice: 210,
+      costBasis: 4100,
+      unrealizedPnl: 100,
+      unrealizedPnlPercent: 0.02,
+      dayPnl: -35,
+      weight: 0.04,
+      asOf: NOW
+    }
+  ]
 };
+
+const tradeBlotterByAccountId = {
+  'acct-paper': [
+    {
+      rowId: 'blotter-paper-1',
+      accountId: 'acct-paper',
+      provider: 'alpaca',
+      environment: 'paper',
+      eventType: 'fill',
+      occurredAt: NOW,
+      orderId: 'order-paper-filled-1',
+      providerOrderId: 'alpaca-paper-filled-1',
+      clientRequestId: 'client-paper-filled-1',
+      symbol: 'AAPL',
+      side: 'buy',
+      status: 'filled',
+      quantity: 2,
+      price: 180,
+      fees: 0,
+      realizedPnl: null,
+      cashImpact: -360,
+      note: null
+    }
+  ],
+  'acct-live': [
+    {
+      rowId: 'blotter-live-1',
+      accountId: 'acct-live',
+      provider: 'schwab',
+      environment: 'live',
+      eventType: 'fill',
+      occurredAt: NOW,
+      orderId: 'order-live-filled-1',
+      providerOrderId: 'schwab-live-filled-1',
+      clientRequestId: 'client-live-filled-1',
+      symbol: 'TSLA',
+      side: 'sell',
+      status: 'filled',
+      quantity: 3,
+      price: 212,
+      fees: 1.25,
+      realizedPnl: 48,
+      cashImpact: 634.75,
+      note: null
+    }
+  ]
+};
+
+const tradeAccountDetailsById = {
+  'acct-paper': {
+    account: tradeAccountById['acct-paper'],
+    restrictions: [],
+    riskLimits: {
+      maxOrderNotional: 50000,
+      maxDailyNotional: 100000,
+      maxShareQuantity: 1000,
+      allowedAssetClasses: ['equity'],
+      allowedOrderTypes: ['market', 'limit'],
+      liveTradingAllowed: false,
+      liveTradingReason: null
+    },
+    unresolvedAlerts: [],
+    recentAuditEvents: [
+      {
+        eventId: 'audit-paper-1',
+        accountId: 'acct-paper',
+        provider: 'alpaca',
+        environment: 'paper',
+        eventType: 'preview',
+        severity: 'info',
+        occurredAt: NOW,
+        actor: 'playwright',
+        orderId: 'order-paper-1',
+        providerOrderId: null,
+        clientRequestId: 'client-paper-1',
+        idempotencyKey: null,
+        statusBefore: null,
+        statusAfter: 'previewed',
+        summary: 'Manual order preview generated.',
+        sanitizedError: null,
+        details: {}
+      }
+    ],
+    alerts: []
+  },
+  'acct-live': {
+    account: tradeAccountById['acct-live'],
+    restrictions: ['Heightened supervision is active for live routing.'],
+    riskLimits: {
+      maxOrderNotional: 75000,
+      maxDailyNotional: 150000,
+      maxShareQuantity: 2500,
+      allowedAssetClasses: ['equity'],
+      allowedOrderTypes: ['market', 'limit', 'stop'],
+      liveTradingAllowed: true,
+      liveTradingReason: null
+    },
+    unresolvedAlerts: ['Awaiting margin review'],
+    recentAuditEvents: [
+      {
+        eventId: 'audit-live-1',
+        accountId: 'acct-live',
+        provider: 'schwab',
+        environment: 'live',
+        eventType: 'submit',
+        severity: 'warning',
+        occurredAt: NOW,
+        actor: 'playwright',
+        orderId: 'order-live-1',
+        providerOrderId: 'schwab-live-1',
+        clientRequestId: 'client-live-1',
+        idempotencyKey: 'idem-live-1',
+        statusBefore: 'previewed',
+        statusAfter: 'accepted',
+        summary: 'Live trade submitted under supervisory review.',
+        sanitizedError: null,
+        details: {}
+      }
+    ],
+    alerts: [
+      {
+        alertId: 'alert-live-1',
+        accountId: 'acct-live',
+        severity: 'warning',
+        status: 'open',
+        code: 'MARGIN_REVIEW',
+        title: 'Awaiting margin review',
+        message: 'Awaiting margin review before expanding live exposure.',
+        blocking: false,
+        observedAt: NOW
+      }
+    ]
+  }
+};
+
+const tradePreviewByAccountId = {
+  'acct-paper': {
+    previewId: 'preview-paper-1',
+    accountId: 'acct-paper',
+    provider: 'alpaca',
+    environment: 'paper',
+    order: {
+      ...tradeOrdersByAccountId['acct-paper'][0],
+      status: 'previewed',
+      providerOrderId: null
+    },
+    generatedAt: NOW,
+    expiresAt: '2026-04-18T14:35:00Z',
+    estimatedCost: null,
+    estimatedFees: 0,
+    cashAfter: null,
+    buyingPowerAfter: null,
+    riskChecks: [
+      {
+        checkId: 'risk-warning-1',
+        label: 'Price band',
+        status: 'warning',
+        blocking: false,
+        message: 'The price band is within tolerance but requires operator acknowledgement.',
+        metadata: { headroomPct: 0.14 }
+      }
+    ],
+    warnings: ['Review the price-band warning before submission.'],
+    blocked: false,
+    blockReason: null,
+    freshness: tradeFreshnessPayload,
+    confirmationRequired: false
+  },
+  'acct-live': {
+    previewId: 'preview-live-1',
+    accountId: 'acct-live',
+    provider: 'schwab',
+    environment: 'live',
+    order: {
+      ...tradeOrdersByAccountId['acct-live'][0],
+      status: 'previewed'
+    },
+    generatedAt: NOW,
+    expiresAt: '2026-04-18T14:35:00Z',
+    estimatedCost: null,
+    estimatedFees: 0,
+    cashAfter: null,
+    buyingPowerAfter: null,
+    riskChecks: [],
+    warnings: [],
+    blocked: false,
+    blockReason: null,
+    freshness: tradeAccountById['acct-live'].freshness,
+    confirmationRequired: true
+  }
+};
+
+function tradeAccountIdFromPath(apiPath: string) {
+  return decodeURIComponent(apiPath.split('/')[2] || '');
+}
 
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({
@@ -466,104 +871,88 @@ async function handleApiRoute(route: Route) {
     return json(route, dataProfilePayload);
   }
 
+  if (apiPath === '/realtime/ticket') {
+    return json(route, { ticket: 'playwright-ticket-123' });
+  }
+
   if (apiPath === '/trade-accounts') {
-    return json(route, { accounts: [tradeAccountPayload], generatedAt: NOW });
+    return json(route, { accounts: tradeAccounts, generatedAt: NOW });
   }
 
-  if (apiPath === '/trade-accounts/acct-paper') {
-    return json(route, {
-      account: tradeAccountPayload,
-      restrictions: [],
-      riskLimits: {
-        maxOrderNotional: 50000,
-        maxDailyNotional: 100000,
-        maxShareQuantity: 1000,
-        allowedAssetClasses: ['equity'],
-        allowedOrderTypes: ['market', 'limit'],
-        liveTradingAllowed: false,
-        liveTradingReason: null
-      },
-      unresolvedAlerts: [],
-      recentAuditEvents: [
-        {
-          eventId: 'audit-1',
-          accountId: 'acct-paper',
-          provider: 'alpaca',
-          environment: 'paper',
-          eventType: 'preview',
-          severity: 'info',
-          occurredAt: NOW,
-          actor: 'playwright',
-          orderId: 'order-1',
-          providerOrderId: null,
-          clientRequestId: 'client-1',
-          idempotencyKey: null,
-          statusBefore: null,
-          statusAfter: 'previewed',
-          summary: 'Manual order preview generated.',
-          sanitizedError: null,
-          details: {}
-        }
-      ]
-    });
-  }
+  if (apiPath.startsWith('/trade-accounts/')) {
+    const accountId = tradeAccountIdFromPath(apiPath);
+    if (!tradeAccountById[accountId]) {
+      return json(route, { message: 'Unknown trade account' }, 404);
+    }
 
-  if (apiPath === '/trade-accounts/acct-paper/positions') {
-    return json(route, {
-      accountId: 'acct-paper',
-      positions: [
-        {
-          accountId: 'acct-paper',
-          symbol: 'MSFT',
-          assetClass: 'equity',
-          quantity: 10,
-          marketValue: 1000,
-          averageEntryPrice: 90,
-          lastPrice: 100,
-          costBasis: 900,
-          unrealizedPnl: 100,
-          unrealizedPnlPercent: 0.11,
-          dayPnl: 5,
-          weight: 0.01,
-          asOf: NOW
-        }
-      ],
-      generatedAt: NOW,
-      freshness: tradeFreshnessPayload
-    });
-  }
+    if (apiPath === `/trade-accounts/${accountId}`) {
+      return json(route, tradeAccountDetailsById[accountId]);
+    }
 
-  if (apiPath === '/trade-accounts/acct-paper/orders') {
-    if (route.request().method() === 'POST') {
+    if (apiPath === `/trade-accounts/${accountId}/positions`) {
       return json(route, {
-        order: tradeOrderPayload,
-        submitted: true,
-        replayed: false,
-        reconciliationRequired: false,
-        auditEventId: 'audit-2',
-        message: 'accepted'
+        accountId,
+        positions: tradePositionsByAccountId[accountId] ?? [],
+        generatedAt: NOW,
+        freshness: tradeAccountById[accountId].freshness
       });
     }
-    return json(route, { accountId: 'acct-paper', orders: [tradeOrderPayload], generatedAt: NOW });
-  }
 
-  if (apiPath === '/trade-accounts/acct-paper/history') {
-    return json(route, { accountId: 'acct-paper', orders: [tradeOrderPayload], generatedAt: NOW });
-  }
+    if (apiPath === `/trade-accounts/${accountId}/orders`) {
+      if (route.request().method() === 'POST') {
+        return json(route, {
+          order: tradeOrdersByAccountId[accountId][0],
+          submitted: true,
+          replayed: false,
+          reconciliationRequired: false,
+          auditEventId: `audit-submit-${accountId}`,
+          message: 'accepted'
+        });
+      }
+      return json(route, {
+        accountId,
+        orders: tradeOrdersByAccountId[accountId] ?? [],
+        generatedAt: NOW
+      });
+    }
 
-  if (apiPath === '/trade-accounts/acct-paper/orders/preview') {
-    return json(route, tradePreviewPayload);
-  }
+    if (apiPath === `/trade-accounts/${accountId}/history`) {
+      return json(route, {
+        accountId,
+        orders: tradeHistoryByAccountId[accountId] ?? [],
+        generatedAt: NOW
+      });
+    }
 
-  if (apiPath === '/trade-accounts/acct-paper/orders/order-1/cancel') {
-    return json(route, {
-      order: { ...tradeOrderPayload, status: 'cancel_pending' },
-      cancelAccepted: true,
-      replayed: false,
-      reconciliationRequired: false,
-      auditEventId: 'audit-3',
-      message: 'cancel accepted'
-    });
+    if (apiPath === `/trade-accounts/${accountId}/blotter`) {
+      return json(route, {
+        accountId,
+        rows: tradeBlotterByAccountId[accountId] ?? [],
+        generatedAt: NOW
+      });
+    }
+
+    if (apiPath === `/trade-accounts/${accountId}/orders/preview`) {
+      return json(route, tradePreviewByAccountId[accountId]);
+    }
+
+    const cancelMatch = apiPath.match(/^\/trade-accounts\/([^/]+)\/orders\/([^/]+)\/cancel$/);
+    if (cancelMatch) {
+      const matchedAccountId = decodeURIComponent(cancelMatch[1] || '');
+      const orderId = decodeURIComponent(cancelMatch[2] || '');
+      const order =
+        (tradeOrdersByAccountId[matchedAccountId] ?? []).find((candidate) => candidate.orderId === orderId) ??
+        tradeOrdersByAccountId[matchedAccountId]?.[0];
+
+      return json(route, {
+        order: { ...order, status: 'cancel_pending' },
+        cancelAccepted: true,
+        replayed: false,
+        reconciliationRequired: false,
+        auditEventId: `audit-cancel-${matchedAccountId}`,
+        message: 'cancel accepted'
+      });
+    }
   }
 
   return json(route, {}, 404);
