@@ -1,8 +1,11 @@
 name: UI Deploy Prod
-run-name: UI Deploy Prod / ${{ github.event_name }} / ${{ github.event.workflow_run.head_branch || github.ref_name }}
+run-name: UI Deploy Prod / ${{ github.event_name }} / ${{ github.event.workflow_run.head_branch || github.event.action || github.ref_name }}
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types:
+      - control_plane_released
   workflow_run:
     workflows:
       - UI Release
@@ -23,7 +26,7 @@ concurrency:
 jobs:
   validate-runtime-repo-vars:
     name: validate-runtime-repo-vars
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' || (github.event_name == 'repository_dispatch' && github.event.action == 'control_plane_released') }}
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
@@ -43,7 +46,7 @@ jobs:
   resolve-release:
     name: resolve-release
     needs: validate-runtime-repo-vars
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' || (github.event_name == 'repository_dispatch' && github.event.action == 'control_plane_released') }}
     runs-on: ubuntu-22.04
     env:
       API_UPSTREAM: ${{ vars.API_UPSTREAM }}
