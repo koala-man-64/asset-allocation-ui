@@ -145,12 +145,14 @@ def test_sync_all_to_github_uses_body_flags_for_gh_cli() -> None:
 def test_ui_deploy_workflow_is_release_driven_and_uses_repo_var() -> None:
     text = workflow_text("deploy-prod.yml")
     assert "workflow_dispatch:\n    inputs:" not in text
-    assert "repository_dispatch:" not in text
+    assert "repository_dispatch:" in text
+    assert "- control_plane_released" in text
     assert "deploy_runtime" not in text
     assert "workflow_run:" in text
     assert "- UI Release" in text
     assert "branches:\n      - main" in text
     assert "actions: read" in text
+    assert "github.event.action == 'control_plane_released'" in text
     assert "validate-runtime-repo-vars" in text
     assert "REPO_VARS_JSON: ${{ toJson(vars) }}" in text
     assert '--vars-json "${REPO_VARS_JSON}"' in text
