@@ -472,7 +472,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const onLoginPath = isLoginPath(pathname);
     const onLogoutCompletePath = isLogoutCompletePath(pathname);
 
-    if (!onLoginPath && !onCallbackPath && !onLogoutCompletePath) {
+    if (!authRequired && !onLoginPath && !onCallbackPath && !onLogoutCompletePath) {
       setReady(true);
       setPhase('signed-out');
       setError(null);

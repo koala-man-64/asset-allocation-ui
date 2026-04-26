@@ -292,6 +292,28 @@ describe('AuthProvider', () => {
     });
   });
 
+  it('restores the session silently on protected routes when a refresh lands outside auth pages', async () => {
+    const account = { username: 'analyst@example.com', name: 'Analyst' };
+    mockConfig.authRequired = true;
+    window.history.pushState({}, 'System Status', '/system-status');
+    mockMsal.ssoSilent.mockResolvedValueOnce({ account });
+
+    render(
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
+        scopes: ['api://asset-allocation-api/user_impersonation'],
+        redirectUri: 'https://asset-allocation.example.com/auth/silent-callback.html'
+      });
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+    });
+  });
+
   it('restores the callback session silently when the redirect result does not include an account', async () => {
     const account = { username: 'analyst@example.com', name: 'Analyst' };
     mockConfig.authRequired = true;
