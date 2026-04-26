@@ -20,6 +20,10 @@ const API_WARMUP_TIMEOUT_MS = 5000;
 const API_REQUEST_MAX_ATTEMPTS = 3;
 const API_REQUEST_RETRY_BASE_DELAY_MS = 500;
 const API_REQUEST_RETRY_MAX_DELAY_MS = 4000;
+const SYSTEM_HEALTH_TIMEOUT_MS = 20_000;
+const DOMAIN_METADATA_TIMEOUT_MS = 20_000;
+const DOMAIN_METADATA_SNAPSHOT_TIMEOUT_MS = 20_000;
+const SYSTEM_STATUS_VIEW_TIMEOUT_MS = 20_000;
 const AUTH_SESSION_STATUS_ENDPOINT = '/auth/session';
 const CSRF_COOKIE_NAMES = ['__Host-aa_csrf', 'aa_csrf_dev'] as const;
 
@@ -1018,14 +1022,23 @@ export const apiService = {
     });
   },
 
-  getSystemHealth(params: { refresh?: boolean } = {}): Promise<SystemHealth> {
-    return request<SystemHealth>('/system/health', { params });
+  getSystemHealth(params: { refresh?: boolean } = {}, signal?: AbortSignal): Promise<SystemHealth> {
+    return request<SystemHealth>('/system/health', {
+      params,
+      signal,
+      timeoutMs: SYSTEM_HEALTH_TIMEOUT_MS
+    });
   },
 
   getSystemHealthWithMeta(
-    params: { refresh?: boolean } = {}
+    params: { refresh?: boolean } = {},
+    signal?: AbortSignal
   ): Promise<ResponseWithMeta<SystemHealth>> {
-    return requestWithMeta<SystemHealth>('/system/health', { params });
+    return requestWithMeta<SystemHealth>('/system/health', {
+      params,
+      signal,
+      timeoutMs: SYSTEM_HEALTH_TIMEOUT_MS
+    });
   },
 
   getAuthSessionStatusWithMeta(): Promise<ResponseWithMeta<AuthSessionStatus>> {
@@ -1050,27 +1063,38 @@ export const apiService = {
   getDomainMetadata(
     layer: 'bronze' | 'silver' | 'gold' | 'platinum',
     domain: string,
-    params: { refresh?: boolean } = {}
+    params: { refresh?: boolean } = {},
+    signal?: AbortSignal
   ): Promise<DomainMetadata> {
     return request<DomainMetadata>('/system/domain-metadata', {
-      params: { layer, domain, ...params }
+      params: { layer, domain, ...params },
+      signal,
+      timeoutMs: DOMAIN_METADATA_TIMEOUT_MS
     });
   },
 
   getDomainMetadataSnapshot(
-    params: { layers?: string; domains?: string; refresh?: boolean } = {}
+    params: { layers?: string; domains?: string; refresh?: boolean } = {},
+    signal?: AbortSignal
   ): Promise<DomainMetadataSnapshotResponse> {
     return request<DomainMetadataSnapshotResponse>('/system/domain-metadata/snapshot', {
-      params
+      params,
+      signal,
+      timeoutMs: DOMAIN_METADATA_SNAPSHOT_TIMEOUT_MS
     });
   },
 
   getSystemStatusView(
     params: {
       refresh?: boolean;
-    } = {}
+    } = {},
+    signal?: AbortSignal
   ): Promise<SystemStatusViewResponse> {
-    return request<SystemStatusViewResponse>('/system/status-view', { params });
+    return request<SystemStatusViewResponse>('/system/status-view', {
+      params,
+      signal,
+      timeoutMs: SYSTEM_STATUS_VIEW_TIMEOUT_MS
+    });
   },
 
   getPersistedDomainMetadataSnapshotCache(): Promise<DomainMetadataSnapshotResponse> {

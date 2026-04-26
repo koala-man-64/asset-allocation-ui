@@ -581,7 +581,10 @@ export function JobLogStreamPanel({
       usageRequestControllerRef.current = controller;
 
       try {
-        const systemHealth = await DataService.getSystemHealth({ refresh: true });
+        const systemHealth = await DataService.getSystemHealth(
+          { refresh: true },
+          controller.signal
+        );
         if (isDisposed || controller.signal.aborted) {
           return;
         }

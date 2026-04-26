@@ -474,7 +474,10 @@ describe('JobLogStreamPanel', () => {
 
     expect(await screen.findByText('beta snapshot')).toBeInTheDocument();
     await waitFor(() => {
-      expect(DataService.getSystemHealth).toHaveBeenCalledWith({ refresh: true });
+      expect(DataService.getSystemHealth).toHaveBeenCalledWith(
+        { refresh: true },
+        expect.any(AbortSignal)
+      );
     });
     expect(await screen.findByText('0.5 cores')).toBeInTheDocument();
     expect(screen.getByText('1 GiB')).toBeInTheDocument();

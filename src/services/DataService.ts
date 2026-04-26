@@ -74,7 +74,8 @@ function buildEmptyMetadataSnapshot(error: unknown): DomainMetadataSnapshotRespo
 
 async function buildFallbackSystemStatusView(
   params: { refresh?: boolean },
-  cause: unknown
+  cause: unknown,
+  signal?: AbortSignal
 ): Promise<SystemStatusViewResponse> {
   logUiDiagnostic(
     'DataService',
@@ -84,8 +85,8 @@ async function buildFallbackSystemStatusView(
   );
 
   const [systemHealth, metadataSnapshot] = await Promise.all([
-    apiService.getSystemHealth(params),
-    apiService.getDomainMetadataSnapshot(params).catch(buildEmptyMetadataSnapshot)
+    apiService.getSystemHealth(params, signal),
+    apiService.getDomainMetadataSnapshot(params, signal).catch(buildEmptyMetadataSnapshot)
   ]);
 
   return {
@@ -118,9 +119,12 @@ export const DataService = {
     return apiService.getFinanceData(ticker, subDomain, layer, signal);
   },
 
-  async getSystemHealth(params: { refresh?: boolean } = {}): Promise<SystemHealth> {
+  async getSystemHealth(
+    params: { refresh?: boolean } = {},
+    signal?: AbortSignal
+  ): Promise<SystemHealth> {
     try {
-      const data = await apiService.getSystemHealth(params);
+      const data = await apiService.getSystemHealth(params, signal);
       return data;
     } catch (error) {
       console.error('[DataService] getSystemHealth error', error);
@@ -129,10 +133,11 @@ export const DataService = {
   },
 
   async getSystemHealthWithMeta(
-    params: { refresh?: boolean } = {}
+    params: { refresh?: boolean } = {},
+    signal?: AbortSignal
   ): Promise<ResponseWithMeta<SystemHealth>> {
     try {
-      const response = await apiService.getSystemHealthWithMeta(params);
+      const response = await apiService.getSystemHealthWithMeta(params, signal);
       return response;
     } catch (error) {
       console.error('[DataService] getSystemHealthWithMeta error', error);
@@ -172,23 +177,28 @@ export const DataService = {
   getDomainMetadata(
     layer: 'bronze' | 'silver' | 'gold' | 'platinum',
     domain: string,
-    params: { refresh?: boolean } = {}
+    params: { refresh?: boolean } = {},
+    signal?: AbortSignal
   ): Promise<DomainMetadata> {
-    return apiService.getDomainMetadata(layer, domain, params);
+    return apiService.getDomainMetadata(layer, domain, params, signal);
   },
 
   getDomainMetadataSnapshot(
-    params: { layers?: string; domains?: string; refresh?: boolean } = {}
+    params: { layers?: string; domains?: string; refresh?: boolean } = {},
+    signal?: AbortSignal
   ): Promise<DomainMetadataSnapshotResponse> {
-    return apiService.getDomainMetadataSnapshot(params);
+    return apiService.getDomainMetadataSnapshot(params, signal);
   },
 
-  async getSystemStatusView(params: { refresh?: boolean } = {}): Promise<SystemStatusViewResponse> {
+  async getSystemStatusView(
+    params: { refresh?: boolean } = {},
+    signal?: AbortSignal
+  ): Promise<SystemStatusViewResponse> {
     try {
-      return await apiService.getSystemStatusView(params);
+      return await apiService.getSystemStatusView(params, signal);
     } catch (error) {
       if (shouldUseSystemStatusFallback(error)) {
-        return buildFallbackSystemStatusView(params, error);
+        return buildFallbackSystemStatusView(params, error, signal);
       }
       throw error;
     }
