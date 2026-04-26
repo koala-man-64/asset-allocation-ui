@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -9,7 +10,6 @@ import {
   Ticket,
   XCircle
 } from 'lucide-react';
-import { toast } from 'sonner';
 
 import { PageHero } from '@/app/components/common/PageHero';
 import { PageLoader } from '@/app/components/common/PageLoader';
@@ -26,14 +26,6 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/app/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from '@/app/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import {
   createTradeDeskIdempotencyKey,
@@ -41,18 +33,35 @@ import {
   tradeDeskKeys
 } from '@/services/tradeDeskApi';
 import type {
-  TradeAccountSummary,
-  TradeDeskAuditEvent,
-  TradeEnvironment,
   TradeOrder,
+  TradeOrderPlaceRequest,
   TradeOrderPreviewRequest,
   TradeOrderPreviewResponse,
   TradeOrderSide,
-  TradeOrderStatus,
   TradeOrderType,
-  TradePosition,
   TradeTimeInForce
 } from '@asset-allocation/contracts';
+import type {
+  TradeAccountDetailView,
+  TradeAccountSummaryView
+} from '@/services/tradeDeskModels';
+import {
+  ActivityTimeline,
+  OrdersTable,
+  PositionsTable,
+  RiskCheckEvidence
+} from '@/features/trade-desk/tradeDeskComponents';
+import {
+  brokerLabel,
+  buildTradeMonitorPath,
+  environmentVariant,
+  extractTradeDeskErrorMessage,
+  formatCurrency,
+  formatNumber,
+  formatTimestamp,
+  readinessVariant,
+  titleCase
+} from '@/features/trade-desk/tradeDeskUtils';
 
 type OrderDraft = {
   symbol: string;
@@ -64,6 +73,12 @@ type OrderDraft = {
   limitPrice: string;
   stopPrice: string;
   allowExtendedHours: boolean;
+};
+
+type WorkflowMessage = {
+  tone: 'info' | 'warning' | 'error';
+  title: string;
+  message: string;
 };
 
 const EMPTY_DRAFT: OrderDraft = {
@@ -78,73 +93,19 @@ const EMPTY_DRAFT: OrderDraft = {
   allowExtendedHours: false
 };
 
-const TERMINAL_ORDER_STATUSES: TradeOrderStatus[] = ['filled', 'cancelled', 'rejected', 'expired'];
+const TIME_IN_FORCE_OPTIONS: Array<{ value: TradeTimeInForce; label: string }> = [
+  { value: 'day', label: 'Day' },
+  { value: 'gtc', label: 'GTC' },
+  { value: 'ioc', label: 'IOC' },
+  { value: 'fok', label: 'FOK' }
+];
 
-function formatCurrency(value?: number | null): string {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return 'Not available';
-  }
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: Math.abs(value) >= 1_000 ? 0 : 2
-  }).format(value);
-}
-
-function formatNumber(value?: number | null): string {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return 'Not available';
-  }
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(value);
-}
-
-function formatTimestamp(value?: string | null): string {
-  if (!value) {
-    return 'Not available';
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(parsed);
-}
-
-function titleCase(value: string): string {
-  return value
-    .split(/[_\s-]+/g)
-    .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-function environmentVariant(environment: TradeEnvironment) {
-  if (environment === 'live') return 'destructive' as const;
-  if (environment === 'sandbox') return 'secondary' as const;
-  return 'outline' as const;
-}
-
-function readinessVariant(readiness: TradeAccountSummary['readiness']) {
-  if (readiness === 'ready') return 'default' as const;
-  if (readiness === 'review') return 'secondary' as const;
-  return 'destructive' as const;
-}
-
-function orderStatusVariant(status: TradeOrderStatus) {
-  if (status === 'filled' || status === 'accepted') return 'default' as const;
-  if (status === 'rejected' || status === 'unknown_reconcile_required')
-    return 'destructive' as const;
-  if (status === 'cancel_pending' || status === 'partially_filled') return 'secondary' as const;
-  return 'outline' as const;
-}
-
-function brokerLabel(provider: TradeAccountSummary['provider']): string {
-  if (provider === 'etrade') return 'E*TRADE';
-  if (provider === 'schwab') return 'Schwab';
-  return 'Alpaca';
-}
+const ORDER_TYPE_LABELS: Record<TradeOrderType, string> = {
+  market: 'Market',
+  limit: 'Limit',
+  stop: 'Stop',
+  stop_limit: 'Stop Limit'
+};
 
 function parsePositiveNumber(value: string): number | undefined {
   const trimmed = value.trim();
@@ -155,8 +116,32 @@ function parsePositiveNumber(value: string): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : Number.NaN;
 }
 
+function getCapabilityOrderTypes(account: TradeAccountSummaryView): TradeOrderType[] {
+  const types: TradeOrderType[] = [];
+  if (account.capabilities.supportsMarketOrders) types.push('market');
+  if (account.capabilities.supportsLimitOrders) types.push('limit');
+  if (account.capabilities.supportsStopOrders) {
+    types.push('stop', 'stop_limit');
+  }
+  return types;
+}
+
+function getAllowedOrderTypes(
+  account: TradeAccountSummaryView,
+  detail?: TradeAccountDetailView | null
+): TradeOrderType[] {
+  const capabilityTypes = getCapabilityOrderTypes(account);
+  const policyTypes = detail?.riskLimits.allowedOrderTypes ?? [];
+  if (!policyTypes.length) {
+    return capabilityTypes;
+  }
+  const allowed = capabilityTypes.filter((type) => policyTypes.includes(type));
+  return allowed.length ? allowed : capabilityTypes;
+}
+
 function buildPreviewRequest(
-  selectedAccount: TradeAccountSummary,
+  account: TradeAccountSummaryView,
+  detail: TradeAccountDetailView | null,
   draft: OrderDraft
 ): { payload?: TradeOrderPreviewRequest; errors: string[] } {
   const symbol = draft.symbol.trim().toUpperCase();
@@ -165,14 +150,22 @@ function buildPreviewRequest(
   const limitPrice = parsePositiveNumber(draft.limitPrice);
   const stopPrice = parsePositiveNumber(draft.stopPrice);
   const errors: string[] = [];
+  const allowedOrderTypes = getAllowedOrderTypes(account, detail);
+  const blockingAlerts =
+    detail?.alerts.filter((alert) => alert.status === 'open' && alert.blocking) ?? [];
 
   if (!symbol) errors.push('Symbol is required.');
-  if (quantity !== undefined && Number.isNaN(quantity))
+  if (quantity !== undefined && Number.isNaN(quantity)) {
     errors.push('Quantity must be greater than zero.');
-  if (notional !== undefined && Number.isNaN(notional))
+  }
+  if (notional !== undefined && Number.isNaN(notional)) {
     errors.push('Notional must be greater than zero.');
+  }
   if ((quantity === undefined) === (notional === undefined)) {
     errors.push('Enter exactly one of quantity or notional.');
+  }
+  if (!allowedOrderTypes.includes(draft.orderType)) {
+    errors.push(`${ORDER_TYPE_LABELS[draft.orderType]} orders are not enabled for this account.`);
   }
   if (draft.orderType === 'limit' || draft.orderType === 'stop_limit') {
     if (limitPrice === undefined || Number.isNaN(limitPrice)) {
@@ -184,6 +177,23 @@ function buildPreviewRequest(
       errors.push('Stop price is required for stop orders.');
     }
   }
+  if (detail?.riskLimits.maxShareQuantity && quantity && quantity > detail.riskLimits.maxShareQuantity) {
+    errors.push(`Quantity exceeds the account share limit of ${formatNumber(detail.riskLimits.maxShareQuantity)}.`);
+  }
+  if (detail?.riskLimits.maxOrderNotional && notional && notional > detail.riskLimits.maxOrderNotional) {
+    errors.push(
+      `Notional exceeds the account order limit of ${formatCurrency(detail.riskLimits.maxOrderNotional)}.`
+    );
+  }
+  if (detail?.restrictions.length) {
+    errors.push(`Trading is restricted: ${detail.restrictions.join('; ')}.`);
+  }
+  if (detail?.unresolvedAlerts.length) {
+    errors.push(`Resolve account alerts before preview: ${detail.unresolvedAlerts.join('; ')}.`);
+  }
+  if (blockingAlerts.length) {
+    errors.push(`Blocking alert: ${blockingAlerts.map((alert) => alert.title).join('; ')}.`);
+  }
 
   if (errors.length) {
     return { errors };
@@ -192,8 +202,8 @@ function buildPreviewRequest(
   return {
     errors,
     payload: {
-      accountId: selectedAccount.accountId,
-      environment: selectedAccount.environment,
+      accountId: account.accountId,
+      environment: account.environment,
       clientRequestId: createTradeDeskIdempotencyKey('preview'),
       symbol,
       side: draft.side,
@@ -219,26 +229,66 @@ function invalidateAccountQueries(
   void queryClient.invalidateQueries({ queryKey: tradeDeskKeys.positions(accountId) });
   void queryClient.invalidateQueries({ queryKey: tradeDeskKeys.orders(accountId) });
   void queryClient.invalidateQueries({ queryKey: tradeDeskKeys.history(accountId) });
+  void queryClient.invalidateQueries({ queryKey: tradeDeskKeys.blotter(accountId) });
 }
 
-function AccountReadinessRail({
-  selectedAccount,
-  events
+function RiskLimitsPanel({ detail }: { detail: TradeAccountDetailView | null }) {
+  if (!detail) {
+    return null;
+  }
+
+  const { riskLimits } = detail;
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-black uppercase tracking-[0.16em] text-muted-foreground">
+        Risk Limits
+      </h2>
+      <div className="space-y-2 text-sm">
+        <div className="flex justify-between gap-3">
+          <span className="text-muted-foreground">Max order notional</span>
+          <span>{formatCurrency(riskLimits.maxOrderNotional)}</span>
+        </div>
+        <div className="flex justify-between gap-3">
+          <span className="text-muted-foreground">Max daily notional</span>
+          <span>{formatCurrency(riskLimits.maxDailyNotional)}</span>
+        </div>
+        <div className="flex justify-between gap-3">
+          <span className="text-muted-foreground">Max share quantity</span>
+          <span>{formatNumber(riskLimits.maxShareQuantity)}</span>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {riskLimits.allowedOrderTypes.map((orderType) => (
+          <Badge key={orderType} variant="outline">
+            {ORDER_TYPE_LABELS[orderType]}
+          </Badge>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DeskControlsRail({
+  account,
+  detail
 }: {
-  selectedAccount: TradeAccountSummary;
-  events: readonly TradeDeskAuditEvent[];
+  account: TradeAccountSummaryView;
+  detail: TradeAccountDetailView | null;
 }) {
-  const capabilities = selectedAccount.capabilities;
-  const freshness = selectedAccount.freshness;
   const restrictionItems = [
-    selectedAccount.killSwitchActive ? 'Account kill switch active' : null,
-    !capabilities.canPreview ? 'Preview disabled' : null,
-    selectedAccount.environment === 'live' && !capabilities.canSubmitLive
+    account.killSwitchActive ? 'Account kill switch active' : null,
+    !account.capabilities.canPreview ? 'Preview disabled' : null,
+    account.environment === 'live' && !account.capabilities.canSubmitLive
       ? 'Live submit disabled'
       : null,
-    capabilities.readOnly ? 'Read-only account' : null,
-    capabilities.unsupportedReason ?? null
+    account.capabilities.readOnly ? 'Read-only account' : null,
+    account.capabilities.unsupportedReason ?? null,
+    ...(detail?.restrictions ?? []),
+    ...(detail?.unresolvedAlerts ?? [])
   ].filter(Boolean);
+  const activeAlerts = detail?.alerts.filter((alert) => alert.status !== 'resolved') ?? [];
+  const freshness = account.freshness;
 
   return (
     <aside className="mcm-panel flex min-h-[42rem] flex-col overflow-hidden">
@@ -247,11 +297,9 @@ function AccountReadinessRail({
           Account Controls
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Badge variant={readinessVariant(selectedAccount.readiness)}>
-            {titleCase(selectedAccount.readiness)}
-          </Badge>
-          <Badge variant={environmentVariant(selectedAccount.environment)}>
-            {selectedAccount.environment.toUpperCase()}
+          <Badge variant={readinessVariant(account.readiness)}>{titleCase(account.readiness)}</Badge>
+          <Badge variant={environmentVariant(account.environment)}>
+            {account.environment.toUpperCase()}
           </Badge>
         </div>
       </div>
@@ -264,7 +312,7 @@ function AccountReadinessRail({
           <div className="space-y-2 text-sm">
             <div className="flex items-center justify-between gap-3">
               <span className="text-muted-foreground">Broker</span>
-              <span className="font-semibold">{brokerLabel(selectedAccount.provider)}</span>
+              <span className="font-semibold">{brokerLabel(account.provider)}</span>
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-muted-foreground">Positions</span>
@@ -275,13 +323,13 @@ function AccountReadinessRail({
               <span className="font-semibold">{titleCase(freshness.balancesState)}</span>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <span className="text-muted-foreground">Open orders</span>
+              <span className="text-muted-foreground">Orders</span>
               <span className="font-semibold">{titleCase(freshness.ordersState)}</span>
             </div>
           </div>
-          {selectedAccount.readinessReason ? (
+          {account.readinessReason ? (
             <p className="rounded-xl border border-mcm-walnut/20 bg-background/40 p-3 text-sm">
-              {selectedAccount.readinessReason}
+              {account.readinessReason}
             </p>
           ) : null}
         </section>
@@ -304,10 +352,36 @@ function AccountReadinessRail({
             </div>
           ) : (
             <div className="rounded-xl border border-mcm-teal/25 bg-accent/35 p-3 text-sm">
-              No account-level execution blockers reported.
+              No account-level execution blockers are currently flagged.
             </div>
           )}
         </section>
+
+        {activeAlerts.length ? (
+          <section className="space-y-3">
+            <h2 className="text-sm font-black uppercase tracking-[0.16em] text-muted-foreground">
+              Active Alerts
+            </h2>
+            <div className="space-y-2">
+              {activeAlerts.map((alert) => (
+                <div
+                  key={alert.alertId}
+                  className="rounded-xl border border-mcm-walnut/20 bg-background/35 p-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={alert.blocking ? 'destructive' : 'secondary'}>
+                      {titleCase(alert.severity)}
+                    </Badge>
+                    <span className="font-semibold">{alert.title}</span>
+                  </div>
+                  <p className="mt-2 text-muted-foreground">{alert.message}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <RiskLimitsPanel detail={detail} />
 
         <section className="space-y-3">
           <h2 className="text-sm font-black uppercase tracking-[0.16em] text-muted-foreground">
@@ -333,192 +407,54 @@ function AccountReadinessRail({
           <h2 className="text-sm font-black uppercase tracking-[0.16em] text-muted-foreground">
             Activity
           </h2>
-          <ActivityTimeline events={events} compact />
+          <ActivityTimeline events={detail?.recentAuditEvents ?? []} compact />
         </section>
       </div>
     </aside>
   );
 }
 
-function PositionsTable({ positions }: { positions: readonly TradePosition[] }) {
-  if (!positions.length) {
-    return (
-      <StatePanel
-        tone="empty"
-        title="No Positions"
-        message="This account has no position rows in the current trade desk snapshot."
-      />
-    );
-  }
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Symbol</TableHead>
-          <TableHead>Class</TableHead>
-          <TableHead className="text-right">Qty</TableHead>
-          <TableHead className="text-right">Value</TableHead>
-          <TableHead className="text-right">Last</TableHead>
-          <TableHead className="text-right">Unrealized</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {positions.map((position) => (
-          <TableRow key={position.symbol}>
-            <TableCell className="font-mono font-semibold">{position.symbol}</TableCell>
-            <TableCell>{titleCase(position.assetClass)}</TableCell>
-            <TableCell className="text-right font-mono">
-              {formatNumber(position.quantity)}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatCurrency(position.marketValue)}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatCurrency(position.lastPrice)}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatCurrency(position.unrealizedPnl)}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-function OrdersTable({
-  orders,
-  onCancel,
-  cancellingOrderId
-}: {
-  orders: readonly TradeOrder[];
-  onCancel?: (order: TradeOrder) => void;
-  cancellingOrderId?: string | null;
-}) {
-  if (!orders.length) {
-    return <StatePanel tone="empty" title="No Orders" message="No order rows match this view." />;
-  }
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Order</TableHead>
-          <TableHead>Symbol</TableHead>
-          <TableHead>Side</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="text-right">Qty</TableHead>
-          <TableHead className="text-right">Notional</TableHead>
-          <TableHead>Updated</TableHead>
-          {onCancel ? <TableHead className="text-right">Action</TableHead> : null}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {orders.map((order) => {
-          const canCancel = onCancel && !TERMINAL_ORDER_STATUSES.includes(order.status);
-          return (
-            <TableRow key={order.orderId}>
-              <TableCell className="max-w-[12rem] truncate font-mono text-xs">
-                {order.orderId}
-              </TableCell>
-              <TableCell className="font-mono font-semibold">{order.symbol}</TableCell>
-              <TableCell>
-                <Badge variant={order.side === 'buy' ? 'default' : 'secondary'}>
-                  {order.side.toUpperCase()}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <Badge variant={orderStatusVariant(order.status)}>{titleCase(order.status)}</Badge>
-              </TableCell>
-              <TableCell className="text-right font-mono">{formatNumber(order.quantity)}</TableCell>
-              <TableCell className="text-right font-mono">
-                {formatCurrency(order.estimatedNotional ?? order.notional)}
-              </TableCell>
-              <TableCell>{formatTimestamp(order.updatedAt ?? order.createdAt)}</TableCell>
-              {onCancel ? (
-                <TableCell className="text-right">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={!canCancel || cancellingOrderId === order.orderId}
-                    onClick={() => onCancel(order)}
-                  >
-                    Cancel
-                  </Button>
-                </TableCell>
-              ) : null}
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
-  );
-}
-
-function ActivityTimeline({
-  events,
-  compact = false
-}: {
-  events: readonly TradeDeskAuditEvent[];
-  compact?: boolean;
-}) {
-  if (!events.length) {
-    return <div className="text-sm text-muted-foreground">No trade desk activity recorded.</div>;
-  }
-
-  return (
-    <div className="space-y-3">
-      {events.slice(0, compact ? 4 : 12).map((event) => (
-        <div key={event.eventId} className="border-l-2 border-mcm-teal pl-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={event.severity === 'critical' ? 'destructive' : 'outline'}>
-              {titleCase(event.eventType)}
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              {formatTimestamp(event.occurredAt)}
-            </span>
-          </div>
-          <p className="mt-1 text-sm">{event.summary || titleCase(event.eventType)}</p>
-          {event.statusAfter ? (
-            <p className="text-xs text-muted-foreground">Status: {titleCase(event.statusAfter)}</p>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function OrderTicket({
-  selectedAccount,
+  account,
+  detail,
   draft,
   preview,
+  acknowledgedRiskCheckIds,
   liveConfirmed,
   onDraftChange,
   onPreview,
   onSubmit,
   onLiveConfirmedChange,
+  onRiskAcknowledgementChange,
   previewPending,
   submitPending
 }: {
-  selectedAccount: TradeAccountSummary;
+  account: TradeAccountSummaryView;
+  detail: TradeAccountDetailView | null;
   draft: OrderDraft;
   preview: TradeOrderPreviewResponse | null;
+  acknowledgedRiskCheckIds: Set<string>;
   liveConfirmed: boolean;
   onDraftChange: (nextDraft: OrderDraft) => void;
   onPreview: () => void;
   onSubmit: () => void;
   onLiveConfirmedChange: (checked: boolean) => void;
+  onRiskAcknowledgementChange: (checkId: string, checked: boolean) => void;
   previewPending: boolean;
   submitPending: boolean;
 }) {
+  const allowedOrderTypes = getAllowedOrderTypes(account, detail);
+  const warningChecks = preview?.riskChecks.filter((check) => !check.blocking && check.status === 'warning') ?? [];
+  const missingAcknowledgements = warningChecks.some(
+    (check) => !acknowledgedRiskCheckIds.has(check.checkId)
+  );
   const submitDisabled =
     !preview ||
     preview.blocked ||
     submitPending ||
-    (selectedAccount.environment === 'live' && !liveConfirmed) ||
-    (selectedAccount.environment === 'live' && !selectedAccount.capabilities.canSubmitLive);
+    missingAcknowledgements ||
+    (account.environment === 'live' && !liveConfirmed) ||
+    (account.environment === 'live' && !account.capabilities.canSubmitLive);
 
   return (
     <aside className="mcm-panel min-h-[42rem] overflow-hidden">
@@ -527,11 +463,11 @@ function OrderTicket({
           Manual Ticket
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Badge variant={environmentVariant(selectedAccount.environment)}>
-            {selectedAccount.environment.toUpperCase()}
+          <Badge variant={environmentVariant(account.environment)}>
+            {account.environment.toUpperCase()}
           </Badge>
-          <Badge variant={selectedAccount.capabilities.readOnly ? 'secondary' : 'outline'}>
-            {selectedAccount.capabilities.readOnly ? 'Read Only' : 'Execution Capable'}
+          <Badge variant={account.capabilities.readOnly ? 'secondary' : 'outline'}>
+            {account.capabilities.readOnly ? 'Read Only' : 'Execution Capable'}
           </Badge>
         </div>
       </div>
@@ -539,7 +475,9 @@ function OrderTicket({
       <div className="space-y-4 p-5">
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2 space-y-2">
-            <Label htmlFor="trade-symbol">Symbol</Label>
+            <Label htmlFor="trade-symbol" className="text-foreground">
+              Symbol
+            </Label>
             <Input
               id="trade-symbol"
               value={draft.symbol}
@@ -549,12 +487,14 @@ function OrderTicket({
           </div>
 
           <div className="space-y-2">
-            <Label>Side</Label>
+            <Label htmlFor="trade-side" className="text-foreground">
+              Side
+            </Label>
             <Select
               value={draft.side}
               onValueChange={(value) => onDraftChange({ ...draft, side: value as TradeOrderSide })}
             >
-              <SelectTrigger>
+              <SelectTrigger id="trade-side" aria-label="Trade side">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -565,27 +505,32 @@ function OrderTicket({
           </div>
 
           <div className="space-y-2">
-            <Label>Order Type</Label>
+            <Label htmlFor="trade-order-type" className="text-foreground">
+              Order Type
+            </Label>
             <Select
               value={draft.orderType}
               onValueChange={(value) =>
                 onDraftChange({ ...draft, orderType: value as TradeOrderType })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger id="trade-order-type" aria-label="Trade order type">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="market">Market</SelectItem>
-                <SelectItem value="limit">Limit</SelectItem>
-                <SelectItem value="stop">Stop</SelectItem>
-                <SelectItem value="stop_limit">Stop Limit</SelectItem>
+                {allowedOrderTypes.map((orderType) => (
+                  <SelectItem key={orderType} value={orderType}>
+                    {ORDER_TYPE_LABELS[orderType]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="trade-quantity">Quantity</Label>
+            <Label htmlFor="trade-quantity" className="text-foreground">
+              Quantity
+            </Label>
             <Input
               id="trade-quantity"
               inputMode="decimal"
@@ -595,7 +540,9 @@ function OrderTicket({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="trade-notional">Notional</Label>
+            <Label htmlFor="trade-notional" className="text-foreground">
+              Notional
+            </Label>
             <Input
               id="trade-notional"
               inputMode="decimal"
@@ -605,7 +552,9 @@ function OrderTicket({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="trade-limit-price">Limit</Label>
+            <Label htmlFor="trade-limit-price" className="text-foreground">
+              Limit
+            </Label>
             <Input
               id="trade-limit-price"
               inputMode="decimal"
@@ -615,7 +564,9 @@ function OrderTicket({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="trade-stop-price">Stop</Label>
+            <Label htmlFor="trade-stop-price" className="text-foreground">
+              Stop
+            </Label>
             <Input
               id="trade-stop-price"
               inputMode="decimal"
@@ -625,44 +576,47 @@ function OrderTicket({
           </div>
 
           <div className="col-span-2 space-y-2">
-            <Label>Time In Force</Label>
+            <Label htmlFor="trade-time-in-force" className="text-foreground">
+              Time In Force
+            </Label>
             <Select
               value={draft.timeInForce}
               onValueChange={(value) =>
                 onDraftChange({ ...draft, timeInForce: value as TradeTimeInForce })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger id="trade-time-in-force" aria-label="Trade time in force">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="day">Day</SelectItem>
-                <SelectItem value="gtc">GTC</SelectItem>
-                <SelectItem value="ioc">IOC</SelectItem>
-                <SelectItem value="fok">FOK</SelectItem>
+                {TIME_IN_FORCE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
         </div>
 
-        {selectedAccount.environment === 'live' ? (
+        {account.environment === 'live' ? (
           <label className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm">
             <Checkbox
               checked={liveConfirmed}
               onCheckedChange={(checked) => onLiveConfirmedChange(checked === true)}
             />
-            <span>I confirm this is a LIVE order for {selectedAccount.name}.</span>
+            <span>I confirm this is a LIVE order for {account.name}.</span>
           </label>
         ) : null}
 
         <div className="flex flex-wrap gap-3">
           <Button type="button" onClick={onPreview} disabled={previewPending}>
             <Ticket className="size-4" />
-            Preview
+            {previewPending ? 'Previewing...' : 'Preview'}
           </Button>
           <Button type="button" variant="outline" onClick={onSubmit} disabled={submitDisabled}>
             <ShieldCheck className="size-4" />
-            Submit
+            {submitPending ? 'Submitting...' : 'Submit'}
           </Button>
         </div>
 
@@ -693,23 +647,55 @@ function OrderTicket({
                 {preview.blockReason}
               </p>
             ) : null}
-            <div className="space-y-2">
-              {preview.riskChecks.map((check) => (
-                <div key={check.checkId} className="flex items-start justify-between gap-3 text-sm">
-                  <span>{check.label}</span>
-                  <Badge
-                    variant={
-                      check.blocking
-                        ? 'destructive'
-                        : check.status === 'warning'
-                          ? 'secondary'
-                          : 'outline'
-                    }
+            {preview.warnings.length ? (
+              <div className="rounded-xl border border-mcm-mustard/30 bg-mcm-cream/80 p-3 text-sm">
+                {preview.warnings.join(' ')}
+              </div>
+            ) : null}
+            <div className="space-y-3">
+              {preview.riskChecks.map((check) => {
+                const requiresAcknowledgement = !check.blocking && check.status === 'warning';
+                return (
+                  <div
+                    key={check.checkId}
+                    className="rounded-xl border border-mcm-walnut/15 bg-background/40 p-3"
                   >
-                    {titleCase(check.status)}
-                  </Badge>
-                </div>
-              ))}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">{check.label}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {titleCase(check.status)}
+                        </div>
+                      </div>
+                      <Badge
+                        variant={
+                          check.blocking
+                            ? 'destructive'
+                            : check.status === 'warning'
+                              ? 'secondary'
+                              : 'outline'
+                        }
+                      >
+                        {titleCase(check.status)}
+                      </Badge>
+                    </div>
+                    <div className="mt-2">
+                      <RiskCheckEvidence message={check.message} metadata={check.metadata} />
+                    </div>
+                    {requiresAcknowledgement ? (
+                      <label className="mt-3 flex items-start gap-3 rounded-xl border border-mcm-walnut/20 bg-background/40 p-3 text-sm">
+                        <Checkbox
+                          checked={acknowledgedRiskCheckIds.has(check.checkId)}
+                          onCheckedChange={(checked) =>
+                            onRiskAcknowledgementChange(check.checkId, checked === true)
+                          }
+                        />
+                        <span>I acknowledge this warning and want to proceed with submission.</span>
+                      </label>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </section>
         ) : null}
@@ -720,11 +706,15 @@ function OrderTicket({
 
 export function TradeDeskPage() {
   const queryClient = useQueryClient();
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedAccountId = searchParams.get('accountId');
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(requestedAccountId);
   const [draft, setDraft] = useState<OrderDraft>(EMPTY_DRAFT);
   const [preview, setPreview] = useState<TradeOrderPreviewResponse | null>(null);
   const [liveConfirmed, setLiveConfirmed] = useState(false);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+  const [workflowMessage, setWorkflowMessage] = useState<WorkflowMessage | null>(null);
+  const [acknowledgedRiskCheckIds, setAcknowledgedRiskCheckIds] = useState<Set<string>>(new Set());
 
   const accountsQuery = useQuery({
     queryKey: tradeDeskKeys.accounts(),
@@ -734,10 +724,19 @@ export function TradeDeskPage() {
   const accounts = accountsQuery.data?.accounts ?? [];
 
   useEffect(() => {
-    if (!selectedAccountId && accounts.length) {
-      setSelectedAccountId(accounts[0].accountId);
+    if (!accounts.length) {
+      return;
     }
-  }, [accounts, selectedAccountId]);
+    const nextAccountId =
+      (requestedAccountId && accounts.some((account) => account.accountId === requestedAccountId)
+        ? requestedAccountId
+        : null) ??
+      selectedAccountId ??
+      accounts[0].accountId;
+    if (selectedAccountId !== nextAccountId) {
+      setSelectedAccountId(nextAccountId);
+    }
+  }, [accounts, requestedAccountId, selectedAccountId]);
 
   const selectedAccount = useMemo(
     () =>
@@ -745,6 +744,17 @@ export function TradeDeskPage() {
     [accounts, selectedAccountId]
   );
   const activeAccountId = selectedAccount?.accountId ?? null;
+
+  useEffect(() => {
+    if (!activeAccountId) {
+      return;
+    }
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextParams.get('accountId') !== activeAccountId) {
+      nextParams.set('accountId', activeAccountId);
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [activeAccountId, searchParams, setSearchParams]);
 
   const detailQuery = useQuery({
     queryKey: tradeDeskKeys.detail(activeAccountId),
@@ -764,19 +774,26 @@ export function TradeDeskPage() {
     enabled: Boolean(activeAccountId),
     refetchInterval: 15_000
   });
-  const historyQuery = useQuery({
-    queryKey: tradeDeskKeys.history(activeAccountId),
-    queryFn: ({ signal }) => tradeDeskApi.listHistory(activeAccountId ?? '', signal),
-    enabled: Boolean(activeAccountId),
-    refetchInterval: 30_000
-  });
+
+  const selectedDetail = detailQuery.data ?? null;
+
+  useEffect(() => {
+    if (!selectedAccount) {
+      return;
+    }
+    const allowedOrderTypes = getAllowedOrderTypes(selectedAccount, selectedDetail);
+    if (!allowedOrderTypes.includes(draft.orderType)) {
+      setDraft((current) => ({ ...current, orderType: allowedOrderTypes[0] ?? 'market' }));
+      setPreview(null);
+    }
+  }, [draft.orderType, selectedAccount, selectedDetail]);
 
   const previewMutation = useMutation({
     mutationFn: async () => {
       if (!selectedAccount) {
         throw new Error('Select an account before previewing.');
       }
-      const { payload, errors } = buildPreviewRequest(selectedAccount, draft);
+      const { payload, errors } = buildPreviewRequest(selectedAccount, selectedDetail, draft);
       if (!payload) {
         throw new Error(errors.join(' '));
       }
@@ -784,10 +801,21 @@ export function TradeDeskPage() {
     },
     onSuccess: (result) => {
       setPreview(result);
-      toast.success(result.blocked ? 'Preview returned blockers.' : 'Preview ready.');
+      setAcknowledgedRiskCheckIds(new Set());
+      setWorkflowMessage({
+        tone: result.blocked ? 'warning' : 'info',
+        title: result.blocked ? 'Preview Blocked' : 'Preview Ready',
+        message: result.blocked
+          ? result.blockReason || 'The preview returned trade blockers.'
+          : 'Review the ticket, risk checks, and acknowledgement requirements before submitting.'
+      });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Preview failed.');
+      setWorkflowMessage({
+        tone: 'error',
+        title: 'Preview Failed',
+        message: extractTradeDeskErrorMessage(error, 'The order preview could not be created.')
+      });
     }
   });
 
@@ -796,14 +824,11 @@ export function TradeDeskPage() {
       if (!selectedAccount || !preview) {
         throw new Error('Preview the order before submitting.');
       }
-      const payload = {
-        ...preview.order,
+
+      const payload: TradeOrderPlaceRequest = {
         accountId: selectedAccount.accountId,
         environment: selectedAccount.environment,
         clientRequestId: createTradeDeskIdempotencyKey('submit-client'),
-        idempotencyKey: createTradeDeskIdempotencyKey('submit'),
-        previewId: preview.previewId,
-        confirmedAt: new Date().toISOString(),
         symbol: preview.order.symbol,
         side: preview.order.side,
         orderType: preview.order.orderType,
@@ -814,10 +839,11 @@ export function TradeDeskPage() {
         limitPrice: preview.order.limitPrice,
         stopPrice: preview.order.stopPrice,
         allowExtendedHours: draft.allowExtendedHours,
-        source: 'manual' as const,
-        confirmedRiskCheckIds: preview.riskChecks
-          .filter((check) => !check.blocking)
-          .map((check) => check.checkId)
+        source: 'manual',
+        idempotencyKey: createTradeDeskIdempotencyKey('submit'),
+        previewId: preview.previewId,
+        confirmedAt: new Date().toISOString(),
+        confirmedRiskCheckIds: Array.from(acknowledgedRiskCheckIds)
       };
       return tradeDeskApi.placeOrder(selectedAccount.accountId, payload);
     },
@@ -826,14 +852,24 @@ export function TradeDeskPage() {
         invalidateAccountQueries(queryClient, selectedAccount.accountId);
       }
       setPreview(null);
-      toast.success(result.submitted ? 'Order submitted.' : result.message || 'Order blocked.');
+      setAcknowledgedRiskCheckIds(new Set());
+      setWorkflowMessage({
+        tone: result.submitted ? 'info' : 'warning',
+        title: result.submitted ? 'Order Submitted' : 'Order Blocked',
+        message: result.submitted
+          ? 'The order was accepted for execution.'
+          : result.message || 'The trade was not submitted.'
+      });
     },
     onError: (error) => {
-      toast.error(
-        error instanceof Error
-          ? `Submit result is reconciliation-required: ${error.message}`
-          : 'Submit result is reconciliation-required.'
-      );
+      setWorkflowMessage({
+        tone: 'error',
+        title: 'Submit Failed',
+        message: extractTradeDeskErrorMessage(
+          error,
+          'The order submission could not be completed.'
+        )
+      });
     }
   });
 
@@ -855,12 +891,20 @@ export function TradeDeskPage() {
       if (selectedAccount) {
         invalidateAccountQueries(queryClient, selectedAccount.accountId);
       }
-      toast.success(
-        result.cancelAccepted ? 'Cancel requested.' : result.message || 'Cancel blocked.'
-      );
+      setWorkflowMessage({
+        tone: result.cancelAccepted ? 'info' : 'warning',
+        title: result.cancelAccepted ? 'Cancel Requested' : 'Cancel Blocked',
+        message: result.cancelAccepted
+          ? 'The cancel request was accepted.'
+          : result.message || 'The cancel request was not accepted.'
+      });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Cancel failed.');
+      setWorkflowMessage({
+        tone: 'error',
+        title: 'Cancel Failed',
+        message: extractTradeDeskErrorMessage(error, 'The cancel request could not be completed.')
+      });
     },
     onSettled: () => setCancellingOrderId(null)
   });
@@ -874,7 +918,7 @@ export function TradeDeskPage() {
       <div className="space-y-6">
         <PageHero
           kicker="Trade Desk"
-          title="Account Trading"
+          title="Trade Desk"
           subtitle="No configured trade accounts are available."
         />
         <StatePanel
@@ -886,27 +930,26 @@ export function TradeDeskPage() {
     );
   }
 
-  const detail = detailQuery.data;
   const positions = positionsQuery.data?.positions ?? [];
   const openOrders = ordersQuery.data?.orders ?? [];
-  const history = historyQuery.data?.orders ?? [];
-  const events = detail?.recentAuditEvents ?? [];
 
   return (
     <div className="space-y-6">
       <PageHero
         kicker="Trade Desk"
-        title="Account Trading"
+        title="Trade Desk"
         subtitle={`${selectedAccount.name} is routed through ${brokerLabel(selectedAccount.provider)} with ${selectedAccount.environment.toUpperCase()} execution labeling.`}
         actions={
           <div className="flex flex-wrap items-center gap-3">
-            <div className="min-w-[18rem]">
+            <div className="min-w-0 flex-1 sm:min-w-[16rem]">
               <Select
                 value={selectedAccount.accountId}
                 onValueChange={(value) => {
                   setSelectedAccountId(value);
                   setPreview(null);
                   setLiveConfirmed(false);
+                  setWorkflowMessage(null);
+                  setAcknowledgedRiskCheckIds(new Set());
                 }}
               >
                 <SelectTrigger aria-label="Trade account">
@@ -924,12 +967,13 @@ export function TradeDeskPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() =>
-                activeAccountId && invalidateAccountQueries(queryClient, activeAccountId)
-              }
+              onClick={() => activeAccountId && invalidateAccountQueries(queryClient, activeAccountId)}
             >
               <RefreshCw className="size-4" />
               Refresh
+            </Button>
+            <Button asChild type="button" variant="secondary">
+              <Link to={buildTradeMonitorPath(activeAccountId)}>View in Trade Monitor</Link>
             </Button>
           </div>
         }
@@ -961,71 +1005,82 @@ export function TradeDeskPage() {
         ]}
       />
 
-      <div className="grid gap-5 xl:grid-cols-[18rem_minmax(0,1fr)_24rem]">
-        <AccountReadinessRail selectedAccount={selectedAccount} events={events} />
+      {workflowMessage ? (
+        <StatePanel
+          tone={workflowMessage.tone === 'info' ? 'info' : workflowMessage.tone}
+          title={workflowMessage.title}
+          message={workflowMessage.message}
+        />
+      ) : null}
 
-        <main className="min-w-0 space-y-5">
+      <div className="grid gap-5 xl:grid-cols-[18rem_minmax(0,1fr)_24rem]">
+        <DeskControlsRail account={selectedAccount} detail={selectedDetail} />
+
+        <div className="min-w-0 space-y-5">
           {selectedAccount.environment === 'live' ? (
             <StatePanel
               tone="error"
-              title="LIVE Execution"
-              message="Live submit remains disabled unless the control plane returns live capability and the live confirmation is checked."
+              title="Live Execution"
+              message="Live submit remains disabled unless the account explicitly allows live trading and the live confirmation is checked."
               icon={<XCircle className="size-4" />}
             />
           ) : null}
 
-          <Tabs defaultValue="positions" className="mcm-panel p-5">
-            <TabsList>
-              <TabsTrigger value="positions">Positions</TabsTrigger>
-              <TabsTrigger value="orders">Open Orders</TabsTrigger>
-              <TabsTrigger value="history">History</TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
-            </TabsList>
-            <TabsContent value="positions" className="mt-5">
-              {positionsQuery.isLoading ? (
-                <PageLoader variant="panel" text="Loading positions..." />
-              ) : (
-                <PositionsTable positions={positions} />
-              )}
-            </TabsContent>
+          <Tabs defaultValue="orders" className="mcm-panel p-5">
+            <div className="-mx-1 overflow-x-auto px-1">
+              <TabsList className="min-w-max">
+                <TabsTrigger value="orders">Open Orders</TabsTrigger>
+                <TabsTrigger value="positions">Positions</TabsTrigger>
+              </TabsList>
+            </div>
             <TabsContent value="orders" className="mt-5">
               {ordersQuery.isLoading ? (
-                <PageLoader variant="panel" text="Loading orders..." />
+                <PageLoader variant="panel" text="Loading open orders..." />
               ) : (
                 <OrdersTable
                   orders={openOrders}
                   onCancel={(order) => cancelMutation.mutate(order)}
                   cancellingOrderId={cancellingOrderId}
+                  emptyMessage="No open orders are currently staged for this account."
                 />
               )}
             </TabsContent>
-            <TabsContent value="history" className="mt-5">
-              {historyQuery.isLoading ? (
-                <PageLoader variant="panel" text="Loading history..." />
+            <TabsContent value="positions" className="mt-5">
+              {positionsQuery.isLoading ? (
+                <PageLoader variant="panel" text="Loading positions..." />
               ) : (
-                <OrdersTable orders={history} />
+                <PositionsTable positions={positions} variant="desk" />
               )}
             </TabsContent>
-            <TabsContent value="activity" className="mt-5">
-              <div className="rounded-xl border border-mcm-walnut/20 bg-background/35 p-4">
-                <ActivityTimeline events={events} />
-              </div>
-            </TabsContent>
           </Tabs>
-        </main>
+        </div>
 
         <OrderTicket
-          selectedAccount={selectedAccount}
+          account={selectedAccount}
+          detail={selectedDetail}
           draft={draft}
           preview={preview}
+          acknowledgedRiskCheckIds={acknowledgedRiskCheckIds}
           liveConfirmed={liveConfirmed}
           onDraftChange={(nextDraft) => {
             setDraft(nextDraft);
             setPreview(null);
+            setAcknowledgedRiskCheckIds(new Set());
           }}
           onPreview={() => previewMutation.mutate()}
           onSubmit={() => submitMutation.mutate()}
           onLiveConfirmedChange={setLiveConfirmed}
+          onRiskAcknowledgementChange={(checkId, checked) => {
+            setAcknowledgedRiskCheckIds((current) => {
+              const next = new Set(current);
+              if (checked) {
+                next.add(checkId);
+              } else {
+                next.delete(checkId);
+              }
+              return next;
+            });
+          }}
           previewPending={previewMutation.isPending}
           submitPending={submitMutation.isPending}
         />

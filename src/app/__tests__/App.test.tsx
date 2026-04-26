@@ -1,16 +1,7 @@
-import type { ReactNode } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { act, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '@/test/utils';
 import App from '../App';
-
-vi.mock('@/app/components/auth/OidcAccessGate', () => ({
-  OidcAccessGate: ({ children }: { children: ReactNode }) => <>{children}</>,
-  OidcCallbackPage: () => <div data-testid="mock-oidc-callback">Mock OIDC Callback</div>,
-  OidcLogoutCompletePage: () => (
-    <div data-testid="mock-oidc-logout-complete">Mock OIDC Logout Complete</div>
-  )
-}));
 
 vi.mock('@/hooks/useRealtime', () => ({
   useRealtime: () => undefined
@@ -19,6 +10,7 @@ vi.mock('@/hooks/useRealtime', () => ({
 vi.mock('@/config', () => ({
   config: {
     apiBaseUrl: '/api',
+    authProvider: 'disabled',
     authSessionMode: 'bearer',
     uiAuthEnabled: false,
     oidcEnabled: false,
@@ -80,6 +72,9 @@ vi.mock('@/features/accounts/AccountOperationsPage', () => ({
   AccountOperationsPage: () => (
     <div data-testid="mock-account-operations">Mock Account Operations</div>
   )
+}));
+vi.mock('@/features/trade-desk/TradeMonitorPage', () => ({
+  TradeMonitorPage: () => <div data-testid="mock-trade-monitor">Mock Trade Monitor</div>
 }));
 
 vi.mock('@/features/universes/UniverseConfigPage', () => ({
@@ -171,6 +166,13 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-account-operations')).toBeInTheDocument();
+  });
+
+  it('renders the trade monitor route through the application shell', async () => {
+    window.history.pushState({}, 'Trade Monitor', '/trade-monitor');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-trade-monitor')).toBeInTheDocument();
   });
 
   it('renders the regime monitor route through the application shell', async () => {

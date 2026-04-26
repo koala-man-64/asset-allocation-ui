@@ -4,14 +4,8 @@ import { toast } from 'sonner';
 
 import { config } from '@/config';
 import { queryKeys } from '@/hooks/useDataQueries';
-import {
-  appendAuthHeaders,
-  hasInteractiveAuthHandler,
-  isAuthReauthRequiredError,
-  requestInteractiveReauth
-} from '@/services/authTransport';
-import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
 import { backtestKeys } from '@/services/backtestHooks';
+import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
 import { intradayMonitorKeys } from '@/services/intradayMonitorApi';
 import {
   CONSOLE_LOG_STREAM_EVENT_TYPE,
@@ -33,25 +27,31 @@ const CONTAINER_APPS_QUERY_KEY = ['system', 'container-apps'] as const;
 const REALTIME_TICKET_TIMEOUT_MS = 5_000;
 const CSRF_COOKIE_NAMES = ['__Host-aa_csrf', 'aa_csrf_dev'] as const;
 
+type RealtimeEvent = {
+  type?: unknown;
+  payload?: unknown;
+};
+
+type RealtimeEnvelope = {
+  topic?: unknown;
+  data?: unknown;
+  type?: unknown;
+  payload?: unknown;
+};
+
+type TopicSubscriptionDetail = {
+  topics?: unknown;
+};
+
+type RealtimeTicketResponse = {
+  ticket?: unknown;
+};
+
 function createRealtimeRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
   return `realtime-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function logRealtimeAuth(event: string, detail: Record<string, unknown> = {}): void {
-  console.info(`[RealtimeAuth] ${event}`, detail);
-}
-
-function buildMissingRealtimeBearerTokenMessage(
-  requestId: string,
-  options: { forceRefresh?: boolean } = {}
-): string {
-  const prefix = options.forceRefresh
-    ? 'OIDC token refresh did not produce a bearer token'
-    : 'OIDC token acquisition did not produce a bearer token';
-  return `${prefix} [requestId=${requestId}] - /realtime/ticket. The UI refused to send the protected API call without authorization.`;
 }
 
 function readCookie(name: string): string {
@@ -73,25 +73,15 @@ function readCsrfToken(): string {
   return '';
 }
 
-type RealtimeEvent = {
-  type?: unknown;
-  payload?: unknown;
-};
+function currentRoute(): string {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
 
-type RealtimeEnvelope = {
-  topic?: unknown;
-  data?: unknown;
-  type?: unknown;
-  payload?: unknown;
-};
-
-type TopicSubscriptionDetail = {
-  topics?: unknown;
-};
-
-type RealtimeTicketResponse = {
-  ticket?: unknown;
-};
+function redirectToLogin(): void {
+  const params = new URLSearchParams();
+  params.set('returnTo', currentRoute());
+  window.location.assign(`/login?${params.toString()}`);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object';
@@ -117,7 +107,9 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
     wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
 
     function normalizeTopics(value: unknown): string[] {
-      if (!Array.isArray(value)) return [];
+      if (!Array.isArray(value)) {
+        return [];
+      }
       return value.map((topic) => String(topic || '').trim()).filter((topic) => topic.length > 0);
     }
 
@@ -140,7 +132,9 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
       topics: string[]
     ): void {
       const filtered = normalizeTopics(topics);
-      if (filtered.length === 0) return;
+      if (filtered.length === 0) {
+        return;
+      }
 
       const changed: string[] = [];
       filtered.forEach((topic) => {
@@ -194,134 +188,49 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
       }, 5000);
     }
 
-    async function fetchRealtimeTicket(): Promise<string | null> {
-      const requestId = createRealtimeRequestId();
-      const cookieAuth = config.authSessionMode === 'cookie';
-      const maxAttempts = cookieAuth ? 1 : 2;
-
-      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        const forceRefresh = attempt === 1;
-
-        if (forceRefresh) {
-          logRealtimeAuth('silent-recovery-start', {
-            endpoint: '/realtime/ticket',
-            requestId,
-            recoveryAttempt: 1
-          });
-        }
-
-        let headers: Headers;
-        try {
-          headers = cookieAuth
-            ? new Headers({ 'X-Request-ID': requestId })
-            : await appendAuthHeaders(
-                {
-                  'X-Request-ID': requestId
-                },
-                forceRefresh ? { forceRefresh: true } : {}
-              );
-        } catch (error) {
-          if (forceRefresh) {
-            logRealtimeAuth('silent-recovery-failed', {
-              endpoint: '/realtime/ticket',
-              requestId,
-              recoveryAttempt: 1,
-              error: error instanceof Error ? error.message : String(error ?? 'Unknown error')
-            });
-          }
-          throw error;
-        }
-
-        if (cookieAuth) {
-          const csrfToken = readCsrfToken();
-          if (csrfToken) {
-            headers.set('X-CSRF-Token', csrfToken);
-          }
-        }
-
-        if (config.oidcEnabled && !cookieAuth && !headers.has('Authorization')) {
-          const error = new Error(
-            buildMissingRealtimeBearerTokenMessage(requestId, { forceRefresh })
-          );
-          logRealtimeAuth(
-            forceRefresh ? 'silent-recovery-missing-token' : 'request-missing-bearer-token',
-            {
-              endpoint: '/realtime/ticket',
-              requestId,
-              recoveryAttempt: forceRefresh ? 1 : 0,
-              error: error.message
-            }
-          );
-          if (!forceRefresh) {
-            continue;
-          }
-          throw error;
-        }
-
-        const response = await fetchWithOptionalTimeout(
-          `${httpBase}/realtime/ticket`,
-          {
-            method: 'POST',
-            headers,
-            cache: 'no-store',
-            credentials: cookieAuth ? 'include' : undefined
-          },
-          {
-            timeoutMs: REALTIME_TICKET_TIMEOUT_MS,
-            label: '/realtime/ticket',
-            timeoutMessagePrefix: 'Realtime ticket request timed out after'
-          }
-        );
-
-        if (response.ok) {
-          if (forceRefresh) {
-            logRealtimeAuth('silent-recovery-success', {
-              endpoint: '/realtime/ticket',
-              requestId,
-              recoveryAttempt: 1
-            });
-          }
-
-          const payload = (await response.json()) as RealtimeTicketResponse;
-          const ticket = typeof payload.ticket === 'string' ? payload.ticket.trim() : '';
-          if (!ticket) {
-            throw new Error('Realtime ticket response was missing a ticket.');
-          }
-          return ticket;
-        }
-
-        if (response.status === 401 && !cookieAuth && !forceRefresh) {
-          continue;
-        }
-
-        if (response.status === 401 && hasInteractiveAuthHandler()) {
-          logRealtimeAuth('interactive-reauth-required', {
-            endpoint: '/realtime/ticket',
-            requestId,
-            status: response.status,
-            recoveryAttempt: forceRefresh ? 1 : 0
-          });
-          await requestInteractiveReauth({
-            reason: forceRefresh
-              ? 'Realtime ticket request returned 401 after a silent session refresh.'
-              : 'Realtime ticket request returned 401.',
-            source: 'realtime-ticket',
-            endpoint: '/realtime/ticket',
-            status: response.status,
-            requestId,
-            recoveryAttempt: forceRefresh ? 1 : 0
-          });
-        }
-
-        const message = await response.text();
-        throw new Error(message || `Realtime ticket request failed (${response.status})`);
+    async function fetchRealtimeTicket(): Promise<string> {
+      const headers = new Headers({ 'X-Request-ID': createRealtimeRequestId() });
+      const csrfToken = readCsrfToken();
+      if (csrfToken) {
+        headers.set('X-CSRF-Token', csrfToken);
       }
 
-      return null;
+      const response = await fetchWithOptionalTimeout(
+        `${httpBase}/realtime/ticket`,
+        {
+          method: 'POST',
+          headers,
+          cache: 'no-store',
+          credentials: 'include'
+        },
+        {
+          timeoutMs: REALTIME_TICKET_TIMEOUT_MS,
+          label: '/realtime/ticket',
+          timeoutMessagePrefix: 'Realtime ticket request timed out after'
+        }
+      );
+
+      if (response.status === 401) {
+        redirectToLogin();
+        throw new Error('Realtime session expired.');
+      }
+
+      if (!response.ok) {
+        throw new Error((await response.text()) || `Realtime ticket request failed (${response.status})`);
+      }
+
+      const payload = (await response.json()) as RealtimeTicketResponse;
+      const ticket = typeof payload.ticket === 'string' ? payload.ticket.trim() : '';
+      if (!ticket) {
+        throw new Error('Realtime ticket response was missing a ticket.');
+      }
+      return ticket;
     }
 
     async function connect(): Promise<void> {
-      if (connectInFlightRef.current) return;
+      if (connectInFlightRef.current) {
+        return;
+      }
       if (
         wsRef.current?.readyState === WebSocket.OPEN ||
         wsRef.current?.readyState === WebSocket.CONNECTING
@@ -331,13 +240,11 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
 
       connectInFlightRef.current = true;
       try {
-        let wsHref = wsUrl.toString();
         const ticket = await fetchRealtimeTicket();
-        const authedUrl = new URL(wsHref);
-        authedUrl.searchParams.set('ticket', String(ticket));
-        wsHref = authedUrl.toString();
+        const authedUrl = new URL(wsUrl.toString());
+        authedUrl.searchParams.set('ticket', ticket);
 
-        const ws = new WebSocket(wsHref);
+        const ws = new WebSocket(authedUrl.toString());
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -358,12 +265,14 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
         };
 
         ws.onmessage = (event) => {
-          if (event.data === 'pong') return;
+          if (event.data === 'pong') {
+            return;
+          }
           try {
             const message: unknown = JSON.parse(event.data);
             handleMessage(message);
-          } catch (err) {
-            console.error('[Realtime] Failed to parse message:', err);
+          } catch (parseError) {
+            console.error('[Realtime] Failed to parse message:', parseError);
           }
         };
 
@@ -375,46 +284,33 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
           }
           wsRef.current = null;
 
-          if (event.code === 4401 && hasInteractiveAuthHandler()) {
-            void requestInteractiveReauth({
-              reason: 'Realtime websocket authentication was rejected.',
-              source: 'realtime-websocket',
-              endpoint: '/ws/updates',
-              status: event.code
-            }).catch((error) => {
-              if (isAuthReauthRequiredError(error)) {
-                return;
-              }
-              markRealtimeUnavailable(
-                'Realtime updates unavailable: websocket authentication was rejected.'
-              );
-              scheduleReconnect();
-            });
+          if (event.code === 4401) {
+            redirectToLogin();
             return;
           }
 
           scheduleReconnect();
         };
 
-        ws.onerror = (err) => {
-          console.error('[Realtime] Error:', err);
+        ws.onerror = (errorEvent) => {
+          console.error('[Realtime] Error:', errorEvent);
           ws.close();
         };
-      } catch (err) {
+      } catch (error) {
         connectInFlightRef.current = false;
         wsRef.current = null;
-        if (isAuthReauthRequiredError(err)) {
-          return;
+        const message = error instanceof Error ? error.message : 'Realtime authentication failed.';
+        if (message !== 'Realtime session expired.') {
+          markRealtimeUnavailable(`Realtime updates unavailable: ${message}`);
+          scheduleReconnect();
         }
-        console.error('[Realtime] Ticket request failed:', err);
-        const message = err instanceof Error ? err.message : 'Realtime authentication failed.';
-        markRealtimeUnavailable(`Realtime updates unavailable: ${message}`);
-        scheduleReconnect();
       }
     }
 
     function handleMessage(message: unknown): void {
-      if (!isRecord(message)) return;
+      if (!isRecord(message)) {
+        return;
+      }
 
       let topic: string | null = null;
       let eventType: string | null = null;
