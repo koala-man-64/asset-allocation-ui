@@ -221,6 +221,9 @@ def test_nginx_https_proxying_enables_sni() -> None:
     text = (repo_root() / "nginx.conf").read_text(encoding="utf-8")
     assert "proxy_ssl_server_name on;" in text
     assert "proxy_ssl_name $proxy_host;" in text
+    assert "proxy_set_header Host $proxy_host;" in text
+    assert "proxy_set_header Host $http_host;" not in text
+    assert "proxy_set_header X-Forwarded-Host $http_host;" in text
 
 
 def test_browser_bootstrap_loads_only_ui_config() -> None:
