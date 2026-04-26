@@ -1,4 +1,5 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { PageLoader } from '@/app/components/common/PageLoader';
 import { StatePanel } from '@/app/components/common/StatePanel';
 import { Badge } from '@/app/components/ui/badge';
@@ -26,6 +27,7 @@ import {
   formatPercent,
   titleCaseWords
 } from '@/features/portfolios/lib/portfolioPresentation';
+import { portfolioApi } from '@/services/portfolioApi';
 import type { PortfolioMonitorSnapshot } from '@/types/portfolio';
 import type { RegimeSnapshot } from '@/types/regime';
 
@@ -36,6 +38,7 @@ interface PortfolioPerformanceTabProps {
   regimeHistory: readonly RegimeSnapshot[];
   regimeHistoryError?: string;
   currentRegimeCode?: string | null;
+  regimeModelName?: string;
 }
 
 const PortfolioPerformanceTrendCharts = lazy(() =>
@@ -82,13 +85,14 @@ export function PortfolioPerformanceTab({
   benchmarkError,
   regimeHistory,
   regimeHistoryError,
-  currentRegimeCode
+  currentRegimeCode,
+  regimeModelName
 }: PortfolioPerformanceTabProps) {
   const [selectedHorizon, setSelectedHorizon] = useState<ModelOutlookHorizon>('3M');
   const [selectedAssumption, setSelectedAssumption] = useState<ModelOutlookAssumption>('current');
   const [costDragOverrideBps, setCostDragOverrideBps] = useState('0');
 
-  const outlook = useMemo(
+  const fallbackOutlook = useMemo(
     () =>
       derivePortfolioModelOutlook({
         history: monitorSnapshot?.history || [],
@@ -109,6 +113,31 @@ export function PortfolioPerformanceTab({
       selectedHorizon
     ]
   );
+  const forecastQuery = useQuery({
+    queryKey: [
+      'portfolios',
+      'forecast',
+      monitorSnapshot?.accountId,
+      regimeModelName,
+      selectedHorizon,
+      selectedAssumption,
+      costDragOverrideBps
+    ],
+    queryFn: ({ signal }) =>
+      portfolioApi.getForecast(
+        {
+          accountId: String(monitorSnapshot?.accountId),
+          modelName: regimeModelName,
+          horizon: selectedHorizon,
+          assumption: selectedAssumption,
+          costDragOverrideBps: Number(costDragOverrideBps || 0)
+        },
+        signal
+      ),
+    enabled: Boolean(monitorSnapshot?.accountId)
+  });
+  const outlook = forecastQuery.data ?? fallbackOutlook;
+  const outlookSource = forecastQuery.data ? 'control-plane' : 'local fallback';
 
   if (!monitorSnapshot || monitorSnapshot.history.length === 0) {
     return (
@@ -147,6 +176,13 @@ export function PortfolioPerformanceTab({
       ) : null}
       {regimeHistoryError ? (
         <StatePanel tone="error" title="Regime History Unavailable" message={regimeHistoryError} />
+      ) : null}
+      {forecastQuery.error ? (
+        <StatePanel
+          tone="warning"
+          title="Authoritative Forecast Unavailable"
+          message={`Falling back to the local outlook model: ${String((forecastQuery.error as Error)?.message || forecastQuery.error)}`}
+        />
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-2">
@@ -215,9 +251,14 @@ export function PortfolioPerformanceTab({
               </div>
               <h3 className="mt-2 font-display text-xl">Regime-conditioned forecast</h3>
             </div>
-            <Badge variant={outlook.confidence === 'thin' ? 'secondary' : 'default'}>
-              {outlook.confidenceLabel}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={outlook.confidence === 'thin' ? 'secondary' : 'default'}>
+                {outlook.confidenceLabel}
+              </Badge>
+              <Badge variant={forecastQuery.data ? 'default' : 'secondary'}>
+                {outlookSource}
+              </Badge>
+            </div>
           </div>
 
           <div className="mt-5 space-y-5">

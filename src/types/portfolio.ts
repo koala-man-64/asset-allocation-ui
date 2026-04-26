@@ -111,6 +111,17 @@ export interface PortfolioFreshnessRow {
   reason?: string;
 }
 
+export interface PortfolioNextRebalanceSummary {
+  accountId: string;
+  asOf?: string | null;
+  rebalanceCadence: PortfolioRebalanceCadence;
+  anchorText: string;
+  nextDate?: string | null;
+  inferred: boolean;
+  basis: 'anchor' | 'cadence' | 'unknown';
+  reason: string;
+}
+
 export interface PortfolioDetail extends PortfolioSummary {
   portfolioName: string;
   accountId?: string;
@@ -260,6 +271,7 @@ export interface PortfolioMonitorSnapshot {
   history: PortfolioHistoryRow[];
   ledgerEvents: PortfolioLedgerEventRow[];
   freshness: PortfolioFreshnessRow[];
+  nextRebalance?: PortfolioNextRebalanceSummary | null;
 }
 
 export interface PortfolioBuildRunSummary {

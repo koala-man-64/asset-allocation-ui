@@ -27,7 +27,10 @@ import {
   statusBadgeVariant,
   titleCaseWords
 } from '@/features/portfolios/lib/portfolioPresentation';
-import { deriveNextRebalanceWindow } from '@/features/portfolios/lib/portfolioRebalance';
+import {
+  buildNextRebalanceWindow,
+  deriveNextRebalanceWindow
+} from '@/features/portfolios/lib/portfolioRebalance';
 import { PortfolioLibraryRail } from '@/features/portfolios/components/PortfolioLibraryRail';
 import { PortfolioOverviewTab } from '@/features/portfolios/components/PortfolioOverviewTab';
 import { DataService } from '@/services/DataService';
@@ -516,15 +519,21 @@ export function PortfolioWorkspacePage() {
     [benchmarkQuery.data, monitorSnapshot?.history]
   );
   const nextRebalance = useMemo(
-    () =>
-      deriveNextRebalanceWindow({
+    () => {
+      if (monitorSnapshot?.nextRebalance) {
+        return buildNextRebalanceWindow(monitorSnapshot.nextRebalance);
+      }
+
+      return deriveNextRebalanceWindow({
         cadence: draft.config.rebalanceCadence,
         rebalanceAnchor: draft.config.rebalanceAnchor,
         lastBuiltAt: draft.lastBuiltAt,
         effectiveFrom: draft.activeAssignment?.effectiveFrom,
         asOfDate: monitorSnapshot?.asOfDate
-      }),
+      });
+    },
     [
+      monitorSnapshot?.nextRebalance,
       draft.activeAssignment?.effectiveFrom,
       draft.config.rebalanceAnchor,
       draft.config.rebalanceCadence,
@@ -817,6 +826,7 @@ export function PortfolioWorkspacePage() {
             regimeHistory={regimeHistoryQuery.data?.rows ?? []}
             regimeHistoryError={regimeHistoryErrorMessage || undefined}
             currentRegimeCode={currentRegimeCode}
+            regimeModelName={draft.config.overlays.regimeModelName || undefined}
           />
         </Suspense>
       );

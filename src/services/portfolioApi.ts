@@ -1,5 +1,10 @@
 import { ApiError, request } from '@/services/apiService';
 import type {
+  ModelOutlookAssumption,
+  ModelOutlookHorizon,
+  PortfolioModelOutlook
+} from '@/features/portfolios/lib/portfolioForecast';
+import type {
   PortfolioAlert,
   PortfolioAlertSeverity,
   PortfolioBuildListResponse,
@@ -15,6 +20,7 @@ import type {
   PortfolioPositionRow,
   PortfolioPreviewAllocation,
   PortfolioPreviewResponse,
+  PortfolioNextRebalanceSummary,
   PortfolioRiskLimits,
   PortfolioSleeveDefinition,
   PortfolioSleeveMonitorRow,
@@ -100,6 +106,8 @@ interface RawPortfolioAccount {
   mode: string;
   accountingDepth: string;
   cadenceMode: string;
+  rebalanceCadence: 'daily' | 'weekly' | 'monthly';
+  rebalanceAnchor: string;
   baseCurrency: string;
   benchmarkSymbol?: string | null;
   inceptionDate: string;
@@ -217,6 +225,38 @@ interface RawPortfolioHistoryResponse {
   points: RawPortfolioHistoryPoint[];
   totalPoints: number;
   truncated: boolean;
+}
+
+interface RawPortfolioForecastResponse {
+  accountId: string;
+  asOf?: string | null;
+  modelName: string;
+  modelVersion?: number | null;
+  benchmarkSymbol?: string | null;
+  horizon: ModelOutlookHorizon;
+  assumption: ModelOutlookAssumption;
+  costDragOverrideBps: number;
+  expectedReturnPct?: number | null;
+  expectedActiveReturnPct?: number | null;
+  downsidePct?: number | null;
+  upsidePct?: number | null;
+  confidence: PortfolioModelOutlook['confidence'];
+  confidenceLabel: string;
+  sampleSize: number;
+  sampleMode: PortfolioModelOutlook['sampleMode'];
+  appliedRegimeCode: string;
+  notes: string[];
+}
+
+interface RawPortfolioNextRebalanceResponse {
+  accountId: string;
+  asOf?: string | null;
+  rebalanceCadence: 'daily' | 'weekly' | 'monthly';
+  anchorText: string;
+  nextDate?: string | null;
+  inferred: boolean;
+  basis: 'anchor' | 'cadence' | 'unknown';
+  reason: string;
 }
 
 interface RawPortfolioPositionContributor {
@@ -416,15 +456,23 @@ function mapSleeveToAllocation(sleeve: PortfolioSleeveDefinition): RawPortfolioA
   };
 }
 
-function buildConfig(benchmarkSymbol: string, baseCurrency: string, sleeves: PortfolioSleeveDefinition[]): PortfolioConfig {
+function buildConfig(
+  benchmarkSymbol: string,
+  baseCurrency: string,
+  sleeves: PortfolioSleeveDefinition[],
+  options?: {
+    rebalanceCadence?: PortfolioConfig['rebalanceCadence'];
+    rebalanceAnchor?: string;
+  }
+): PortfolioConfig {
   const targetWeightPct = Number(
     sleeves.reduce((total, sleeve) => total + sleeve.targetWeightPct, 0).toFixed(2)
   );
   return {
     benchmarkSymbol,
     baseCurrency,
-    rebalanceCadence: 'weekly',
-    rebalanceAnchor: 'Strategy native cadence',
+    rebalanceCadence: options?.rebalanceCadence || 'weekly',
+    rebalanceAnchor: options?.rebalanceAnchor || 'Strategy native cadence',
     targetGrossExposurePct: targetWeightPct,
     cashReservePct: Number(Math.max(0, 100 - targetWeightPct).toFixed(2)),
     maxNames: 60,
@@ -480,6 +528,36 @@ function mapAlert(alert: RawPortfolioAlert): PortfolioAlert {
   };
 }
 
+function mapForecast(response: RawPortfolioForecastResponse): PortfolioModelOutlook {
+  return {
+    expectedReturnPct: response.expectedReturnPct ?? null,
+    expectedActiveReturnPct: response.expectedActiveReturnPct ?? null,
+    downsidePct: response.downsidePct ?? null,
+    upsidePct: response.upsidePct ?? null,
+    confidence: response.confidence,
+    confidenceLabel: response.confidenceLabel,
+    sampleSize: response.sampleSize,
+    sampleMode: response.sampleMode,
+    appliedRegimeCode: response.appliedRegimeCode,
+    notes: response.notes || []
+  };
+}
+
+function mapNextRebalance(
+  response: RawPortfolioNextRebalanceResponse
+): PortfolioNextRebalanceSummary {
+  return {
+    accountId: response.accountId,
+    asOf: response.asOf || null,
+    rebalanceCadence: response.rebalanceCadence,
+    anchorText: response.anchorText,
+    nextDate: response.nextDate || null,
+    inferred: response.inferred,
+    basis: response.basis,
+    reason: response.reason
+  };
+}
+
 function resolveOpeningCash(events: RawPortfolioLedgerEvent[]): number | null {
   const openingEvent = [...events]
     .sort((left, right) => Date.parse(left.effectiveAt) - Date.parse(right.effectiveAt))
@@ -497,7 +575,11 @@ function buildDetailFromResponses(
   const config = buildConfig(
     normalizeBenchmark(accountDetail.account.benchmarkSymbol ?? activeRevision?.benchmarkSymbol),
     accountDetail.account.baseCurrency,
-    sleeves
+    sleeves,
+    {
+      rebalanceCadence: accountDetail.account.rebalanceCadence,
+      rebalanceAnchor: accountDetail.account.rebalanceAnchor
+    }
   );
   const openingCash = resolveOpeningCash(accountDetail.recentLedgerEvents || []);
 
@@ -836,6 +918,8 @@ export const portfolioApi = {
       name: payload.name.trim() || portfolioName,
       description: payload.description || '',
       mandate: payload.mandate || '',
+      rebalanceCadence: payload.config.rebalanceCadence,
+      rebalanceAnchor: payload.config.rebalanceAnchor || 'Strategy native cadence',
       baseCurrency: payload.config.baseCurrency || 'USD',
       benchmarkSymbol: payload.config.benchmarkSymbol || null,
       inceptionDate: payload.inceptionDate,
@@ -950,9 +1034,36 @@ export const portfolioApi = {
     };
   },
 
+  async getForecast(
+    payload: {
+      accountId: string;
+      horizon: ModelOutlookHorizon;
+      assumption: ModelOutlookAssumption;
+      costDragOverrideBps?: number;
+      modelName?: string;
+      modelVersion?: number;
+    },
+    signal?: AbortSignal
+  ): Promise<PortfolioModelOutlook> {
+    const response = await request<RawPortfolioForecastResponse>(
+      `/portfolio-accounts/${encodeURIComponent(payload.accountId)}/forecast`,
+      {
+        params: {
+          modelName: payload.modelName,
+          modelVersion: payload.modelVersion,
+          horizon: payload.horizon,
+          assumption: payload.assumption,
+          costDragOverrideBps: payload.costDragOverrideBps ?? 0
+        },
+        signal
+      }
+    );
+    return mapForecast(response);
+  },
+
   async getMonitorSnapshot(identifier: string, signal?: AbortSignal): Promise<PortfolioMonitorSnapshot> {
     const account = await resolveAccount(identifier, signal);
-    const [accountDetail, portfolioDetail, snapshot, history, positions, alerts] = await Promise.all([
+    const [accountDetail, portfolioDetail, snapshot, history, positions, alerts, nextRebalance] = await Promise.all([
       request<RawPortfolioAccountDetailResponse>(
         `/portfolio-accounts/${encodeURIComponent(account.accountId)}`,
         { signal }
@@ -973,6 +1084,10 @@ export const portfolioApi = {
       requestOptional<RawPortfolioAlertListResponse>(
         `/portfolio-accounts/${encodeURIComponent(account.accountId)}/alerts`,
         { params: { includeResolved: false }, signal }
+      ),
+      requestOptional<RawPortfolioNextRebalanceResponse>(
+        `/portfolio-accounts/${encodeURIComponent(account.accountId)}/next-rebalance`,
+        { signal }
       )
     ]);
 
@@ -1095,7 +1210,8 @@ export const portfolioApi = {
       positions: positionRows,
       history: historyRows,
       ledgerEvents: detail.recentLedgerEvents,
-      freshness
+      freshness,
+      nextRebalance: nextRebalance ? mapNextRebalance(nextRebalance) : null
     };
   },
 
