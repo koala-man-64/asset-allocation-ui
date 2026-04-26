@@ -305,6 +305,17 @@ def test_ui_release_workflow_publishes_release_manifest_artifact() -> None:
     assert '"image_digest": os.environ["IMAGE_DIGEST"]' in text
 
 
+def test_ui_release_workflow_supports_manual_dispatch_without_bypassing_ci() -> None:
+    text = workflow_text("release.yml")
+    assert "workflow_dispatch:" in text
+    assert 'if [ "${GITHUB_REF_NAME}" != "main" ]' in text
+    assert "actions/workflows/ci.yml/runs?branch=main&event=push&per_page=100" in text
+    assert (
+        "release.yml manual dispatch requires a successful UI CI push run on main for the selected commit."
+        in text
+    )
+
+
 def test_setup_env_dry_run_reports_sources_without_prompting() -> None:
     script = repo_root() / "scripts" / "setup-env.ps1"
     completed = subprocess.run(

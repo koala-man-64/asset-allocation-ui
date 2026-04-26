@@ -2,6 +2,7 @@ name: UI Release
 run-name: UI Release / ${{ github.event_name }} / ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows:
       - UI CI
@@ -21,14 +22,35 @@ jobs:
   release:
     name: release
     if: |
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
     runs-on: ubuntu-22.04
     env:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
+      - name: Validate manual dispatch release ref
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "release.yml must be run from main because production releases are cut from main only." >&2
+            exit 1
+          fi
+          gh api \
+            --method GET \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=100" > workflow-runs.json
+          ci_run_id="$(jq -r --arg sha "${RELEASE_SHA}" '.workflow_runs[] | select(.head_sha == $sha and .head_branch == "main" and .conclusion == "success") | .id' workflow-runs.json | head -n 1)"
+          : "${ci_run_id:?release.yml manual dispatch requires a successful UI CI push run on main for the selected commit.}"
+
       - name: Checkout UI repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
