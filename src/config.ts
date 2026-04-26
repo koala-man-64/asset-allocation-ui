@@ -3,19 +3,25 @@ import type { UiRuntimeConfig } from '@asset-allocation/contracts';
 import { normalizeApiBaseUrl } from '@/utils/apiBaseUrl';
 import { logUiDiagnostic, summarizeUrlForLogs } from '@/services/uiDiagnostics';
 
+export type AuthProvider = 'disabled' | 'oidc' | 'password';
+export type AuthSessionMode = 'bearer' | 'cookie';
+
 type RuntimeUiConfigSource = Omit<
   Partial<UiRuntimeConfig>,
-  'authSessionMode' | 'oidcScopes' | 'oidcAudience' | 'oidcPostLogoutRedirectUri' | 'uiAuthEnabled'
+  | 'authProvider'
+  | 'authSessionMode'
+  | 'oidcScopes'
+  | 'oidcAudience'
+  | 'oidcPostLogoutRedirectUri'
+  | 'uiAuthEnabled'
 > & {
+  authProvider?: string;
   authSessionMode?: string;
   oidcScopes?: string[] | string;
   oidcAudience?: string[] | string;
   oidcPostLogoutRedirectUri?: string;
   uiAuthEnabled?: boolean | string;
 };
-
-
-export type AuthSessionMode = 'bearer' | 'cookie';
 
 declare global {
   interface Window {
@@ -70,7 +76,22 @@ function resolveScopes(raw: unknown): string[] {
   return normalized ? normalized.split(/\s+/).filter(Boolean) : [];
 }
 
-function resolveAuthSessionMode(...values: unknown[]): AuthSessionMode {
+function resolveAuthProvider(...values: unknown[]): AuthProvider | null {
+  for (const value of values) {
+    const normalized = String(value ?? '')
+      .trim()
+      .toLowerCase();
+    if (normalized === 'disabled' || normalized === 'oidc' || normalized === 'password') {
+      return normalized;
+    }
+  }
+  return null;
+}
+
+function resolveAuthSessionMode(
+  defaultMode: AuthSessionMode,
+  ...values: unknown[]
+): AuthSessionMode {
   for (const value of values) {
     const normalized = String(value ?? '')
       .trim()
@@ -79,7 +100,7 @@ function resolveAuthSessionMode(...values: unknown[]): AuthSessionMode {
       return normalized;
     }
   }
-  return 'bearer';
+  return defaultMode;
 }
 
 function derivePostLogoutRedirectUri(
@@ -122,14 +143,10 @@ function deriveOidcRedirectUri(
 }
 
 const runtimeConfig = typeof window === 'undefined' ? {} : window.__API_UI_CONFIG__ || {};
-
-const apiBaseUrl = normalizeApiBaseUrl(
-  runtimeConfig.apiBaseUrl || import.meta.env.VITE_API_BASE_URL,
-  '/api'
-);
-const authSessionMode = resolveAuthSessionMode(
-  runtimeConfig.authSessionMode,
-  import.meta.env.VITE_AUTH_SESSION_MODE
+const rawUiAuthEnabled = resolveBoolean(
+  runtimeConfig.uiAuthEnabled,
+  import.meta.env.VITE_UI_AUTH_ENABLED,
+  true
 );
 const oidcAuthority = resolveString(
   runtimeConfig.oidcAuthority,
@@ -150,30 +167,41 @@ const oidcPostLogoutRedirectUri = derivePostLogoutRedirectUri(
   runtimeConfig.oidcPostLogoutRedirectUri,
   oidcRedirectUri
 );
-const uiAuthEnabled = resolveBoolean(
-  runtimeConfig.uiAuthEnabled,
-  import.meta.env.VITE_UI_AUTH_ENABLED,
-  true
-);
-const oidcEnabled =
-  uiAuthEnabled &&
-  resolveBoolean(
-    runtimeConfig.oidcEnabled,
-    Boolean(oidcAuthority && oidcClientId && oidcRedirectUri)
-  );
+const inferredAuthProvider =
+  resolveAuthProvider(runtimeConfig.authProvider, import.meta.env.VITE_UI_AUTH_PROVIDER) ??
+  (rawUiAuthEnabled ? (oidcAuthority || oidcClientId || oidcScopes.length > 0 ? 'oidc' : 'password') : 'disabled');
+const uiAuthEnabled = rawUiAuthEnabled && inferredAuthProvider !== 'disabled';
+const authProvider: AuthProvider = uiAuthEnabled ? inferredAuthProvider : 'disabled';
 const authRequired =
-  uiAuthEnabled &&
+  authProvider !== 'disabled' &&
   resolveBoolean(
     runtimeConfig.authRequired,
     runtimeConfig.uiAuthEnabled,
     import.meta.env.VITE_UI_AUTH_ENABLED,
     true
   );
+const authSessionMode = resolveAuthSessionMode(
+  authProvider === 'password' ? 'cookie' : 'bearer',
+  authProvider === 'password' ? 'cookie' : runtimeConfig.authSessionMode,
+  authProvider === 'password' ? 'cookie' : import.meta.env.VITE_AUTH_SESSION_MODE
+);
+const oidcEnabled =
+  authRequired &&
+  authProvider === 'oidc' &&
+  resolveBoolean(
+    runtimeConfig.oidcEnabled,
+    Boolean(oidcAuthority && oidcClientId && oidcRedirectUri && oidcScopes.length > 0)
+  );
+const apiBaseUrl = normalizeApiBaseUrl(
+  runtimeConfig.apiBaseUrl || import.meta.env.VITE_API_BASE_URL,
+  '/api'
+);
 
 if (typeof window !== 'undefined') {
   const nextRuntimeConfig: RuntimeUiConfigSource = {
     ...(window.__API_UI_CONFIG__ || {}),
     apiBaseUrl,
+    authProvider,
     authSessionMode,
     oidcScopes,
     oidcAudience,
@@ -194,15 +222,17 @@ if (typeof window !== 'undefined') {
     nextRuntimeConfig.oidcPostLogoutRedirectUri = oidcPostLogoutRedirectUri;
   }
   window.__API_UI_CONFIG__ = nextRuntimeConfig;
+
   logUiDiagnostic('Config', 'runtime-config-resolved', {
     origin: window.location.origin,
     apiBaseUrl,
     apiBaseUrlMode: /^https?:\/\//i.test(apiBaseUrl) ? 'absolute' : 'same-origin',
     apiBaseUrlDetails: summarizeUrlForLogs(apiBaseUrl),
+    authProvider,
     authSessionMode,
     uiAuthEnabled,
-    oidcEnabled,
     authRequired,
+    oidcEnabled,
     oidcAuthority: oidcAuthority || null,
     oidcClientIdConfigured: Boolean(oidcClientId),
     oidcScopes,
@@ -214,6 +244,7 @@ if (typeof window !== 'undefined') {
 
 export const config = {
   apiBaseUrl,
+  authProvider,
   authSessionMode,
   uiAuthEnabled,
   oidcEnabled,

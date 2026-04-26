@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StrategyDetail } from '@/types/strategy';
 
-vi.mock('@/services/authTransport', () => ({
-  appendAuthHeaders: vi.fn(async (headersInput?: HeadersInit) => new Headers(headersInput))
-}));
-
 type StrategyApiModule = typeof import('@/services/strategyApi');
 
 function jsonResponse(payload: unknown, status = 200): Response {

@@ -27,7 +27,10 @@ export function buildEmptyPortfolioSleeve(index: number): PortfolioSleeveDefinit
     label: `Sleeve ${index + 1}`,
     strategyName: '',
     strategyVersion: 1,
+    allocationMode: 'percent',
     targetWeightPct: 0,
+    targetNotionalBaseCcy: null,
+    derivedWeightPct: null,
     minWeightPct: 0,
     maxWeightPct: 35,
     rebalanceBandPct: 2,
@@ -65,6 +68,8 @@ export function buildEmptyPortfolioDetail(): PortfolioDetail {
     config: {
       benchmarkSymbol: 'SPY',
       baseCurrency: 'USD',
+      allocationMode: 'percent',
+      allocatableCapital: null,
       rebalanceCadence: 'weekly',
       rebalanceAnchor: 'Strategy native cadence',
       targetGrossExposurePct: 100,
@@ -110,7 +115,10 @@ export function sortPortfolios(portfolios: readonly PortfolioSummary[]): Portfol
 }
 
 export function getTargetWeightTotal(detail: PortfolioDetail): number {
-  return detail.config.sleeves.reduce((total, sleeve) => total + sleeve.targetWeightPct, 0);
+  return detail.config.sleeves.reduce(
+    (total, sleeve) => total + (sleeve.derivedWeightPct ?? sleeve.targetWeightPct),
+    0
+  );
 }
 
 export function getRemainingWeightPct(detail: PortfolioDetail): number {

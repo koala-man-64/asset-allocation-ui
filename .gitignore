@@ -10,6 +10,7 @@ test-results/
 blob-report/
 *.tsbuildinfo
 *.log
+__pycache__/
 pnpm-debug.log*
 npm-debug.log*
 yarn-error.log*

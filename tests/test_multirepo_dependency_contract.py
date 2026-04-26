@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 
 
 def repo_root() -> Path:
@@ -24,29 +25,36 @@ def workflow_text(name: str) -> str:
     return (repo_root() / ".github" / "workflows" / name).read_text(encoding="utf-8")
 
 
-def test_package_json_uses_versioned_contracts_dependency() -> None:
+def resolved_contracts_version() -> str:
+    text = (repo_root() / "pnpm-lock.yaml").read_text(encoding="utf-8")
+    match = re.search(r"'@asset-allocation/contracts':\n        specifier: .+\n        version: ([^\n]+)", text)
+    assert match, "pnpm-lock.yaml must record a resolved published contracts version"
+    return match.group(1).strip()
+
+
+def test_package_json_uses_supported_contracts_range() -> None:
     text = (repo_root() / "package.json").read_text(encoding="utf-8")
-    assert f'"@asset-allocation/contracts": "{contracts_version()}"' in text
+    assert f'"@asset-allocation/contracts": "{contracts_spec()}"' in text
     assert "file:../asset-allocation-contracts/ts" not in text
 
 
 def test_lockfile_uses_published_contracts_package() -> None:
-    version = contracts_version()
     text = (repo_root() / "pnpm-lock.yaml").read_text(encoding="utf-8")
-    assert f"specifier: {version}" in text
+    version = resolved_contracts_version()
+    assert f"specifier: '{contracts_spec()}'" in text
     assert f"version: {version}" in text
     assert f"@asset-allocation/contracts@{version}" in text
     assert "file:../asset-allocation-contracts/ts" not in text
     assert "directory: ../asset-allocation-contracts/ts" not in text
 
 
-def test_broker_account_types_remain_local_bridge() -> None:
+def test_broker_account_types_flow_through_published_contracts() -> None:
     text = (repo_root() / "src" / "types" / "brokerAccounts.ts").read_text(
         encoding="utf-8"
     )
-    assert "Temporary local bridge" in text
-    assert "export interface BrokerAccountSummary" in text
-    assert "export interface BrokerAccountDetail" in text
+    assert "from '@asset-allocation/contracts'" in text
+    assert "BrokerAccountConfiguration" in text
+    assert "BrokerTradingPolicyUpdateRequest" in text
 
 
 def test_ui_dockerfile_does_not_copy_contracts_repo() -> None:
@@ -59,6 +67,10 @@ def test_ui_dockerfile_does_not_copy_contracts_repo() -> None:
 def test_ci_workflow_uses_registry_auth_without_contracts_checkout() -> None:
     text = workflow_text("ci.yml")
     assert "Checkout contracts repository" not in text
+    assert "contracts_version_override" in text
+    assert "resolve_contracts_version.py" in text
+    assert "npm view @asset-allocation/contracts versions --json" in text
+    assert "pnpm install --lockfile-only --no-frozen-lockfile" in text
     assert "pnpm install --frozen-lockfile" in text
     assert "secrets.NPMRC" in text
 
@@ -78,6 +90,10 @@ def test_release_workflow_uses_registry_auth_without_contracts_checkout() -> Non
     release_text = workflow_text("release.yml")
     assert "Checkout contracts repository" not in release_text
     assert '--secret "id=npmrc,src=${{ steps.npmrc.outputs.path }}"' in release_text
+    assert "contracts_version_override" in release_text
+    assert "resolve_contracts_version.py" in release_text
+    assert "npm view @asset-allocation/contracts versions --json" in release_text
+    assert "pnpm install --lockfile-only --no-frozen-lockfile" in release_text
     assert "secrets.NPMRC" in release_text
 
 

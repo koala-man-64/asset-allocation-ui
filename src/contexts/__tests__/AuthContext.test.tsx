@@ -1,50 +1,37 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthProvider, useAuth } from '../AuthContext';
-import { resetMsalSessionForTests } from '../msalSession';
-import {
-  AuthReauthRequiredError,
-  appendAuthHeaders,
-  requestInteractiveReauth,
-  resetAuthTransportForTests
-} from '@/services/authTransport';
-
-const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
-const POST_LOGOUT_RESTART_PATH_STORAGE_KEY = 'asset-allocation.post-logout-restart-path';
-
-const mockMsal = vi.hoisted(() => ({
-  initialize: vi.fn(),
-  handleRedirectPromise: vi.fn(),
-  ssoSilent: vi.fn(),
-  getActiveAccount: vi.fn(),
-  getAllAccounts: vi.fn(),
-  setActiveAccount: vi.fn(),
-  acquireTokenSilent: vi.fn(),
-  loginRedirect: vi.fn(),
-  logoutRedirect: vi.fn()
-}));
 
 const mockConfig = vi.hoisted(() => ({
-  oidcEnabled: true,
-  authRequired: false,
-  oidcClientId: 'spa-client-id',
-  oidcAuthority: 'https://login.microsoftonline.com/tenant-id',
-  oidcScopes: ['api://asset-allocation-api/user_impersonation'],
-  oidcRedirectUri: 'https://asset-allocation.example.com/auth/callback',
-  oidcPostLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
+  authProvider: 'password' as 'password' | 'disabled' | 'oidc',
+  authSessionMode: 'cookie' as 'cookie' | 'bearer',
+  authRequired: true,
+  uiAuthEnabled: true,
+  oidcEnabled: false,
+  apiBaseUrl: '/api',
+  oidcAuthority: '',
+  oidcClientId: '',
+  oidcScopes: [] as string[],
+  oidcRedirectUri: '',
+  oidcPostLogoutRedirectUri: '',
+  oidcAudience: [] as string[]
+}));
+
+const mockDataService = vi.hoisted(() => ({
+  createPasswordAuthSession: vi.fn(),
+  deleteAuthSession: vi.fn(),
+  getAuthSessionStatusWithMeta: vi.fn()
 }));
 
 vi.mock('@/config', () => ({
   config: mockConfig
 }));
 
-vi.mock('@azure/msal-browser', () => ({
-  InteractionRequiredAuthError: class InteractionRequiredAuthError extends Error {},
-  PublicClientApplication: vi.fn(function PublicClientApplication() {
-    return mockMsal;
-  })
+vi.mock('@/services/DataService', () => ({
+  DataService: mockDataService
 }));
 
 function Harness() {
@@ -56,12 +43,11 @@ function Harness() {
       <div data-testid="phase">{auth.phase}</div>
       <div data-testid="busy">{String(auth.busy)}</div>
       <div data-testid="authenticated">{String(auth.authenticated)}</div>
+      <div data-testid="user-label">{auth.userLabel ?? ''}</div>
       <div data-testid="error">{auth.error ?? ''}</div>
-      <div data-testid="interaction-reason">{auth.interactionReason ?? ''}</div>
-      <div data-testid="interaction-endpoint">{auth.interactionRequest?.endpoint ?? ''}</div>
-      <button onClick={() => auth.signIn('/system-status')}>Sign in</button>
+      <button onClick={() => void auth.login('shared-password').catch(() => undefined)}>Log in</button>
+      <button onClick={() => auth.signIn('/system-status')}>Open login</button>
       <button onClick={() => auth.signOut()}>Sign out</button>
-      <button onClick={() => auth.signOutAndRestart('/system-status')}>Sign out and restart</button>
     </div>
   );
 }
@@ -70,198 +56,74 @@ describe('AuthProvider', () => {
   beforeEach(() => {
     window.history.pushState({}, 'Home', '/');
     window.sessionStorage.clear();
-    mockConfig.oidcEnabled = true;
-    mockConfig.authRequired = false;
-    mockConfig.oidcClientId = 'spa-client-id';
-    mockConfig.oidcAuthority = 'https://login.microsoftonline.com/tenant-id';
-    mockConfig.oidcScopes = ['api://asset-allocation-api/user_impersonation'];
-    mockConfig.oidcRedirectUri = 'https://asset-allocation.example.com/auth/callback';
-    mockConfig.oidcPostLogoutRedirectUri =
-      'https://asset-allocation.example.com/auth/logout-complete';
-
-    resetAuthTransportForTests();
-    resetMsalSessionForTests();
-
-    mockMsal.initialize.mockReset();
-    mockMsal.handleRedirectPromise.mockReset();
-    mockMsal.ssoSilent.mockReset();
-    mockMsal.getActiveAccount.mockReset();
-    mockMsal.getAllAccounts.mockReset();
-    mockMsal.setActiveAccount.mockReset();
-    mockMsal.acquireTokenSilent.mockReset();
-    mockMsal.loginRedirect.mockReset();
-    mockMsal.logoutRedirect.mockReset();
-
-    mockMsal.initialize.mockResolvedValue(undefined);
-    mockMsal.handleRedirectPromise.mockResolvedValue(null);
-    mockMsal.ssoSilent.mockResolvedValue({ account: null });
-    mockMsal.getActiveAccount.mockReturnValue(null);
-    mockMsal.getAllAccounts.mockReturnValue([]);
-    mockMsal.loginRedirect.mockResolvedValue(undefined);
-    mockMsal.logoutRedirect.mockResolvedValue(undefined);
-  });
-
-  it('initializes msal before starting the redirect flow', async () => {
-    const { PublicClientApplication } = await import('@azure/msal-browser');
-    window.history.pushState({}, 'Login', '/login');
-
-    render(
-      <AuthProvider>
-        <Harness />
-      </AuthProvider>
-    );
-
-    expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
-    expect(screen.getByTestId('busy')).toHaveTextContent('false');
-
-    await waitFor(() => {
-      expect(screen.getByTestId('ready')).toHaveTextContent('true');
-    });
-
-    expect(PublicClientApplication).toHaveBeenCalledWith(
-      expect.objectContaining({
-        auth: expect.objectContaining({
-          clientId: 'spa-client-id',
-          authority: 'https://login.microsoftonline.com/tenant-id',
-          redirectUri: 'https://asset-allocation.example.com/auth/callback',
-          postLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
-        })
-      })
-    );
-    expect(mockMsal.handleRedirectPromise).toHaveBeenCalledWith({
-      navigateToLoginRequestUrl: false
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-    expect(screen.getByTestId('phase')).toHaveTextContent('redirecting');
-    expect(screen.getByTestId('busy')).toHaveTextContent('true');
-
-    await waitFor(() => {
-      expect(mockMsal.initialize).toHaveBeenCalled();
-      expect(mockMsal.loginRedirect).toHaveBeenCalledWith({
-        scopes: ['api://asset-allocation-api/user_impersonation']
-      });
-    });
-    expect(window.sessionStorage.getItem(POST_LOGIN_PATH_STORAGE_KEY)).toBe('/system-status');
-  });
-
-  it('surfaces redirect startup failures', async () => {
-    mockMsal.loginRedirect.mockRejectedValueOnce(new Error('popup blocked'));
-
-    render(
-      <AuthProvider>
-        <Harness />
-      </AuthProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('ready')).toHaveTextContent('true');
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-    expect(screen.getByTestId('phase')).toHaveTextContent('redirecting');
-    expect(screen.getByTestId('busy')).toHaveTextContent('true');
-
-    await waitFor(() => {
-      expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
-      expect(screen.getByTestId('busy')).toHaveTextContent('false');
-      expect(screen.getByTestId('error')).toHaveTextContent(
-        'OIDC sign-in could not be started. popup blocked'
-      );
-    });
-  });
-
-  it('marks the callback bootstrap as redirecting before redirect handling resolves', () => {
-    window.history.pushState({}, 'Callback', '/auth/callback');
-    mockMsal.handleRedirectPromise.mockImplementation(() => new Promise(() => {}));
-
-    render(
-      <AuthProvider>
-        <Harness />
-      </AuthProvider>
-    );
-
-    expect(screen.getByTestId('ready')).toHaveTextContent('false');
-    expect(screen.getByTestId('phase')).toHaveTextContent('redirecting');
-    expect(screen.getByTestId('busy')).toHaveTextContent('true');
-  });
-
-  it('marks sign-out as busy as soon as the redirect starts', async () => {
-    const account = { username: 'analyst@example.com', name: 'Analyst' };
-    window.history.pushState({}, 'Login', '/login');
-    mockMsal.getAllAccounts.mockReturnValue([account]);
-
-    render(
-      <AuthProvider>
-        <Harness />
-      </AuthProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
-      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
-    expect(screen.getByTestId('phase')).toHaveTextContent('signing-out');
-    expect(screen.getByTestId('busy')).toHaveTextContent('true');
-
-    await waitFor(() => {
-      expect(mockMsal.logoutRedirect).toHaveBeenCalledWith({
-        account,
-        postLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
-      });
-    });
-  });
-
-  it('queues a clean restart path before starting logout', async () => {
-    const account = { username: 'analyst@example.com', name: 'Analyst' };
-    window.history.pushState({}, 'Login', '/login');
-    mockMsal.getAllAccounts.mockReturnValue([account]);
-
-    render(
-      <AuthProvider>
-        <Harness />
-      </AuthProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
-      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Sign out and restart' }));
-
-    expect(window.sessionStorage.getItem(POST_LOGOUT_RESTART_PATH_STORAGE_KEY)).toBe(
-      '/system-status'
-    );
-    expect(screen.getByTestId('phase')).toHaveTextContent('signing-out');
-
-    await waitFor(() => {
-      expect(mockMsal.logoutRedirect).toHaveBeenCalledWith({
-        account,
-        postLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
-      });
-    });
-  });
-
-  it('does not auto-redirect after a silent SSO interaction-required response', async () => {
-    const { InteractionRequiredAuthError } = await import('@azure/msal-browser');
+    mockConfig.authProvider = 'password';
+    mockConfig.authSessionMode = 'cookie';
     mockConfig.authRequired = true;
-    window.history.pushState({}, 'Login', '/login');
-    mockMsal.ssoSilent.mockRejectedValueOnce(new InteractionRequiredAuthError('interaction required'));
+    mockConfig.uiAuthEnabled = true;
+    mockConfig.oidcEnabled = false;
+    mockDataService.createPasswordAuthSession.mockReset();
+    mockDataService.deleteAuthSession.mockReset();
+    mockDataService.getAuthSessionStatusWithMeta.mockReset();
+    mockDataService.createPasswordAuthSession.mockResolvedValue({
+      data: {
+        authMode: 'password',
+        subject: 'shared-password',
+        displayName: 'Shared Operator',
+        username: 'shared',
+        requiredRoles: [],
+        grantedRoles: []
+      },
+      meta: {
+        requestId: 'req-1',
+        status: 200,
+        durationMs: 12,
+        url: '/api/auth/session'
+      }
+    });
+    mockDataService.deleteAuthSession.mockResolvedValue({});
+  });
 
-    render(
-      <AuthProvider>
-        <Harness />
-      </AuthProvider>
+  function renderHarness() {
+    return render(
+      <BrowserRouter>
+        <AuthProvider>
+          <Harness />
+        </AuthProvider>
+      </BrowserRouter>
     );
+  }
+
+  it('starts ready and signed out in password mode', async () => {
+    renderHarness();
 
     await waitFor(() => {
-      expect(mockMsal.ssoSilent).toHaveBeenCalledWith({
-        scopes: ['api://asset-allocation-api/user_impersonation'],
-        redirectUri: 'https://asset-allocation.example.com/auth/silent-callback.html'
-      });
+      expect(screen.getByTestId('ready')).toHaveTextContent('true');
+    });
+    expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
+    expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
+  });
+
+  it('authenticates after a successful password login', async () => {
+    renderHarness();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+
+    await waitFor(() => {
+      expect(mockDataService.createPasswordAuthSession).toHaveBeenCalledWith('shared-password');
+      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+      expect(screen.getByTestId('user-label')).toHaveTextContent('Shared Operator');
+    });
+  });
+
+  it('surfaces password login failures', async () => {
+    mockDataService.createPasswordAuthSession.mockRejectedValueOnce(new Error('Invalid password'));
+
+    renderHarness();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+
+    await waitFor(() => {
       expect(screen.getByTestId('phase')).toHaveTextContent('signed-out');
       expect(screen.getByTestId('ready')).toHaveTextContent('true');
       expect(screen.getByTestId('interaction-reason')).toHaveTextContent('');
@@ -365,164 +227,35 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('phase')).toHaveTextContent('session-expired');
       expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
-      expect(screen.getByTestId('interaction-reason')).toHaveTextContent(
-        'API /system/status returned 401.'
-      );
-      expect(screen.getByTestId('interaction-endpoint')).toHaveTextContent('');
-      expect(mockMsal.loginRedirect).not.toHaveBeenCalled();
+      expect(screen.getByTestId('error')).toHaveTextContent('Invalid password');
     });
   });
 
-  it('logs out and restarts login when background reauth requires an OIDC reset', async () => {
-    const account = { username: 'analyst@example.com', name: 'Analyst' };
-    mockConfig.authRequired = true;
-    window.history.pushState({}, 'Login', '/login');
-    mockMsal.getAllAccounts.mockReturnValue([account]);
+  it('navigates to the centralized login route when signIn is requested', async () => {
+    renderHarness();
 
-    render(
-      <AuthProvider>
-        <Harness />
-      </AuthProvider>
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open login' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
+      expect(window.location.pathname).toBe('/login');
     });
-
-    await act(async () => {
-      await expect(
-        requestInteractiveReauth({
-          reason: 'OIDC token refresh did not produce a bearer token.',
-          source: 'silent-auth-recovery-missing-token',
-          endpoint: '/auth/session',
-          status: 401,
-          requestId: 'req-1',
-          recoveryAttempt: 1,
-          returnPath: '/system-status',
-          resetOidcSession: true
-        })
-      ).rejects.toBeInstanceOf(AuthReauthRequiredError);
-    });
-
-    expect(window.sessionStorage.getItem(POST_LOGOUT_RESTART_PATH_STORAGE_KEY)).toBe(
-      '/system-status'
-    );
-    expect(screen.getByTestId('phase')).toHaveTextContent('signing-out');
-
-    await waitFor(() => {
-      expect(mockMsal.logoutRedirect).toHaveBeenCalledWith({
-        account,
-        postLogoutRedirectUri: 'https://asset-allocation.example.com/auth/logout-complete'
-      });
-    });
+    expect(new URLSearchParams(window.location.search).get('returnTo')).toBe('/system-status');
   });
 
-  it('passes forceRefresh to acquireTokenSilent when a caller requests a fresh token', async () => {
-    const account = { username: 'analyst@example.com', name: 'Analyst' };
-    mockConfig.authRequired = true;
-    window.history.pushState({}, 'Login', '/login');
-    mockMsal.getAllAccounts.mockReturnValue([account]);
-    mockMsal.acquireTokenSilent.mockResolvedValueOnce({ accessToken: 'fresh-token' });
+  it('clears the cookie session and returns to the login page on sign-out', async () => {
+    renderHarness();
 
-    render(
-      <AuthProvider>
-        <Harness />
-      </AuthProvider>
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
-    });
-
-    let headers: Headers | undefined;
-    await act(async () => {
-      headers = await appendAuthHeaders(undefined, { forceRefresh: true });
-    });
-
-    expect(headers?.get('Authorization')).toBe('Bearer fresh-token');
-    expect(mockMsal.acquireTokenSilent).toHaveBeenCalledWith({
-      account,
-      scopes: ['api://asset-allocation-api/user_impersonation'],
-      forceRefresh: true
-    });
-  });
-
-  it('switches into session-expired when a forced refresh requires interaction', async () => {
-    const account = { username: 'analyst@example.com', name: 'Analyst' };
-    const { InteractionRequiredAuthError } = await import('@azure/msal-browser');
-    mockConfig.authRequired = true;
-    window.history.pushState({}, 'Login', '/login');
-    mockMsal.getAllAccounts.mockReturnValue([account]);
-    mockMsal.acquireTokenSilent.mockRejectedValueOnce(
-      new InteractionRequiredAuthError('refresh interaction required')
-    );
-
-    render(
-      <AuthProvider>
-        <Harness />
-      </AuthProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
-    });
-
-    await act(async () => {
-      await expect(appendAuthHeaders(undefined, { forceRefresh: true })).rejects.toBeInstanceOf(
-        AuthReauthRequiredError
-      );
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('phase')).toHaveTextContent('session-expired');
-      expect(screen.getByTestId('interaction-reason')).toHaveTextContent(
-        'OIDC session refresh requires sign-in.'
-      );
-    });
-  });
-
-  it('fails fast when silent token acquisition fails unexpectedly', async () => {
-    const account = { username: 'analyst@example.com', name: 'Analyst' };
-    mockConfig.authRequired = true;
-    window.history.pushState({}, 'Login', '/login');
-    mockMsal.getAllAccounts.mockReturnValue([account]);
-    mockMsal.acquireTokenSilent.mockRejectedValueOnce(new Error('cache failure'));
-
-    render(
-      <AuthProvider>
-        <Harness />
-      </AuthProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
-    });
-
-    await act(async () => {
-      await expect(appendAuthHeaders(undefined, { forceRefresh: true })).rejects.toThrow(
-        'OIDC access token acquisition failed. cache failure'
-      );
-    });
-
-    expect(screen.getByTestId('phase')).toHaveTextContent('authenticated');
-  });
-
-  it('dedupes bootstrap work across strict-mode remounts', async () => {
-    mockConfig.authRequired = true;
-    window.history.pushState({}, 'Login', '/login');
-    mockMsal.ssoSilent.mockImplementation(() => new Promise(() => {}));
-
-    render(
-      <React.StrictMode>
-        <AuthProvider>
-          <Harness />
-        </AuthProvider>
-      </React.StrictMode>
-    );
-
-    await waitFor(() => {
-      expect(mockMsal.handleRedirectPromise).toHaveBeenCalledTimes(1);
-      expect(mockMsal.ssoSilent).toHaveBeenCalledTimes(1);
+      expect(mockDataService.deleteAuthSession).toHaveBeenCalledTimes(1);
+      expect(window.location.pathname).toBe('/login');
+      expect(new URLSearchParams(window.location.search).get('loggedOut')).toBe('1');
     });
   });
 });
