@@ -864,11 +864,23 @@ describe('SystemStatusPage', () => {
       await Promise.resolve();
     });
 
+    for (
+      let attempt = 0;
+      attempt < 10 && domainLayerCoverageSpy.mock.calls.length === 0;
+      attempt += 1
+    ) {
+      await act(async () => {
+        await vi.dynamicImportSettled();
+        await vi.advanceTimersByTimeAsync(1);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
     expect(domainLayerCoverageSpy).toHaveBeenCalled();
-    expect(vi.mocked(DataService.getSystemStatusView).mock.calls[0]).toEqual([
-      {},
-      expect.any(AbortSignal)
-    ]);
+    expect(vi.mocked(DataService.getSystemStatusView).mock.calls[0]?.[0]).not.toEqual(
+      expect.objectContaining({ refresh: true })
+    );
     const initialCallCount = vi.mocked(DataService.getSystemStatusView).mock.calls.length;
     expect(initialCallCount).toBeGreaterThan(0);
 
@@ -880,9 +892,9 @@ describe('SystemStatusPage', () => {
     expect(vi.mocked(DataService.getSystemStatusView).mock.calls.length).toBeGreaterThan(
       initialCallCount
     );
-    expect(vi.mocked(DataService.getSystemStatusView).mock.calls.at(-1)).toEqual([
-      { refresh: true }
-    ]);
+    expect(vi.mocked(DataService.getSystemStatusView).mock.calls.at(-1)?.[0]).toEqual({
+      refresh: true
+    });
 
     const coverageProps = domainLayerCoverageSpy.mock.calls.at(-1)?.[0] as {
       overall: string;

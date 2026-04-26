@@ -6,7 +6,6 @@ import {
   mergeSystemHealthWithJobOverrides,
   useSystemHealthJobOverrides
 } from '@/hooks/useSystemHealthJobOverrides';
-import { isAuthReauthRequiredError } from '@/services/authTransport';
 import { ApiError, type SystemStatusViewResponse } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
 
@@ -18,19 +17,11 @@ function isTerminalSystemStatusAuthError(error: unknown): boolean {
     return error.status === 401 || error.status === 403 || error.status === 404;
   }
 
-  if (isAuthReauthRequiredError(error)) {
-    return true;
-  }
-
   if (!(error instanceof Error)) {
     return false;
   }
 
-  return (
-    error.message.includes('Interactive sign-in was suppressed because /auth/session succeeded recently') ||
-    error.message.includes('OIDC token acquisition did not produce a bearer token') ||
-    error.message.includes('OIDC token refresh did not produce a bearer token')
-  );
+  return error.message.includes('API Error: 401');
 }
 
 function readStoredSystemStatusView(): SystemStatusViewResponse | undefined {

@@ -22,6 +22,7 @@ describe('tradeDeskApi', () => {
     await tradeDeskApi.listPositions('acct/1');
     await tradeDeskApi.listOrders('acct/1');
     await tradeDeskApi.listHistory('acct/1');
+    await tradeDeskApi.listBlotter('acct/1');
 
     expect(mockedRequest).toHaveBeenNthCalledWith(1, '/trade-accounts', { signal: undefined });
     expect(mockedRequest).toHaveBeenNthCalledWith(2, '/trade-accounts/acct%2F1', {
@@ -34,6 +35,9 @@ describe('tradeDeskApi', () => {
       signal: undefined
     });
     expect(mockedRequest).toHaveBeenNthCalledWith(5, '/trade-accounts/acct%2F1/history', {
+      signal: undefined
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(6, '/trade-accounts/acct%2F1/blotter', {
       signal: undefined
     });
   });

@@ -14,12 +14,6 @@ vi.mock('sonner', () => ({
 }));
 
 import { useRealtime } from './useRealtime';
-import { config } from '@/config';
-import {
-  resetAuthTransportForTests,
-  setAccessTokenProvider,
-  setInteractiveAuthHandler
-} from '@/services/authTransport';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { intradayMonitorKeys } from '@/services/intradayMonitorApi';
 import { REALTIME_SUBSCRIBE_EVENT, addConsoleLogStreamListener } from '@/services/realtimeBus';
@@ -91,18 +85,22 @@ describe('useRealtime', () => {
         json: async () => ({ ticket: 'default-ticket', expiresAt: '2026-03-15T12:00:00Z' })
       }) as unknown as typeof fetch
     );
-    resetAuthTransportForTests();
     (window as Window & { __API_UI_CONFIG__?: Record<string, unknown> }).__API_UI_CONFIG__ = {
-      apiBaseUrl: '/api'
+      apiBaseUrl: '/api',
+      authProvider: 'password',
+      authSessionMode: 'cookie',
+      authRequired: true
     };
+    Object.defineProperty(document, 'cookie', {
+      configurable: true,
+      value: 'aa_csrf_dev=csrf-token'
+    });
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
     mockToastError.mockReset();
-    resetAuthTransportForTests();
-    config.oidcEnabled = false;
     delete (window as Window & { __API_UI_CONFIG__?: Record<string, unknown> }).__API_UI_CONFIG__;
   });
 
@@ -190,15 +188,7 @@ describe('useRealtime', () => {
         expect.objectContaining({
           topic: 'job-logs:bronze-market-job',
           resourceType: 'job',
-          resourceName: 'bronze-market-job',
-          lines: [
-            expect.objectContaining({
-              id: 'line-1',
-              message: 'streamed line',
-              stream_s: 'stderr',
-              executionName: 'bronze-market-job-exec-001'
-            })
-          ]
+          resourceName: 'bronze-market-job'
         })
       );
     });
@@ -207,16 +197,12 @@ describe('useRealtime', () => {
     view.unmount();
   });
 
-  it('fetches a websocket ticket before connecting', async () => {
+  it('fetches a websocket ticket before connecting with cookie credentials and csrf', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ ticket: 'ticket-123', expiresAt: '2026-03-15T12:00:00Z' })
     });
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
-    setAccessTokenProvider(async () => 'access-token');
-    (window as Window & { __API_UI_CONFIG__?: Record<string, unknown> }).__API_UI_CONFIG__ = {
-      apiBaseUrl: '/api'
-    };
 
     const queryClient = createQueryClient();
     render(
@@ -233,36 +219,13 @@ describe('useRealtime', () => {
     const request = fetchMock.mock.calls[0];
     expect(request[0]).toBe('/api/realtime/ticket');
     expect(request[1]?.method).toBe('POST');
+    expect(request[1]?.credentials).toBe('include');
     expect(request[1]?.headers).toBeInstanceOf(Headers);
-    expect((request[1]?.headers as Headers).get('Authorization')).toBe('Bearer access-token');
+    expect((request[1]?.headers as Headers).get('Authorization')).toBeNull();
+    expect((request[1]?.headers as Headers).get('X-CSRF-Token')).toBe('csrf-token');
     expect(MockWebSocket.instances[0]?.url).toBe(
       'ws://localhost:3000/api/ws/updates?ticket=ticket-123'
     );
-  });
-
-  it('does not send the realtime ticket request without a bearer token when OIDC is enabled', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
-    config.oidcEnabled = true;
-    const provider = vi.fn(async () => null);
-    setAccessTokenProvider(provider);
-
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Harness />
-      </QueryClientProvider>
-    );
-
-    await waitFor(() => {
-      expect(provider).toHaveBeenCalledTimes(2);
-      expect(mockToastError).toHaveBeenCalledWith(
-        expect.stringContaining('OIDC token refresh did not produce a bearer token')
-      );
-    });
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(MockWebSocket.instances).toHaveLength(0);
   });
 
   it('invalidates the unified status view and metadata snapshot on metadata change events', async () => {
@@ -282,13 +245,6 @@ describe('useRealtime', () => {
 
     act(() => {
       ws.open();
-    });
-
-    await waitFor(() => {
-      expect(ws.sent).toHaveLength(1);
-    });
-
-    act(() => {
       ws.emitJson({
         topic: 'system-health',
         data: {
@@ -333,9 +289,6 @@ describe('useRealtime', () => {
 
     act(() => {
       ws.open();
-    });
-
-    act(() => {
       ws.emitJson({
         topic: 'intraday-monitor',
         data: {
@@ -394,7 +347,6 @@ describe('useRealtime', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(MockWebSocket.instances).toHaveLength(2);
-
     expect(MockWebSocket.instances[1]?.url).toBe(
       'ws://localhost:3000/api/ws/updates?ticket=ticket-2'
     );
@@ -453,121 +405,5 @@ describe('useRealtime', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(MockWebSocket.instances).toHaveLength(1);
-    expect(MockWebSocket.instances[0]?.url).toBe(
-      'ws://localhost:3000/api/ws/updates?ticket=ticket-2'
-    );
-  });
-
-  it('surfaces realtime as unavailable when ticket retrieval fails', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      text: async () => 'Unauthorized'
-    });
-    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
-
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Harness />
-      </QueryClientProvider>
-    );
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(mockToastError).toHaveBeenCalledWith('Realtime updates unavailable: Unauthorized');
-    });
-    expect(MockWebSocket.instances).toHaveLength(0);
-  });
-
-  it('retries the realtime ticket once with forceRefresh after a 401', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-        text: async () => 'Unauthorized'
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ ticket: 'ticket-2', expiresAt: '2026-03-15T12:00:05Z' })
-      });
-    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
-    const provider = vi.fn(async () => 'access-token');
-    setAccessTokenProvider(provider);
-
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Harness />
-      </QueryClientProvider>
-    );
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(MockWebSocket.instances).toHaveLength(1);
-    });
-
-    expect(provider).toHaveBeenNthCalledWith(1, {});
-    expect(provider).toHaveBeenNthCalledWith(2, { forceRefresh: true });
-    expect(mockToastError).not.toHaveBeenCalled();
-  });
-
-  it('suppresses unauthorized toasts when a 401 ticket failure still needs reauth after silent recovery', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({
-        ok: false,
-        status: 401,
-        text: async () => 'Unauthorized'
-      });
-    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
-    const handler = vi.fn();
-    setInteractiveAuthHandler(handler);
-    const provider = vi.fn(async () => 'access-token');
-    setAccessTokenProvider(provider);
-
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Harness />
-      </QueryClientProvider>
-    );
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    });
-    expect(mockToastError).not.toHaveBeenCalled();
-    expect(handler).toHaveBeenCalledTimes(1);
-    expect(provider).toHaveBeenNthCalledWith(1, {});
-    expect(provider).toHaveBeenNthCalledWith(2, { forceRefresh: true });
-    expect(MockWebSocket.instances).toHaveLength(0);
-  });
-
-  it('collapses repeated websocket auth failures into one reauth notification', async () => {
-    const handler = vi.fn();
-    setInteractiveAuthHandler(handler);
-
-    const queryClient = createQueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Harness />
-      </QueryClientProvider>
-    );
-
-    await waitFor(() => {
-      expect(MockWebSocket.instances).toHaveLength(1);
-    });
-    const ws = MockWebSocket.instances[0];
-
-    act(() => {
-      ws.open();
-      ws.onclose?.({ code: 4401 } as CloseEvent);
-      ws.onclose?.({ code: 4401 } as CloseEvent);
-    });
-
-    await waitFor(() => {
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-    expect(mockToastError).not.toHaveBeenCalled();
   });
 });

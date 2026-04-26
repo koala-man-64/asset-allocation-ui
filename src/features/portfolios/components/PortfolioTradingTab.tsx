@@ -94,7 +94,7 @@ export function PortfolioTradingTab({
 
       <TradingCard
         title="Next Rebalance"
-        description="The next rebalance window is derived locally from cadence, anchor text, and the latest build date."
+        description="The control plane owns the next rebalance schedule; the UI falls back to local cadence inference only when the server schedule is unavailable."
       >
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="grid gap-4 md:grid-cols-2">

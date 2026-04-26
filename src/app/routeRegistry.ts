@@ -250,6 +250,19 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     }
   },
   {
+    key: 'trade-monitor',
+    path: '/trade-monitor',
+    load: () =>
+      import('@/features/trade-desk/TradeMonitorPage').then((module) => ({
+        default: module.TradeMonitorPage
+      })),
+    nav: {
+      label: 'Trade Monitor',
+      icon: BarChart3,
+      sectionKey: 'live-operations'
+    }
+  },
+  {
     key: 'portfolios',
     path: '/portfolios',
     load: () =>

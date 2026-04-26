@@ -5,6 +5,7 @@ export type PortfolioHealthTone = 'healthy' | 'warning' | 'critical';
 export type PortfolioBuildScope = 'rebalance' | 'allocation-refresh' | 'materialization';
 export type PortfolioRebalanceCadence = 'daily' | 'weekly' | 'monthly';
 export type PortfolioSleeveStatus = 'active' | 'staged' | 'paused';
+export type PortfolioAllocationMode = 'percent' | 'notional_base_ccy';
 
 export interface PortfolioSummary {
   accountId?: string;
@@ -33,7 +34,10 @@ export interface PortfolioSleeveDefinition {
   label: string;
   strategyName: string;
   strategyVersion: number;
+  allocationMode?: PortfolioAllocationMode;
   targetWeightPct: number;
+  targetNotionalBaseCcy?: number | null;
+  derivedWeightPct?: number | null;
   minWeightPct: number;
   maxWeightPct: number;
   rebalanceBandPct: number;
@@ -67,6 +71,8 @@ export interface PortfolioOverlayConfig {
 export interface PortfolioConfig {
   benchmarkSymbol: string;
   baseCurrency: string;
+  allocationMode?: PortfolioAllocationMode;
+  allocatableCapital?: number | null;
   rebalanceCadence: PortfolioRebalanceCadence;
   rebalanceAnchor: string;
   targetGrossExposurePct: number;
@@ -109,6 +115,17 @@ export interface PortfolioFreshnessRow {
   asOf?: string | null;
   checkedAt?: string | null;
   reason?: string;
+}
+
+export interface PortfolioNextRebalanceSummary {
+  accountId: string;
+  asOf?: string | null;
+  rebalanceCadence: PortfolioRebalanceCadence;
+  anchorText: string;
+  nextDate?: string | null;
+  inferred: boolean;
+  basis: 'anchor' | 'cadence' | 'unknown';
+  reason: string;
 }
 
 export interface PortfolioDetail extends PortfolioSummary {
@@ -260,6 +277,7 @@ export interface PortfolioMonitorSnapshot {
   history: PortfolioHistoryRow[];
   ledgerEvents: PortfolioLedgerEventRow[];
   freshness: PortfolioFreshnessRow[];
+  nextRebalance?: PortfolioNextRebalanceSummary | null;
 }
 
 export interface PortfolioBuildRunSummary {

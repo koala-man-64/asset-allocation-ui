@@ -24,7 +24,8 @@ vi.mock('@/services/strategyApi', () => ({
 vi.mock('@/services/backtestApi', () => ({
   backtestApi: {
     listRuns: vi.fn(),
-    submitRun: vi.fn()
+    submitRun: vi.fn(),
+    getTrades: vi.fn()
   }
 }));
 
@@ -113,6 +114,7 @@ describe('StrategyConfigPage', () => {
       }
     ]);
     (backtestApi.listRuns as Mock).mockResolvedValue({ runs: [], limit: 6, offset: 0 });
+    (backtestApi.getTrades as Mock).mockResolvedValue({ trades: [], total: 0, limit: 20, offset: 0 });
     (backtestApi.submitRun as Mock).mockResolvedValue({
       run_id: 'run-1',
       status: 'queued',
@@ -147,11 +149,43 @@ describe('StrategyConfigPage', () => {
     (strategyApi.getStrategyDetail as Mock).mockImplementation((name: string) =>
       Promise.resolve(buildStrategyDetail(name))
     );
+    (backtestApi.listRuns as Mock).mockResolvedValue({
+      runs: [
+        {
+          run_id: 'run-1',
+          status: 'completed',
+          submitted_at: '2026-04-15T12:00:00Z',
+          run_name: 'quality-trend-smoke'
+        }
+      ],
+      limit: 6,
+      offset: 0
+    });
+    (backtestApi.getTrades as Mock).mockResolvedValue({
+      trades: [
+        {
+          execution_date: '2026-04-15T13:00:00Z',
+          symbol: 'MSFT',
+          quantity: 25,
+          price: 410.5,
+          notional: 10262.5,
+          commission: 2.5,
+          slippage_cost: 1.0,
+          cash_after: 90000,
+          trade_role: 'entry'
+        }
+      ],
+      total: 1,
+      limit: 20,
+      offset: 0
+    });
 
     renderWithProviders(<StrategyConfigPage />);
 
     expect(await screen.findByRole('heading', { name: 'quality-trend' })).toBeInTheDocument();
     expect(screen.getAllByText(/top 25 with 90-bar lookback/i)).toHaveLength(2);
+    expect(await screen.findByRole('heading', { name: /latest backtest trade history/i })).toBeInTheDocument();
+    expect(screen.getByText('MSFT')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /duplicate as new/i }));
     expect(await screen.findByRole('heading', { name: /duplicate strategy/i })).toBeInTheDocument();

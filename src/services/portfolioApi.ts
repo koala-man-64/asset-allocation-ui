@@ -1,10 +1,16 @@
 import { ApiError, request } from '@/services/apiService';
 import type {
+  ModelOutlookAssumption,
+  ModelOutlookHorizon,
+  PortfolioModelOutlook
+} from '@/features/portfolios/lib/portfolioForecast';
+import type {
   PortfolioAlert,
   PortfolioAlertSeverity,
   PortfolioBuildListResponse,
   PortfolioBuildRunSummary,
   PortfolioBuildStatus,
+  PortfolioAllocationMode,
   PortfolioConfig,
   PortfolioDetail,
   PortfolioExecutionPolicy,
@@ -15,6 +21,7 @@ import type {
   PortfolioPositionRow,
   PortfolioPreviewAllocation,
   PortfolioPreviewResponse,
+  PortfolioNextRebalanceSummary,
   PortfolioRiskLimits,
   PortfolioSleeveDefinition,
   PortfolioSleeveMonitorRow,
@@ -55,7 +62,10 @@ interface RawPortfolioAllocation {
   sleeveId: string;
   sleeveName?: string;
   strategy: RawStrategyReference;
-  targetWeight: number;
+  allocationMode?: 'percent' | 'notional_base_ccy';
+  targetWeight?: number | null;
+  targetNotionalBaseCcy?: number | null;
+  derivedWeight?: number | null;
   minWeight?: number | null;
   maxWeight?: number | null;
   enabled: boolean;
@@ -79,6 +89,8 @@ interface RawPortfolioRevision {
   version: number;
   description?: string;
   benchmarkSymbol?: string | null;
+  allocationMode?: 'percent' | 'notional_base_ccy';
+  allocatableCapital?: number | null;
   allocations: RawPortfolioAllocation[];
   notes?: string;
   publishedAt?: string | null;
@@ -100,6 +112,8 @@ interface RawPortfolioAccount {
   mode: string;
   accountingDepth: string;
   cadenceMode: string;
+  rebalanceCadence: 'daily' | 'weekly' | 'monthly';
+  rebalanceAnchor: string;
   baseCurrency: string;
   benchmarkSymbol?: string | null;
   inceptionDate: string;
@@ -219,6 +233,38 @@ interface RawPortfolioHistoryResponse {
   truncated: boolean;
 }
 
+interface RawPortfolioForecastResponse {
+  accountId: string;
+  asOf?: string | null;
+  modelName: string;
+  modelVersion?: number | null;
+  benchmarkSymbol?: string | null;
+  horizon: ModelOutlookHorizon;
+  assumption: ModelOutlookAssumption;
+  costDragOverrideBps: number;
+  expectedReturnPct?: number | null;
+  expectedActiveReturnPct?: number | null;
+  downsidePct?: number | null;
+  upsidePct?: number | null;
+  confidence: PortfolioModelOutlook['confidence'];
+  confidenceLabel: string;
+  sampleSize: number;
+  sampleMode: PortfolioModelOutlook['sampleMode'];
+  appliedRegimeCode: string;
+  notes: string[];
+}
+
+interface RawPortfolioNextRebalanceResponse {
+  accountId: string;
+  asOf?: string | null;
+  rebalanceCadence: 'daily' | 'weekly' | 'monthly';
+  anchorText: string;
+  nextDate?: string | null;
+  inferred: boolean;
+  basis: 'anchor' | 'cadence' | 'unknown';
+  reason: string;
+}
+
 interface RawPortfolioPositionContributor {
   sleeveId: string;
   strategyName: string;
@@ -315,6 +361,7 @@ export type {
   PortfolioBuildRunSummary,
   PortfolioBuildScope,
   PortfolioBuildStatus,
+  PortfolioAllocationMode,
   PortfolioConfig,
   PortfolioDetail,
   PortfolioExecutionPolicy,
@@ -378,12 +425,22 @@ function deriveHealthTone(
 }
 
 function mapAllocationToSleeve(allocation: RawPortfolioAllocation): PortfolioSleeveDefinition {
+  const allocationMode = allocation.allocationMode ?? 'percent';
+  const derivedWeightPct = ratioToPct(
+    allocation.derivedWeight ?? allocation.targetWeight ?? 0
+  );
   return {
     sleeveId: allocation.sleeveId,
     label: allocation.sleeveName || allocation.sleeveId,
     strategyName: allocation.strategy.strategyName,
     strategyVersion: allocation.strategy.strategyVersion,
-    targetWeightPct: ratioToPct(allocation.targetWeight),
+    allocationMode,
+    targetWeightPct:
+      allocationMode === 'percent'
+        ? ratioToPct(allocation.targetWeight ?? 0)
+        : derivedWeightPct,
+    targetNotionalBaseCcy: allocation.targetNotionalBaseCcy ?? null,
+    derivedWeightPct: allocationMode === 'notional_base_ccy' ? derivedWeightPct : null,
     minWeightPct: ratioToPct(allocation.minWeight ?? 0),
     maxWeightPct: ratioToPct(
       allocation.maxWeight ?? allocation.targetWeight ?? allocation.minWeight ?? 0
@@ -397,6 +454,7 @@ function mapAllocationToSleeve(allocation: RawPortfolioAllocation): PortfolioSle
 }
 
 function mapSleeveToAllocation(sleeve: PortfolioSleeveDefinition): RawPortfolioAllocation {
+  const allocationMode = sleeve.allocationMode ?? 'percent';
   const boundedTarget = Math.max(0, Math.min(100, sleeve.targetWeightPct));
   const boundedMin = Math.max(0, Math.min(boundedTarget, sleeve.minWeightPct));
   const boundedMax = Math.max(boundedTarget, sleeve.maxWeightPct);
@@ -407,7 +465,14 @@ function mapSleeveToAllocation(sleeve: PortfolioSleeveDefinition): RawPortfolioA
       strategyName: sleeve.strategyName.trim(),
       strategyVersion: Math.max(1, Math.round(sleeve.strategyVersion || 1))
     },
-    targetWeight: pctToRatio(boundedTarget),
+    allocationMode,
+    targetWeight: allocationMode === 'percent' ? pctToRatio(boundedTarget) : null,
+    targetNotionalBaseCcy:
+      allocationMode === 'notional_base_ccy' ? sleeve.targetNotionalBaseCcy ?? 0 : null,
+    derivedWeight:
+      allocationMode === 'notional_base_ccy'
+        ? pctToRatio(sleeve.derivedWeightPct ?? sleeve.targetWeightPct)
+        : null,
     minWeight: pctToRatio(boundedMin),
     maxWeight: pctToRatio(Math.min(100, boundedMax)),
     enabled: sleeve.status !== 'paused',
@@ -416,13 +481,29 @@ function mapSleeveToAllocation(sleeve: PortfolioSleeveDefinition): RawPortfolioA
   };
 }
 
-function buildConfig(benchmarkSymbol: string, baseCurrency: string, sleeves: PortfolioSleeveDefinition[]): PortfolioConfig {
+function buildConfig(
+  benchmarkSymbol: string,
+  baseCurrency: string,
+  sleeves: PortfolioSleeveDefinition[],
+  options?: {
+    rebalanceCadence?: PortfolioConfig['rebalanceCadence'];
+    rebalanceAnchor?: string;
+  }
+  allocationMode: PortfolioAllocationMode = 'percent',
+  allocatableCapital: number | null = null
+): PortfolioConfig {
   const targetWeightPct = Number(
-    sleeves.reduce((total, sleeve) => total + sleeve.targetWeightPct, 0).toFixed(2)
+    sleeves
+      .reduce((total, sleeve) => total + (sleeve.derivedWeightPct ?? sleeve.targetWeightPct), 0)
+      .toFixed(2)
   );
   return {
     benchmarkSymbol,
     baseCurrency,
+    rebalanceCadence: options?.rebalanceCadence || 'weekly',
+    rebalanceAnchor: options?.rebalanceAnchor || 'Strategy native cadence',
+    allocationMode,
+    allocatableCapital,
     rebalanceCadence: 'weekly',
     rebalanceAnchor: 'Strategy native cadence',
     targetGrossExposurePct: targetWeightPct,
@@ -480,6 +561,36 @@ function mapAlert(alert: RawPortfolioAlert): PortfolioAlert {
   };
 }
 
+function mapForecast(response: RawPortfolioForecastResponse): PortfolioModelOutlook {
+  return {
+    expectedReturnPct: response.expectedReturnPct ?? null,
+    expectedActiveReturnPct: response.expectedActiveReturnPct ?? null,
+    downsidePct: response.downsidePct ?? null,
+    upsidePct: response.upsidePct ?? null,
+    confidence: response.confidence,
+    confidenceLabel: response.confidenceLabel,
+    sampleSize: response.sampleSize,
+    sampleMode: response.sampleMode,
+    appliedRegimeCode: response.appliedRegimeCode,
+    notes: response.notes || []
+  };
+}
+
+function mapNextRebalance(
+  response: RawPortfolioNextRebalanceResponse
+): PortfolioNextRebalanceSummary {
+  return {
+    accountId: response.accountId,
+    asOf: response.asOf || null,
+    rebalanceCadence: response.rebalanceCadence,
+    anchorText: response.anchorText,
+    nextDate: response.nextDate || null,
+    inferred: response.inferred,
+    basis: response.basis,
+    reason: response.reason
+  };
+}
+
 function resolveOpeningCash(events: RawPortfolioLedgerEvent[]): number | null {
   const openingEvent = [...events]
     .sort((left, right) => Date.parse(left.effectiveAt) - Date.parse(right.effectiveAt))
@@ -497,7 +608,13 @@ function buildDetailFromResponses(
   const config = buildConfig(
     normalizeBenchmark(accountDetail.account.benchmarkSymbol ?? activeRevision?.benchmarkSymbol),
     accountDetail.account.baseCurrency,
-    sleeves
+    sleeves,
+    {
+      rebalanceCadence: accountDetail.account.rebalanceCadence,
+      rebalanceAnchor: accountDetail.account.rebalanceAnchor
+    }
+    activeRevision?.allocationMode ?? 'percent',
+    activeRevision?.allocatableCapital ?? null
   );
   const openingCash = resolveOpeningCash(accountDetail.recentLedgerEvents || []);
 
@@ -582,21 +699,24 @@ async function getPortfolioDetailResponse(
 }
 
 function buildSyntheticPreview(detail: PortfolioDetail, asOfDate: string): PortfolioPreviewResponse {
-  const allocations: PortfolioPreviewAllocation[] = detail.config.sleeves.map((sleeve) => ({
-    sleeveId: sleeve.sleeveId,
-    label: sleeve.label,
-    strategyName: sleeve.strategyName,
-    strategyVersion: sleeve.strategyVersion,
-    targetWeightPct: sleeve.targetWeightPct,
-    projectedWeightPct: sleeve.targetWeightPct,
-    projectedGrossExposurePct: sleeve.targetWeightPct,
-    projectedTurnoverPct: 0,
-    expectedHoldings: sleeve.expectedHoldings,
-    status: sleeve.status
-  }));
+  const allocations: PortfolioPreviewAllocation[] = detail.config.sleeves.map((sleeve) => {
+    const sleeveWeightPct = sleeve.derivedWeightPct ?? sleeve.targetWeightPct;
+    return {
+      sleeveId: sleeve.sleeveId,
+      label: sleeve.label,
+      strategyName: sleeve.strategyName,
+      strategyVersion: sleeve.strategyVersion,
+      targetWeightPct: sleeveWeightPct,
+      projectedWeightPct: sleeveWeightPct,
+      projectedGrossExposurePct: sleeveWeightPct,
+      projectedTurnoverPct: 0,
+      expectedHoldings: sleeve.expectedHoldings,
+      status: sleeve.status
+    };
+  });
 
   const targetWeightPct = Number(
-    allocations.reduce((total, allocation) => total + allocation.targetWeightPct, 0).toFixed(2)
+    allocations.reduce((total, allocation) => total + allocation.projectedWeightPct, 0).toFixed(2)
   );
   const residualCashPct = Number(Math.max(0, 100 - targetWeightPct).toFixed(2));
   const warnings: string[] = [];
@@ -729,14 +849,15 @@ export const portfolioApi = {
 
     return accounts.map((account) => {
       const portfolioDetail = detailMap.get(account.activePortfolioName || '') || null;
-      const activeRevision = portfolioDetail?.activeRevision;
-      const sleeveCount = activeRevision?.allocations?.length ?? 0;
-      const targetWeightPct = Number(
-        ((activeRevision?.allocations || []).reduce(
-          (total, allocation) => total + ratioToPct(allocation.targetWeight),
-          0
-        )).toFixed(2)
-      );
+        const activeRevision = portfolioDetail?.activeRevision;
+        const sleeveCount = activeRevision?.allocations?.length ?? 0;
+        const targetWeightPct = Number(
+          ((activeRevision?.allocations || []).reduce(
+            (total, allocation) =>
+              total + ratioToPct(allocation.derivedWeight ?? allocation.targetWeight ?? 0),
+            0
+          )).toFixed(2)
+        );
       return {
         accountId: account.accountId,
         portfolioName: account.activePortfolioName || account.name,
@@ -820,22 +941,26 @@ export const portfolioApi = {
       .filter((sleeve) => sleeve.strategyName.trim())
       .map(mapSleeveToAllocation);
 
-    const portfolioResponse = await request<RawPortfolioDefinitionDetailResponse>('/portfolios', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: portfolioName,
-        description: payload.description || '',
-        benchmarkSymbol: payload.config.benchmarkSymbol || null,
-        allocations,
-        notes: payload.notes || ''
-      }),
-      signal
-    });
+      const portfolioResponse = await request<RawPortfolioDefinitionDetailResponse>('/portfolios', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: portfolioName,
+          description: payload.description || '',
+          benchmarkSymbol: payload.config.benchmarkSymbol || null,
+          allocationMode: payload.config.allocationMode,
+          allocatableCapital: payload.config.allocatableCapital ?? null,
+          allocations,
+          notes: payload.notes || ''
+        }),
+        signal
+      });
 
     const accountPayload = {
       name: payload.name.trim() || portfolioName,
       description: payload.description || '',
       mandate: payload.mandate || '',
+      rebalanceCadence: payload.config.rebalanceCadence,
+      rebalanceAnchor: payload.config.rebalanceAnchor || 'Strategy native cadence',
       baseCurrency: payload.config.baseCurrency || 'USD',
       benchmarkSymbol: payload.config.benchmarkSymbol || null,
       inceptionDate: payload.inceptionDate,
@@ -950,9 +1075,36 @@ export const portfolioApi = {
     };
   },
 
+  async getForecast(
+    payload: {
+      accountId: string;
+      horizon: ModelOutlookHorizon;
+      assumption: ModelOutlookAssumption;
+      costDragOverrideBps?: number;
+      modelName?: string;
+      modelVersion?: number;
+    },
+    signal?: AbortSignal
+  ): Promise<PortfolioModelOutlook> {
+    const response = await request<RawPortfolioForecastResponse>(
+      `/portfolio-accounts/${encodeURIComponent(payload.accountId)}/forecast`,
+      {
+        params: {
+          modelName: payload.modelName,
+          modelVersion: payload.modelVersion,
+          horizon: payload.horizon,
+          assumption: payload.assumption,
+          costDragOverrideBps: payload.costDragOverrideBps ?? 0
+        },
+        signal
+      }
+    );
+    return mapForecast(response);
+  },
+
   async getMonitorSnapshot(identifier: string, signal?: AbortSignal): Promise<PortfolioMonitorSnapshot> {
     const account = await resolveAccount(identifier, signal);
-    const [accountDetail, portfolioDetail, snapshot, history, positions, alerts] = await Promise.all([
+    const [accountDetail, portfolioDetail, snapshot, history, positions, alerts, nextRebalance] = await Promise.all([
       request<RawPortfolioAccountDetailResponse>(
         `/portfolio-accounts/${encodeURIComponent(account.accountId)}`,
         { signal }
@@ -973,6 +1125,10 @@ export const portfolioApi = {
       requestOptional<RawPortfolioAlertListResponse>(
         `/portfolio-accounts/${encodeURIComponent(account.accountId)}/alerts`,
         { params: { includeResolved: false }, signal }
+      ),
+      requestOptional<RawPortfolioNextRebalanceResponse>(
+        `/portfolio-accounts/${encodeURIComponent(account.accountId)}/next-rebalance`,
+        { signal }
       )
     ]);
 
@@ -1095,7 +1251,8 @@ export const portfolioApi = {
       positions: positionRows,
       history: historyRows,
       ledgerEvents: detail.recentLedgerEvents,
-      freshness
+      freshness,
+      nextRebalance: nextRebalance ? mapNextRebalance(nextRebalance) : null
     };
   },
 

@@ -163,7 +163,8 @@ describe('LeftNavigation', () => {
             '/portfolios',
             '/universes',
             '/rankings',
-            '/trade-desk'
+            '/trade-desk',
+            '/trade-monitor'
           ]
         }
       });
@@ -194,6 +195,7 @@ describe('LeftNavigation', () => {
         '/universes',
         '/rankings',
         '/trade-desk',
+        '/trade-monitor',
         '/login'
       ])
     );

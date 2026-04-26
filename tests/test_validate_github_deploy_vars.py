@@ -29,49 +29,43 @@ def load_validator_module():
     return module
 
 
-def test_validator_accepts_auth_enabled_when_oidc_repo_vars_exist() -> None:
+def base_vars() -> dict[str, str]:
+    return {
+        "AZURE_CLIENT_ID": "client-id",
+        "AZURE_TENANT_ID": "tenant-id",
+        "AZURE_SUBSCRIPTION_ID": "subscription-id",
+        "RESOURCE_GROUP": "resource-group",
+        "ACR_NAME": "assetallocationacr",
+        "CONTAINER_APPS_ENVIRONMENT_NAME": "asset-allocation-env",
+        "SERVICE_ACCOUNT_NAME": "asset-allocation-sa",
+        "UI_APP_NAME": "asset-allocation-ui",
+        "API_UPSTREAM": "asset-allocation-api.example.com",
+        "API_UPSTREAM_SCHEME": "https",
+        "UI_AUTH_ENABLED": "true",
+        "UI_ALLOWED_INGRESS_CIDRS": "203.0.113.10/32,198.51.100.0/24",
+    }
+
+
+def test_validator_accepts_password_auth_with_allowlist_repo_vars() -> None:
     validator = load_validator_module()
 
     validator.validate_repo_variables(
         {
-            "AZURE_CLIENT_ID": "client-id",
-            "AZURE_TENANT_ID": "tenant-id",
-            "AZURE_SUBSCRIPTION_ID": "subscription-id",
-            "RESOURCE_GROUP": "resource-group",
-            "ACR_NAME": "assetallocationacr",
-            "CONTAINER_APPS_ENVIRONMENT_NAME": "asset-allocation-env",
-            "SERVICE_ACCOUNT_NAME": "asset-allocation-sa",
-            "UI_APP_NAME": "asset-allocation-ui",
-            "API_UPSTREAM": "asset-allocation-api.example.com",
-            "API_UPSTREAM_SCHEME": "https",
-            "UI_AUTH_ENABLED": "true",
-            "UI_OIDC_AUTHORITY": "https://login.microsoftonline.com/example-tenant",
-            "UI_OIDC_CLIENT_ID": "example-client-id",
-            "UI_OIDC_SCOPES": "openid profile api://asset-allocation-api/user_impersonation",
+            **base_vars(),
+            "UI_AUTH_PROVIDER": "password",
         },
         "prod-runtime",
     )
 
 
-def test_validator_reports_all_missing_oidc_repo_vars_when_auth_enabled() -> None:
+def test_validator_requires_oidc_repo_vars_only_for_oidc_provider() -> None:
     validator = load_validator_module()
 
     with pytest.raises(validator.ValidationError) as excinfo:
         validator.validate_repo_variables(
             {
-                "AZURE_CLIENT_ID": "client-id",
-                "AZURE_TENANT_ID": "tenant-id",
-                "AZURE_SUBSCRIPTION_ID": "subscription-id",
-                "RESOURCE_GROUP": "resource-group",
-                "ACR_NAME": "assetallocationacr",
-                "CONTAINER_APPS_ENVIRONMENT_NAME": "asset-allocation-env",
-                "SERVICE_ACCOUNT_NAME": "asset-allocation-sa",
-                "UI_APP_NAME": "asset-allocation-ui",
-                "API_UPSTREAM": "asset-allocation-api.example.com",
-                "API_UPSTREAM_SCHEME": "https",
-                "UI_AUTH_ENABLED": "true",
-                "UI_OIDC_AUTHORITY": "",
-                "UI_OIDC_CLIENT_ID": "",
+                **base_vars(),
+                "UI_AUTH_PROVIDER": "oidc",
             },
             "prod-runtime",
         )
@@ -82,35 +76,30 @@ def test_validator_reports_all_missing_oidc_repo_vars_when_auth_enabled() -> Non
     assert "UI_OIDC_SCOPES" in message
 
 
-def test_validator_allows_missing_oidc_repo_vars_when_auth_disabled() -> None:
+def test_validator_requires_ingress_allowlist_repo_var() -> None:
     validator = load_validator_module()
 
-    validator.validate_repo_variables(
-        {
-            "AZURE_CLIENT_ID": "client-id",
-            "AZURE_TENANT_ID": "tenant-id",
-            "AZURE_SUBSCRIPTION_ID": "subscription-id",
-            "RESOURCE_GROUP": "resource-group",
-            "ACR_NAME": "assetallocationacr",
-            "CONTAINER_APPS_ENVIRONMENT_NAME": "asset-allocation-env",
-            "SERVICE_ACCOUNT_NAME": "asset-allocation-sa",
-            "UI_APP_NAME": "asset-allocation-ui",
-            "API_UPSTREAM": "asset-allocation-api.example.com",
-            "API_UPSTREAM_SCHEME": "https",
-            "UI_AUTH_ENABLED": "false",
-        },
-        "prod-runtime",
-    )
+    with pytest.raises(validator.ValidationError) as excinfo:
+        validator.validate_repo_variables(
+            {
+                **base_vars(),
+                "UI_AUTH_PROVIDER": "password",
+                "UI_ALLOWED_INGRESS_CIDRS": "",
+            },
+            "prod-runtime",
+        )
+
+    assert "UI_ALLOWED_INGRESS_CIDRS" in str(excinfo.value)
 
 
 def test_parse_variable_map_json_normalizes_keys_and_values() -> None:
     validator = load_validator_module()
 
     parsed = validator.parse_variable_map_json(
-        '{" UI_AUTH_ENABLED ":" true ","UI_OIDC_CLIENT_ID":" example-client-id "}'
+        '{" UI_AUTH_PROVIDER ":" password ","UI_ALLOWED_INGRESS_CIDRS":" 203.0.113.10/32 "}'
     )
 
     assert parsed == {
-        "UI_AUTH_ENABLED": "true",
-        "UI_OIDC_CLIENT_ID": "example-client-id",
+        "UI_AUTH_PROVIDER": "password",
+        "UI_ALLOWED_INGRESS_CIDRS": "203.0.113.10/32",
     }

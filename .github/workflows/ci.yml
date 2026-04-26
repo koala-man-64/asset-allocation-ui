@@ -7,6 +7,13 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      contracts_version_override:
+        description: Published contracts version to force for this run
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -81,31 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           cd asset-allocation-ui
-          corepack enable
-          pnpm install --frozen-lockfile
-          pnpm format:check
-          pnpm lint
-          pnpm exec tsc --noEmit
-          pnpm vitest run
-          pnpm build
-
-  browser-smoke:
-    name: browser-smoke
-    runs-on: ubuntu-22.04
-    needs:
-      - validate
-    env:
-      VITE_UI_AUTH_ENABLED: 'false'
-    steps:
-      - name: Checkout UI repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          path: asset-allocation-ui
-
-      - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: '20'
+          python -m pytest tests/test_env_contract.py tests/test_multirepo_dependency_contract.py tests/test_workflow_scripts.py -q
 
       - name: Write required npmrc
         id: npmrc
@@ -119,17 +102,52 @@ jobs:
           printf '%s' "${NPMRC_CONTENT}" > "${path}"
           echo "path=${path}" >> "$GITHUB_OUTPUT"
 
-      - name: Install workspace dependencies
-        shell: bash
+      - name: Resolve contracts package version
+        id: contracts
         env:
-          NPM_CONFIG_USERCONFIG: ${{ steps.npmrc.outputs.path }}
+          CONTRACTS_VERSION_OVERRIDE: ${{ github.event.inputs.contracts_version_override || '' }}
+        shell: bash
         run: |
           set -euo pipefail
-          cd asset-allocation-ui
-          corepack enable
-          pnpm install --frozen-lockfile
+          versions_path="${RUNNER_TEMP}/contracts-versions.json"
+          docker run --rm \
+            -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
+            node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
+            bash -lc 'set -euo pipefail; npm view @asset-allocation/contracts versions --json' > "${versions_path}"
+          args=(
+            --package-json asset-allocation-ui/package.json
+            --versions-json "${versions_path}"
+          )
+          if [ -n "${CONTRACTS_VERSION_OVERRIDE}" ]; then
+            args+=(--override "${CONTRACTS_VERSION_OVERRIDE}")
+          fi
+          python asset-allocation-ui/scripts/workflows/resolve_contracts_version.py "${args[@]}" > "${RUNNER_TEMP}/ui-versions.txt"
+          cat "${RUNNER_TEMP}/ui-versions.txt" >> "$GITHUB_OUTPUT"
 
-      - name: Install Playwright Chromium
+      - name: Prepare published contracts lockfile
+        env:
+          CONTRACTS_VERSION: ${{ steps.contracts.outputs.contracts_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          package_json_path = Path("asset-allocation-ui/package.json")
+          package_json = json.loads(package_json_path.read_text(encoding="utf-8"))
+          package_json["dependencies"]["@asset-allocation/contracts"] = os.environ["CONTRACTS_VERSION"]
+          package_json_path.write_text(json.dumps(package_json, indent=2) + "\n", encoding="utf-8")
+          PY
+          docker run --rm \
+            -v "${{ github.workspace }}/asset-allocation-ui:/workspace" \
+            -v "${{ steps.npmrc.outputs.path }}:/root/.npmrc:ro" \
+            -w /workspace \
+            node:20-bookworm-slim@sha256:6c51af7dc83f4708aaac35991306bca8f478351cfd2bda35750a62d7efcf05bb \
+            bash -lc 'set -euo pipefail; corepack enable; pnpm install --lockfile-only --no-frozen-lockfile'
+
+      - name: Lint, test, and build UI
         shell: bash
         env:
           NPM_CONFIG_USERCONFIG: ${{ steps.npmrc.outputs.path }}

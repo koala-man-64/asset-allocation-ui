@@ -9,6 +9,23 @@ export interface NextRebalanceWindow {
   reason: string;
 }
 
+export function buildNextRebalanceWindow(input: {
+  nextDate?: string | null;
+  anchorText: string;
+  inferred: boolean;
+  basis: 'anchor' | 'cadence' | 'unknown';
+  reason: string;
+}): NextRebalanceWindow {
+  return {
+    nextDate: input.nextDate || null,
+    windowLabel: formatDisplayDate(input.nextDate || null),
+    anchorText: input.anchorText,
+    inferred: input.inferred,
+    basis: input.basis,
+    reason: input.reason
+  };
+}
+
 const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 function addDays(date: Date, days: number): Date {
