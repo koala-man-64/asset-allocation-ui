@@ -19,6 +19,7 @@ vi.mock('@/services/intradayMonitorApi', () => ({
     createWatchlist: vi.fn(),
     updateWatchlist: vi.fn(),
     deleteWatchlist: vi.fn(),
+    appendSymbols: vi.fn(),
     runWatchlist: vi.fn(),
     getStatus: vi.fn(),
     listRuns: vi.fn(),
@@ -167,6 +168,26 @@ describe('IntradayMonitorPage', () => {
     });
     vi.mocked(intradayMonitorApi.updateWatchlist).mockResolvedValue(WATCHLIST_DETAIL);
     vi.mocked(intradayMonitorApi.deleteWatchlist).mockResolvedValue({ status: 'deleted' });
+    vi.mocked(intradayMonitorApi.appendSymbols).mockResolvedValue({
+      watchlist: {
+        ...WATCHLIST_DETAIL,
+        symbolCount: 5,
+        symbols: ['AAPL', 'MSFT', 'NVDA', 'AMD', 'TSLA']
+      },
+      addedSymbols: ['AMD', 'TSLA'],
+      alreadyPresentSymbols: ['AAPL'],
+      queuedRun: {
+        ...STATUS_RESPONSE.latestMonitorRun!,
+        runId: 'run-append',
+        status: 'queued',
+        forceRefresh: false,
+        symbolCount: 5,
+        executionName: null,
+        claimedAt: null,
+        completedAt: null
+      },
+      runSkippedReason: null
+    });
     vi.mocked(intradayMonitorApi.runWatchlist).mockResolvedValue({
       ...STATUS_RESPONSE.latestMonitorRun!,
       runId: 'run-2',
@@ -263,6 +284,21 @@ describe('IntradayMonitorPage', () => {
 
     await waitFor(() => {
       expect(intradayMonitorApi.runWatchlist).toHaveBeenCalledWith('wl-1');
+    });
+  });
+
+  it('appends symbols to the selected watchlist without replacing the list', async () => {
+    renderWithProviders(<IntradayMonitorPage />);
+
+    const addSymbols = await screen.findByLabelText(/^Add Symbols$/i);
+    fireEvent.change(addSymbols, { target: { value: 'amd, tsla aapl' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Add Symbols$/i }));
+
+    await waitFor(() => {
+      expect(intradayMonitorApi.appendSymbols).toHaveBeenCalledWith('wl-1', {
+        symbols: ['AMD', 'TSLA', 'AAPL'],
+        queueRun: true
+      });
     });
   });
 

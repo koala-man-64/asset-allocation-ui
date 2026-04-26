@@ -43,6 +43,25 @@ export interface IntradayWatchlistUpsertRequest {
   marketSession: IntradayMarketSession;
 }
 
+export type IntradayWatchlistSymbolAppendRunSkippedReason =
+  | 'watchlist_disabled'
+  | 'no_new_symbols'
+  | 'queue_run_disabled';
+
+export interface IntradayWatchlistSymbolAppendRequest {
+  symbols: string[];
+  queueRun: boolean;
+  reason?: string | null;
+}
+
+export interface IntradayWatchlistSymbolAppendResponse {
+  watchlist: IntradayWatchlistDetail;
+  addedSymbols: string[];
+  alreadyPresentSymbols: string[];
+  queuedRun?: IntradayMonitorRunSummary | null;
+  runSkippedReason?: IntradayWatchlistSymbolAppendRunSkippedReason | null;
+}
+
 export interface IntradaySymbolStatus {
   watchlistId?: string | null;
   symbol: string;
@@ -178,6 +197,21 @@ export const intradayMonitorApi = {
       method: 'DELETE',
       signal
     });
+  },
+
+  async appendSymbols(
+    watchlistId: string,
+    payload: IntradayWatchlistSymbolAppendRequest,
+    signal?: AbortSignal
+  ): Promise<IntradayWatchlistSymbolAppendResponse> {
+    return request<IntradayWatchlistSymbolAppendResponse>(
+      `/intraday/watchlists/${encodeURIComponent(watchlistId)}/symbols`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        signal
+      }
+    );
   },
 
   async runWatchlist(watchlistId: string, signal?: AbortSignal): Promise<IntradayMonitorRunSummary> {

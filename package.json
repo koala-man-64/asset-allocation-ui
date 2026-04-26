@@ -20,7 +20,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@asset-allocation/contracts": "3.7.0",
+    "@asset-allocation/contracts": "3.8.0",
+    "@azure/msal-browser": "5.3.0",
     "@popperjs/core": "2.11.8",
     "@radix-ui/react-accordion": "1.2.12",
     "@radix-ui/react-alert-dialog": "1.1.15",
