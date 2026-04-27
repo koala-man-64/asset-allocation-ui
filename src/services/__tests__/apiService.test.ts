@@ -25,7 +25,7 @@ describe('apiService cookie auth transport', () => {
     fetchMock.mockReset();
     windowWithConfig.__API_UI_CONFIG__ = {
       apiBaseUrl: '/api',
-      authProvider: 'password',
+      authProvider: 'oidc',
       authSessionMode: 'cookie',
       authRequired: true
     };
@@ -124,6 +124,28 @@ describe('apiService cookie auth transport', () => {
     expect(init.body).toBe(JSON.stringify({ password: 'shared-password' }));
   });
 
+  it('posts the OIDC bootstrap bearer exactly once to /auth/session', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        authMode: 'oidc',
+        subject: 'user-123',
+        requiredRoles: [],
+        grantedRoles: ['AssetAllocation.System.Read']
+      })
+    );
+
+    const { apiService } = await importApiService();
+
+    await apiService.createOidcAuthSession('oidc-access-token');
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = init.headers as Headers;
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('include');
+    expect(init.body).toBeUndefined();
+    expect(headers.get('Authorization')).toBe('Bearer oidc-access-token');
+  });
+
   it('throws an ApiError directly when the backend returns 401', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'ok' }));
     fetchMock.mockResolvedValueOnce(
@@ -139,7 +161,7 @@ describe('apiService cookie auth transport', () => {
   it('forces cookie-session API traffic back onto the same-origin /api mount', async () => {
     windowWithConfig.__API_UI_CONFIG__ = {
       apiBaseUrl: 'https://asset-allocation-api.example.com/api',
-      authProvider: 'password',
+      authProvider: 'oidc',
       authSessionMode: 'cookie',
       authRequired: true
     };

@@ -7,7 +7,7 @@ describe('config auth resolution', () => {
     vi.resetModules();
   });
 
-  it('defaults to password auth when UI auth is enabled without OIDC settings', async () => {
+  it('fails closed when UI auth is enabled without a valid provider configuration', async () => {
     window.__API_UI_CONFIG__ = {
       apiBaseUrl: '/api',
       uiAuthEnabled: true
@@ -15,7 +15,7 @@ describe('config auth resolution', () => {
 
     const { config } = await import('./config');
 
-    expect(config.authProvider).toBe('password');
+    expect(config.authProvider).toBe('disabled');
     expect(config.authSessionMode).toBe('cookie');
     expect(config.authRequired).toBe(true);
     expect(config.oidcEnabled).toBe(false);
@@ -56,7 +56,7 @@ describe('config auth resolution', () => {
     window.__API_UI_CONFIG__ = {
       apiBaseUrl: '/api',
       authProvider: 'oidc',
-      authSessionMode: 'bearer',
+      authSessionMode: 'cookie',
       uiAuthEnabled: true,
       authRequired: true,
       oidcAuthority: 'https://login.microsoftonline.com/example',
@@ -67,7 +67,7 @@ describe('config auth resolution', () => {
     const { config } = await import('./config');
 
     expect(config.authProvider).toBe('oidc');
-    expect(config.authSessionMode).toBe('bearer');
+    expect(config.authSessionMode).toBe('cookie');
     expect(config.oidcEnabled).toBe(true);
     expect(config.oidcRedirectUri).toBe(
       new URL('/auth/callback', window.location.origin).toString()

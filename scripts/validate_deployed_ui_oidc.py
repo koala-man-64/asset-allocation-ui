@@ -14,7 +14,7 @@ CONFIG_ASSIGNMENT_PATTERN = re.compile(
     re.S,
 )
 TRUTHY_VALUES = {"1", "true", "yes", "y", "on"}
-AUTH_PROVIDERS = {"disabled", "oidc", "password"}
+AUTH_PROVIDERS = {"disabled", "oidc"}
 OIDC_FIELDS = (
     "oidcAuthority",
     "oidcClientId",
@@ -92,7 +92,7 @@ def validate_absent_oidc_fields(config: dict[str, Any]) -> None:
     present = [key for key in OIDC_FIELDS if str(config.get(key) or "").strip()]
     if present:
         raise ValidationError(
-            "ui-config.js must not publish OIDC bootstrap fields for password auth: "
+            "ui-config.js must not publish OIDC bootstrap fields when authProvider=disabled: "
             + ", ".join(sorted(present))
         )
 
@@ -101,7 +101,7 @@ def validate_deployed_ui_oidc(
     ui_origin: str,
     ui_auth_enabled: bool = True,
     expected_api_base_url: str = "/api",
-    ui_auth_provider: str = "password",
+    ui_auth_provider: str = "oidc",
     timeout_seconds: float = 20.0,
     fetcher: Callable[[str, float], str] | None = None,
 ) -> dict[str, Any]:
@@ -147,17 +147,16 @@ def validate_deployed_ui_oidc(
         str(config.get("authSessionMode") or "").strip().lower()
     )
 
-    if normalized_provider == "password":
+    if ui_auth_enabled and normalized_provider != "oidc":
+        raise ValidationError(
+            "Deployed auth-required UI must advertise ui-auth-provider=oidc."
+        )
+
+    if normalized_provider == "oidc":
         if advertised_auth_session_mode != "cookie":
             raise ValidationError(
-                "ui-config.js must advertise authSessionMode=cookie for password auth."
+                "ui-config.js must advertise authSessionMode=cookie for oidc auth."
             )
-        if parse_bool(config.get("oidcEnabled", False)):
-            raise ValidationError(
-                "ui-config.js must advertise oidcEnabled=false for password auth."
-            )
-        validate_absent_oidc_fields(config)
-    elif normalized_provider == "oidc":
         if not parse_bool(config.get("oidcEnabled", False)):
             raise ValidationError(
                 "ui-config.js must advertise oidcEnabled=true when authProvider=oidc."
@@ -170,6 +169,11 @@ def validate_deployed_ui_oidc(
             raise ValidationError(
                 f"Unexpected authSessionMode={advertised_auth_session_mode} for disabled auth."
             )
+        if parse_bool(config.get("oidcEnabled", False)):
+            raise ValidationError(
+                "ui-config.js must advertise oidcEnabled=false when authProvider=disabled."
+            )
+        validate_absent_oidc_fields(config)
 
     return {
         "ui_origin": origin,
@@ -193,8 +197,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--ui-auth-provider",
-        default="password",
-        help="Expected deployed UI auth provider. Defaults to password.",
+        default="oidc",
+        help="Expected deployed UI auth provider. Defaults to oidc.",
     )
     parser.add_argument(
         "--expected-api-base-url",

@@ -24,20 +24,20 @@ case "${lower_auth_enabled}" in
     resolved_auth_required='true'
     case "${lower_auth_provider}" in
       oidc)
+        : "${ui_oidc_authority:?UI_OIDC_AUTHORITY is required when UI_AUTH_ENABLED=true and UI_AUTH_PROVIDER=oidc.}"
+        : "${ui_oidc_client_id:?UI_OIDC_CLIENT_ID is required when UI_AUTH_ENABLED=true and UI_AUTH_PROVIDER=oidc.}"
+        : "${ui_oidc_scopes:?UI_OIDC_SCOPES is required when UI_AUTH_ENABLED=true and UI_AUTH_PROVIDER=oidc.}"
         resolved_auth_provider='oidc'
-        resolved_auth_session_mode='bearer'
-        if [ -n "${ui_oidc_authority}" ] && [ -n "${ui_oidc_client_id}" ] && [ -n "${ui_oidc_scopes}" ]; then
-          resolved_oidc_enabled='true'
-        fi
+        resolved_auth_session_mode='cookie'
+        resolved_oidc_enabled='true'
         ;;
       disabled)
-        resolved_auth_provider='disabled'
-        resolved_auth_required='false'
-        resolved_ui_auth_enabled='false'
+        echo "UI_AUTH_PROVIDER=disabled is not allowed when UI_AUTH_ENABLED=true." >&2
+        exit 1
         ;;
       *)
-        resolved_auth_provider='password'
-        resolved_auth_session_mode='cookie'
+        echo "UI_AUTH_PROVIDER must be oidc when UI_AUTH_ENABLED=true (received: ${ui_auth_provider:-<empty>})." >&2
+        exit 1
         ;;
     esac
     ;;

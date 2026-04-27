@@ -105,7 +105,7 @@ describe('useRealtime', () => {
     );
     (window as Window & { __API_UI_CONFIG__?: Record<string, unknown> }).__API_UI_CONFIG__ = {
       apiBaseUrl: '/api',
-      authProvider: 'password',
+      authProvider: 'oidc',
       authSessionMode: 'cookie',
       authRequired: true
     };

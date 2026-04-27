@@ -3,13 +3,24 @@ import { useNavigate } from 'react-router-dom';
 
 import { config } from '@/config';
 import { DataService } from '@/services/DataService';
+import {
+  buildLoginPath,
+  clearStoredAuthRedirects,
+  currentRoute,
+  DEFAULT_POST_LOGIN_PATH,
+  sanitizeReturnPath,
+  storePostLoginRedirectPath,
+  storePostLogoutRestartPath
+} from '@/services/authRedirectStorage';
+import { startOidcLogout } from '@/services/oidcClient';
 import type { AuthSessionStatus } from '@/services/apiService';
 import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
-const POST_LOGIN_PATH_STORAGE_KEY = 'asset-allocation.post-login-path';
-const POST_LOGOUT_RESTART_PATH_STORAGE_KEY = 'asset-allocation.post-logout-restart-path';
-const DEFAULT_POST_LOGIN_PATH = '/system-status';
-const LOGIN_PATH = '/login';
+export {
+  consumePostLoginRedirectPath,
+  consumePostLogoutRestartPath,
+  peekPostLoginRedirectPath
+} from '@/services/authRedirectStorage';
 
 type InteractiveAuthRequest = {
   reason?: string;
@@ -50,84 +61,10 @@ export interface AuthContextType {
 
 function resolveReturnPath(fallback?: string): string {
   const trimmed = String(fallback ?? '').trim();
-  if (trimmed && trimmed.startsWith('/') && !trimmed.startsWith('//')) {
-    return trimmed;
+  if (trimmed) {
+    return sanitizeReturnPath(trimmed);
   }
-  if (typeof window === 'undefined') {
-    return DEFAULT_POST_LOGIN_PATH;
-  }
-  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  if (
-    !currentPath ||
-    currentPath === LOGIN_PATH ||
-    currentPath.startsWith('/auth/callback') ||
-    currentPath.startsWith('/auth/logout-complete')
-  ) {
-    return DEFAULT_POST_LOGIN_PATH;
-  }
-  return currentPath;
-}
-
-function removeStoredValue(key: string): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    window.sessionStorage.removeItem(key);
-  } catch {
-    // Ignore sessionStorage failures and continue with a safe default flow.
-  }
-}
-
-function storeValue(key: string, value: string): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    window.sessionStorage.setItem(key, value);
-  } catch {
-    // Ignore sessionStorage failures and continue with a safe default flow.
-  }
-}
-
-function readValue(key: string): string {
-  if (typeof window === 'undefined') {
-    return '';
-  }
-  try {
-    return String(window.sessionStorage.getItem(key) ?? '').trim();
-  } catch {
-    return '';
-  }
-}
-
-export function peekPostLoginRedirectPath(): string {
-  return readValue(POST_LOGIN_PATH_STORAGE_KEY) || DEFAULT_POST_LOGIN_PATH;
-}
-
-export function consumePostLoginRedirectPath(): string {
-  const value = peekPostLoginRedirectPath();
-  removeStoredValue(POST_LOGIN_PATH_STORAGE_KEY);
-  return value;
-}
-
-export function consumePostLogoutRestartPath(): string | null {
-  const value = readValue(POST_LOGOUT_RESTART_PATH_STORAGE_KEY);
-  removeStoredValue(POST_LOGOUT_RESTART_PATH_STORAGE_KEY);
-  return value || null;
-}
-
-function buildLoginPath(returnPath?: string, options: { loggedOut?: boolean } = {}): string {
-  const params = new URLSearchParams();
-  const nextReturnPath = resolveReturnPath(returnPath);
-  if (nextReturnPath) {
-    params.set('returnTo', nextReturnPath);
-  }
-  if (options.loggedOut) {
-    params.set('loggedOut', '1');
-  }
-  const search = params.toString();
-  return search ? `${LOGIN_PATH}?${search}` : LOGIN_PATH;
+  return typeof window === 'undefined' ? DEFAULT_POST_LOGIN_PATH : currentRoute();
 }
 
 function sessionUserLabel(status: AuthSessionStatus | null): string | null {
@@ -220,6 +157,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useMemo(
     () => async (password: string): Promise<AuthSessionStatus> => {
+      if (config.authProvider !== 'password') {
+        throw new Error('Password login is not enabled for this deployment.');
+      }
       const trimmedPassword = String(password ?? '');
       setBusy(true);
       setPhase('initializing');
@@ -232,8 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthenticated(true);
         setPhase('authenticated');
         setUserLabel(sessionUserLabel(response.data));
-        removeStoredValue(POST_LOGIN_PATH_STORAGE_KEY);
-        removeStoredValue(POST_LOGOUT_RESTART_PATH_STORAGE_KEY);
+        clearStoredAuthRedirects();
         logUiDiagnostic('Auth', 'login-success', {
           authMode: response.data.authMode,
           userLabel: sessionUserLabel(response.data),
@@ -260,7 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useMemo(
     () => (returnPath?: string) => {
       const nextReturnPath = resolveReturnPath(returnPath);
-      storeValue(POST_LOGIN_PATH_STORAGE_KEY, nextReturnPath);
+      storePostLoginRedirectPath(nextReturnPath);
       setPhase('redirecting');
       setError(null);
       navigate(buildLoginPath(nextReturnPath), { replace: true });
@@ -274,8 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setBusy(true);
       setPhase('signing-out');
       setError(null);
-      removeStoredValue(POST_LOGIN_PATH_STORAGE_KEY);
-      removeStoredValue(POST_LOGOUT_RESTART_PATH_STORAGE_KEY);
+      clearStoredAuthRedirects();
       try {
         if (enabled) {
           await DataService.deleteAuthSession();
@@ -294,6 +232,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setAuthenticated(false);
       setUserLabel(null);
+      if (config.authProvider === 'oidc' && config.oidcEnabled) {
+        try {
+          await startOidcLogout();
+          if (mountedRef.current) {
+            setBusy(false);
+            setPhase('signed-out');
+            navigate('/auth/logout-complete', { replace: true });
+          }
+          return;
+        } catch (logoutRedirectError) {
+          if (mountedRef.current) {
+            setError(
+              logoutRedirectError instanceof Error
+                ? logoutRedirectError.message
+                : String(logoutRedirectError ?? 'Unknown error')
+            );
+          }
+        }
+      }
       setBusy(false);
       setPhase('signed-out');
       navigate(buildLoginPath(undefined, { loggedOut: true }), { replace: true });
@@ -305,11 +262,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => async (returnPath?: string) => {
       let shouldFinalize = true;
       const nextReturnPath = resolveReturnPath(returnPath);
-      storeValue(POST_LOGOUT_RESTART_PATH_STORAGE_KEY, nextReturnPath);
+      storePostLogoutRestartPath(nextReturnPath);
       setBusy(true);
       setPhase('signing-out');
       setError(null);
-      removeStoredValue(POST_LOGIN_PATH_STORAGE_KEY);
+      clearStoredAuthRedirects();
+      storePostLogoutRestartPath(nextReturnPath);
       try {
         if (enabled) {
           await DataService.deleteAuthSession();
@@ -328,6 +286,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setAuthenticated(false);
       setUserLabel(null);
+      if (config.authProvider === 'oidc' && config.oidcEnabled) {
+        try {
+          await startOidcLogout();
+          if (mountedRef.current) {
+            setBusy(false);
+            setPhase('signed-out');
+            navigate('/auth/logout-complete', { replace: true });
+          }
+          return;
+        } catch (logoutRedirectError) {
+          if (mountedRef.current) {
+            setError(
+              logoutRedirectError instanceof Error
+                ? logoutRedirectError.message
+                : String(logoutRedirectError ?? 'Unknown error')
+            );
+          }
+        }
+      }
       setBusy(false);
       setPhase('signed-out');
       navigate(buildLoginPath(nextReturnPath), { replace: true });

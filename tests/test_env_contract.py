@@ -86,7 +86,7 @@ SYNTHETIC_ENV_VALUES = {
     "API_UPSTREAM": "example.internal.test",
     "API_UPSTREAM_SCHEME": "https",
     "UI_AUTH_ENABLED": "true",
-    "UI_AUTH_PROVIDER": "password",
+    "UI_AUTH_PROVIDER": "oidc",
     "UI_ALLOWED_INGRESS_CIDRS": "203.0.113.10/32,198.51.100.0/24",
     "UI_OIDC_AUTHORITY": "https://login.microsoftonline.com/example-tenant",
     "UI_OIDC_CLIENT_ID": "example-client-id",
@@ -248,7 +248,7 @@ def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None
     ).read_text(encoding="utf-8")
     assert "vars.API_UPSTREAM_SCHEME || 'https'" in text
     assert "vars.UI_AUTH_ENABLED || 'true'" in text
-    assert "vars.UI_AUTH_PROVIDER || 'password'" in text
+    assert "vars.UI_AUTH_PROVIDER || 'oidc'" in text
     assert "vars.UI_ALLOWED_INGRESS_CIDRS" in text
     assert "vars.UI_OIDC_AUTHORITY" in text
     assert "vars.UI_OIDC_CLIENT_ID" in text
@@ -319,10 +319,23 @@ def test_ui_release_workflow_supports_manual_dispatch_without_bypassing_ci() -> 
     )
 
 
-def test_setup_env_dry_run_reports_sources_without_prompting() -> None:
+def test_setup_env_dry_run_reports_sources_without_prompting(tmp_path: Path) -> None:
     script = repo_root() / "scripts" / "setup-env.ps1"
+    env_file = tmp_path / ".env.web"
+    local_env_file = tmp_path / ".env.local"
+    write_synthetic_env_file(env_file)
     completed = subprocess.run(
-        [powershell_exe(), "-NoProfile", "-File", str(script), "-DryRun"],
+        [
+            powershell_exe(),
+            "-NoProfile",
+            "-File",
+            str(script),
+            "-DryRun",
+            "-EnvFilePath",
+            str(env_file),
+            "-LocalEnvFilePath",
+            str(local_env_file),
+        ],
         cwd=repo_root(),
         check=True,
         capture_output=True,
@@ -342,7 +355,7 @@ def test_setup_env_dry_run_reports_sources_without_prompting() -> None:
     assert "prompt_required=" in stdout
     assert "# Preview (.env.local)" in stdout
     assert "VITE_API_PROXY_TARGET=" in stdout
-    assert "VITE_UI_AUTH_PROVIDER=password" in stdout
+    assert "VITE_UI_AUTH_PROVIDER=oidc" in stdout
     assert "VITE_OIDC_AUTHORITY=" in stdout
     assert "VITE_PROXY_CONFIG_JS=" not in stdout
 
@@ -375,7 +388,7 @@ def test_setup_env_writes_local_vite_env_file(tmp_path: Path) -> None:
     assert "VITE_API_BASE_URL=/api" in local_env_text
     assert "VITE_API_PROXY_TARGET=https://example.internal.test" in local_env_text
     assert "VITE_UI_AUTH_ENABLED=true" in local_env_text
-    assert "VITE_UI_AUTH_PROVIDER=password" in local_env_text
+    assert "VITE_UI_AUTH_PROVIDER=oidc" in local_env_text
     assert (
         "VITE_OIDC_AUTHORITY=https://login.microsoftonline.com/example-tenant"
         in local_env_text
