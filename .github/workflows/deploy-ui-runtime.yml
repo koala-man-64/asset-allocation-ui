@@ -186,14 +186,43 @@ jobs:
             shift 2
             local status
             local body_file
+            local curl_exit=0
+            local attempt=1
+            local max_attempts=18
+            local sleep_seconds=10
             body_file="$(mktemp)"
-            status="$(curl --silent --show-error --retry 12 --retry-delay 10 --retry-connrefused --output "${body_file}" --write-out '%{http_code}' --request "${method}" "${url}")"
-            for allowed in "$@"; do
-              if [ "${status}" = "${allowed}" ]; then
-                rm -f "${body_file}"
-                return 0
+            while [ "${attempt}" -le "${max_attempts}" ]; do
+              status=''
+              curl_exit=0
+              if ! status="$(curl --silent --show-error --retry 12 --retry-delay 10 --retry-connrefused --output "${body_file}" --write-out '%{http_code}' --request "${method}" "${url}")"; then
+                curl_exit=$?
+              else
+                for allowed in "$@"; do
+                  if [ "${status}" = "${allowed}" ]; then
+                    rm -f "${body_file}"
+                    return 0
+                  fi
+                done
               fi
+
+              if [ "${attempt}" -lt "${max_attempts}" ]; then
+                if [ "${curl_exit}" -eq 0 ]; then
+                  echo "Attempt ${attempt}/${max_attempts}: ${method} ${url} returned HTTP ${status}. Waiting ${sleep_seconds}s for ACA rollout stabilization."
+                else
+                  echo "Attempt ${attempt}/${max_attempts}: ${method} ${url} failed with curl exit ${curl_exit}. Waiting ${sleep_seconds}s for ACA rollout stabilization."
+                fi
+                sleep "${sleep_seconds}"
+              fi
+
+              attempt=$((attempt + 1))
             done
+
+            if [ "${curl_exit}" -ne 0 ]; then
+              echo "curl exited with status ${curl_exit} for ${method} ${url} after ${max_attempts} attempts." >&2
+              rm -f "${body_file}"
+              exit "${curl_exit}"
+            fi
+
             echo "Unexpected HTTP status ${status} for ${method} ${url}. Allowed: $*" >&2
             cat "${body_file}" >&2 || true
             rm -f "${body_file}"
