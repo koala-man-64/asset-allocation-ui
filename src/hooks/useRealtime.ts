@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 
 import { config } from '@/config';
 import { queryKeys } from '@/hooks/useDataQueries';
+import { DataService } from '@/services/DataService';
+import { ApiError } from '@/services/apiService';
 import { backtestKeys } from '@/services/backtestHooks';
 import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
 import { intradayMonitorKeys } from '@/services/intradayMonitorApi';
@@ -86,6 +88,8 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
   const dynamicTopicCountsRef = useRef<Map<string, number>>(new Map());
   const connectInFlightRef = useRef(false);
   const realtimeUnavailableRef = useRef(false);
+  const authRecoveryInFlightRef = useRef<Promise<boolean> | null>(null);
+  const redirectedForAuthRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) {
@@ -179,6 +183,46 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
       }, 5000);
     }
 
+    async function redirectToLoginIfSessionMissing(): Promise<boolean> {
+      if (redirectedForAuthRef.current) {
+        return true;
+      }
+      if (authRecoveryInFlightRef.current) {
+        return authRecoveryInFlightRef.current;
+      }
+
+      const request = DataService.getAuthSessionStatusWithMeta()
+        .then(() => false)
+        .catch((error) => {
+          if (error instanceof ApiError && error.status === 401) {
+            redirectedForAuthRef.current = true;
+            redirectToLogin();
+            return true;
+          }
+          return false;
+        })
+        .finally(() => {
+          authRecoveryInFlightRef.current = null;
+        });
+
+      authRecoveryInFlightRef.current = request;
+      return request;
+    }
+
+    async function handleRealtimeUnauthorized(reason: 'ticket' | 'socket'): Promise<void> {
+      const redirected = await redirectToLoginIfSessionMissing();
+      if (redirected) {
+        return;
+      }
+
+      markRealtimeUnavailable(
+        reason === 'ticket'
+          ? 'Realtime updates unavailable: the realtime ticket was rejected while your UI session remained valid.'
+          : 'Realtime updates unavailable: the realtime websocket was rejected while your UI session remained valid.'
+      );
+      scheduleReconnect();
+    }
+
     async function fetchRealtimeTicket(): Promise<string> {
       const headers = new Headers({ 'X-Request-ID': createRealtimeRequestId() });
       const csrfToken = readCsrfToken();
@@ -202,8 +246,8 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
       );
 
       if (response.status === 401) {
-        redirectToLogin();
-        throw new Error('Realtime session expired.');
+        await handleRealtimeUnauthorized('ticket');
+        throw new Error('Realtime ticket rejected.');
       }
 
       if (!response.ok) {
@@ -276,7 +320,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
           wsRef.current = null;
 
           if (event.code === 4401) {
-            redirectToLogin();
+            void handleRealtimeUnauthorized('socket');
             return;
           }
 
@@ -291,7 +335,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
         connectInFlightRef.current = false;
         wsRef.current = null;
         const message = error instanceof Error ? error.message : 'Realtime authentication failed.';
-        if (message !== 'Realtime session expired.') {
+        if (message !== 'Realtime ticket rejected.') {
           markRealtimeUnavailable(`Realtime updates unavailable: ${message}`);
           scheduleReconnect();
         }
@@ -429,6 +473,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
         reconnectTimeoutRef.current = null;
       }
       connectInFlightRef.current = false;
+      authRecoveryInFlightRef.current = null;
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
