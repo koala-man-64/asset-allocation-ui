@@ -6,12 +6,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, type SystemStatusViewResponse } from '@/services/apiService';
 import type { SystemHealth } from '@/types/strategy';
 
-const { mockDataService, mockRedirectToLogin, mockLogUiDiagnostic } = vi.hoisted(() => ({
+const { mockDataService } = vi.hoisted(() => ({
   mockDataService: {
     getSystemStatusView: vi.fn()
-  },
-  mockRedirectToLogin: vi.fn(),
-  mockLogUiDiagnostic: vi.fn()
+  }
 }));
 
 vi.mock('@/services/DataService', () => ({
@@ -22,18 +20,6 @@ vi.mock('@/hooks/useSystemHealthJobOverrides', () => ({
   mergeSystemHealthWithJobOverrides: (systemHealth: SystemHealth) => systemHealth,
   useSystemHealthJobOverrides: () => ({ data: undefined })
 }));
-
-vi.mock('@/utils/authNavigation', () => ({
-  redirectToLogin: mockRedirectToLogin
-}));
-
-vi.mock('@/services/uiDiagnostics', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/services/uiDiagnostics')>();
-  return {
-    ...actual,
-    logUiDiagnostic: mockLogUiDiagnostic
-  };
-});
 
 import { useSystemStatusViewQuery } from '@/hooks/useSystemStatusView';
 
@@ -84,27 +70,21 @@ describe('useSystemStatusViewQuery auth handling', () => {
     window.history.pushState({}, 'System Status', '/system-status?tab=health#latency');
   });
 
-  it('redirects to login when the initial system status query returns 401', async () => {
+  it('surfaces the initial system status 401 without redirecting away from the route', async () => {
     mockDataService.getSystemStatusView.mockRejectedValueOnce(
       new ApiError(401, 'API Error: 401 Unauthorized')
     );
 
-    renderHook(() => useSystemStatusViewQuery(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useSystemStatusViewQuery(), { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(mockRedirectToLogin).toHaveBeenCalledTimes(1);
+      expect(result.current.error).toBeInstanceOf(ApiError);
     });
-    expect(mockLogUiDiagnostic).toHaveBeenCalledWith(
-      'AuthSession',
-      'system-status-session-expired',
-      expect.objectContaining({
-        source: 'query',
-        status: 401
-      })
-    );
+    expect(result.current.error).toMatchObject({ status: 401 });
+    expect(window.location.pathname).toBe('/system-status');
   });
 
-  it('redirects to login when a refresh request returns 401', async () => {
+  it('surfaces a refresh 401 without redirecting away from the route', async () => {
     mockDataService.getSystemStatusView
       .mockResolvedValueOnce(systemStatusView)
       .mockRejectedValueOnce(new ApiError(401, 'API Error: 401 Unauthorized'));
@@ -121,16 +101,6 @@ describe('useSystemStatusViewQuery auth handling', () => {
       await expect(result.current.refresh()).rejects.toThrow('API Error: 401 Unauthorized');
     });
 
-    await waitFor(() => {
-      expect(mockRedirectToLogin).toHaveBeenCalledTimes(1);
-    });
-    expect(mockLogUiDiagnostic).toHaveBeenCalledWith(
-      'AuthSession',
-      'system-status-session-expired',
-      expect.objectContaining({
-        source: 'refresh',
-        status: 401
-      })
-    );
+    expect(window.location.pathname).toBe('/system-status');
   });
 });
