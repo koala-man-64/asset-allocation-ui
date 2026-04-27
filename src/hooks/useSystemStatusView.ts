@@ -8,8 +8,6 @@ import {
 } from '@/hooks/useSystemHealthJobOverrides';
 import { ApiError, type SystemStatusViewResponse } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
-import { logUiDiagnostic } from '@/services/uiDiagnostics';
-import { redirectToLogin } from '@/utils/authNavigation';
 
 const SYSTEM_STATUS_VIEW_REFETCH_INTERVAL_MS = 10_000;
 const SYSTEM_STATUS_VIEW_STORAGE_KEY = 'asset-allocation.systemStatusView';
@@ -24,14 +22,6 @@ function isTerminalSystemStatusAuthError(error: unknown): boolean {
   }
 
   return error.message.includes('API Error: 401');
-}
-
-function isUnauthorizedSystemStatusError(error: unknown): boolean {
-  if (error instanceof ApiError) {
-    return error.status === 401;
-  }
-
-  return error instanceof Error && error.message.includes('API Error: 401');
 }
 
 function readStoredSystemStatusView(): SystemStatusViewResponse | undefined {
@@ -98,27 +88,7 @@ export function useSystemStatusViewQuery(options: UseSystemStatusViewQueryOption
   const jobOverrides = useSystemHealthJobOverrides();
   const initialViewRef = useRef<SystemStatusViewResponse | undefined>(readStoredSystemStatusView());
   const forceRefreshPromiseRef = useRef<Promise<SystemStatusViewResponse> | null>(null);
-  const redirectedForAuthRef = useRef(false);
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
-
-  const redirectForUnauthorized = useCallback(
-    (error: unknown, source: 'query' | 'refresh') => {
-      if (!isUnauthorizedSystemStatusError(error) || redirectedForAuthRef.current) {
-        return false;
-      }
-
-      redirectedForAuthRef.current = true;
-      writeStoredSystemStatusView(undefined);
-      queryClient.removeQueries({ queryKey: queryKeys.systemStatusView(), exact: true });
-      logUiDiagnostic('AuthSession', 'system-status-session-expired', {
-        source,
-        status: error instanceof ApiError ? error.status : 401
-      });
-      redirectToLogin();
-      return true;
-    },
-    [queryClient]
-  );
 
   const query = useQuery<SystemStatusViewResponse>({
     queryKey: queryKeys.systemStatusView(),
@@ -140,13 +110,6 @@ export function useSystemStatusViewQuery(options: UseSystemStatusViewQueryOption
     syncSystemStatusRelatedCaches(queryClient, query.data);
   }, [query.data, queryClient]);
 
-  useEffect(() => {
-    if (!query.error) {
-      return;
-    }
-    redirectForUnauthorized(query.error, 'query');
-  }, [query.error, redirectForUnauthorized]);
-
   const refresh = useCallback(async (): Promise<SystemStatusViewResponse> => {
     if (forceRefreshPromiseRef.current) {
       return forceRefreshPromiseRef.current;
@@ -154,10 +117,6 @@ export function useSystemStatusViewQuery(options: UseSystemStatusViewQueryOption
 
     setIsForceRefreshing(true);
     const request = DataService.getSystemStatusView({ refresh: true })
-      .catch((error) => {
-        redirectForUnauthorized(error, 'refresh');
-        throw error;
-      })
       .then((fresh) => {
         queryClient.setQueryData(queryKeys.systemStatusView(), fresh);
         syncSystemStatusRelatedCaches(queryClient, fresh);
@@ -170,7 +129,7 @@ export function useSystemStatusViewQuery(options: UseSystemStatusViewQueryOption
 
     forceRefreshPromiseRef.current = request;
     return request;
-  }, [queryClient, redirectForUnauthorized]);
+  }, [queryClient]);
 
   useEffect(() => {
     if (!autoRefresh) {
