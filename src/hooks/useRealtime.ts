@@ -13,6 +13,7 @@ import {
   REALTIME_UNSUBSCRIBE_EVENT,
   emitConsoleLogStream
 } from '@/services/realtimeBus';
+import { redirectToLogin } from '@/utils/authNavigation';
 
 const SUBSCRIPTION_TOPICS = [
   'backtests',
@@ -71,16 +72,6 @@ function readCsrfToken(): string {
     }
   }
   return '';
-}
-
-function currentRoute(): string {
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
-}
-
-function redirectToLogin(): void {
-  const params = new URLSearchParams();
-  params.set('returnTo', currentRoute());
-  window.location.assign(`/login?${params.toString()}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
