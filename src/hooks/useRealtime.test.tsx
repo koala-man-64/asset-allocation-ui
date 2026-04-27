@@ -2,14 +2,27 @@ import React from 'react';
 import { render, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/services/apiService';
 
-const { mockToastError } = vi.hoisted(() => ({
-  mockToastError: vi.fn()
+const { mockToastError, mockRedirectToLogin, mockGetAuthSessionStatusWithMeta } = vi.hoisted(() => ({
+  mockToastError: vi.fn(),
+  mockRedirectToLogin: vi.fn(),
+  mockGetAuthSessionStatusWithMeta: vi.fn()
 }));
 
 vi.mock('sonner', () => ({
   toast: {
     error: mockToastError
+  }
+}));
+
+vi.mock('@/utils/authNavigation', () => ({
+  redirectToLogin: mockRedirectToLogin
+}));
+
+vi.mock('@/services/DataService', () => ({
+  DataService: {
+    getAuthSessionStatusWithMeta: mockGetAuthSessionStatusWithMeta
   }
 }));
 
@@ -45,6 +58,11 @@ class MockWebSocket {
   close(): void {
     this.readyState = MockWebSocket.CLOSED;
     this.onclose?.(new Event('close') as CloseEvent);
+  }
+
+  emitClose(code: number): void {
+    this.readyState = MockWebSocket.CLOSED;
+    this.onclose?.({ code } as CloseEvent);
   }
 
   open(): void {
@@ -95,6 +113,8 @@ describe('useRealtime', () => {
       configurable: true,
       value: 'aa_csrf_dev=csrf-token'
     });
+    mockRedirectToLogin.mockReset();
+    mockGetAuthSessionStatusWithMeta.mockReset();
   });
 
   afterEach(() => {
@@ -405,5 +425,99 @@ describe('useRealtime', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it('does not redirect to login when the websocket closes 4401 but the UI session still validates', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ticket: 'ticket-1', expiresAt: '2026-03-15T12:00:00Z' })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ticket: 'ticket-2', expiresAt: '2026-03-15T12:00:05Z' })
+      });
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    mockGetAuthSessionStatusWithMeta.mockResolvedValue({
+      data: {
+        authMode: 'password',
+        subject: 'user-123',
+        requiredRoles: ['AssetAllocation.Access'],
+        grantedRoles: ['AssetAllocation.Access']
+      },
+      meta: {
+        requestId: 'req-1',
+        status: 200,
+        durationMs: 10,
+        url: '/api/auth/session'
+      }
+    });
+
+    const queryClient = createQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    const first = MockWebSocket.instances[0];
+    act(() => {
+      first.open();
+      first.emitClose(4401);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockGetAuthSessionStatusWithMeta).toHaveBeenCalledTimes(1);
+    expect(mockRedirectToLogin).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalledWith(
+      'Realtime updates unavailable: the realtime websocket was rejected while your UI session remained valid.'
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it('redirects to login when the websocket closes 4401 and the UI session is missing', async () => {
+    mockGetAuthSessionStatusWithMeta.mockRejectedValue(
+      new ApiError(401, 'API Error: 401 Unauthorized')
+    );
+
+    const queryClient = createQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const first = MockWebSocket.instances[0];
+    act(() => {
+      first.open();
+      first.emitClose(4401);
+    });
+
+    await waitFor(() => {
+      expect(mockRedirectToLogin).toHaveBeenCalledTimes(1);
+    });
   });
 });
