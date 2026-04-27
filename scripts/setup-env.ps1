@@ -195,7 +195,7 @@ function Build-LocalEnvResults {
     $apiUpstream = Get-ResolvedResultValue -Results $ResolvedResults -Name "API_UPSTREAM"
     $apiUpstreamScheme = Get-ResolvedResultValue -Results $ResolvedResults -Name "API_UPSTREAM_SCHEME" -Fallback "https"
     $uiAuthEnabled = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_AUTH_ENABLED" -Fallback "true"
-    $uiAuthProvider = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_AUTH_PROVIDER" -Fallback "password"
+    $uiAuthProvider = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_AUTH_PROVIDER" -Fallback "oidc"
     $uiOidcAuthority = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_OIDC_AUTHORITY"
     $uiOidcClientId = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_OIDC_CLIENT_ID"
     $uiOidcScopes = Get-ResolvedResultValue -Results $ResolvedResults -Name "UI_OIDC_SCOPES"
@@ -302,7 +302,7 @@ function Resolve-DiscoveredValue {
             return (New-Resolution -Value "https" -Source "default")
         }
         "UI_AUTH_ENABLED" { return (New-Resolution -Value "true" -Source "default") }
-        "UI_AUTH_PROVIDER" { return (New-Resolution -Value "password" -Source "default") }
+        "UI_AUTH_PROVIDER" { return (New-Resolution -Value "oidc" -Source "default") }
         "AZURE_CLIENT_ID" {
             $items = Invoke-JsonCommand -FilePath "az" -ArgumentList @("identity", "list", "--resource-group", "AssetAllocationRG", "-o", "json")
             if ($items) {

@@ -165,6 +165,16 @@ export const DataService = {
     }
   },
 
+  async createOidcAuthSession(accessToken: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
+    try {
+      const response = await apiService.createOidcAuthSession(accessToken);
+      return response;
+    } catch (error) {
+      console.error('[DataService] createOidcAuthSession error', error);
+      throw error;
+    }
+  },
+
   async deleteAuthSession(): Promise<Record<string, never>> {
     try {
       return await apiService.deleteAuthSession();

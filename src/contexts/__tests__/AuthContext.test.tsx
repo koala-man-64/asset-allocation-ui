@@ -26,12 +26,18 @@ const mockDataService = vi.hoisted(() => ({
   getAuthSessionStatusWithMeta: vi.fn()
 }));
 
+const mockStartOidcLogout = vi.hoisted(() => vi.fn());
+
 vi.mock('@/config', () => ({
   config: mockConfig
 }));
 
 vi.mock('@/services/DataService', () => ({
   DataService: mockDataService
+}));
+
+vi.mock('@/services/oidcClient', () => ({
+  startOidcLogout: mockStartOidcLogout
 }));
 
 function Harness() {
@@ -61,6 +67,7 @@ describe('AuthProvider', () => {
     mockConfig.authRequired = true;
     mockConfig.uiAuthEnabled = true;
     mockConfig.oidcEnabled = false;
+    mockStartOidcLogout.mockReset();
     mockDataService.createPasswordAuthSession.mockReset();
     mockDataService.deleteAuthSession.mockReset();
     mockDataService.getAuthSessionStatusWithMeta.mockReset();

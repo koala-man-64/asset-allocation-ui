@@ -22,7 +22,7 @@ jobs:
       API_UPSTREAM: ${{ vars.API_UPSTREAM }}
       API_UPSTREAM_SCHEME: ${{ vars.API_UPSTREAM_SCHEME || 'https' }}
       UI_AUTH_ENABLED: ${{ vars.UI_AUTH_ENABLED || 'true' }}
-      UI_AUTH_PROVIDER: ${{ vars.UI_AUTH_PROVIDER || 'password' }}
+      UI_AUTH_PROVIDER: ${{ vars.UI_AUTH_PROVIDER || 'oidc' }}
       UI_ALLOWED_INGRESS_CIDRS: ${{ vars.UI_ALLOWED_INGRESS_CIDRS }}
       UI_OIDC_AUTHORITY: ${{ vars.UI_OIDC_AUTHORITY }}
       UI_OIDC_CLIENT_ID: ${{ vars.UI_OIDC_CLIENT_ID }}
@@ -61,18 +61,26 @@ jobs:
               ;;
           esac
           case "${ui_auth_provider}" in
-            disabled|password|oidc) ;;
+            disabled|oidc) ;;
             *)
-              echo "vars.UI_AUTH_PROVIDER must be disabled, password, or oidc (received: ${ui_auth_provider})." >&2
+              echo "vars.UI_AUTH_PROVIDER must be disabled or oidc (received: ${ui_auth_provider})." >&2
               exit 1
               ;;
           esac
           case "${ui_auth_enabled}" in
             1|true|yes|y|on|t)
-              if [ "${ui_auth_provider}" = "oidc" ]; then
-                : "${UI_OIDC_AUTHORITY:?vars.UI_OIDC_AUTHORITY is required when UI_AUTH_PROVIDER=oidc}"
-                : "${UI_OIDC_CLIENT_ID:?vars.UI_OIDC_CLIENT_ID is required when UI_AUTH_PROVIDER=oidc}"
-                : "${UI_OIDC_SCOPES:?vars.UI_OIDC_SCOPES is required when UI_AUTH_PROVIDER=oidc}"
+              if [ "${ui_auth_provider}" != "oidc" ]; then
+                echo "vars.UI_AUTH_PROVIDER must resolve to oidc when UI_AUTH_ENABLED=true." >&2
+                exit 1
+              fi
+              : "${UI_OIDC_AUTHORITY:?vars.UI_OIDC_AUTHORITY is required when UI_AUTH_PROVIDER=oidc}"
+              : "${UI_OIDC_CLIENT_ID:?vars.UI_OIDC_CLIENT_ID is required when UI_AUTH_PROVIDER=oidc}"
+              : "${UI_OIDC_SCOPES:?vars.UI_OIDC_SCOPES is required when UI_AUTH_PROVIDER=oidc}"
+              ;;
+            *)
+              if [ "${ui_auth_provider}" != "disabled" ]; then
+                echo "vars.UI_AUTH_PROVIDER must resolve to disabled when UI_AUTH_ENABLED is false." >&2
+                exit 1
               fi
               ;;
           esac

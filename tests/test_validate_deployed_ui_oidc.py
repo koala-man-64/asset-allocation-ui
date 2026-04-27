@@ -34,7 +34,7 @@ def build_ui_config_js(
     *,
     api_base_url: str = "/api",
     ui_auth_enabled: bool = True,
-    auth_provider: str = "password",
+    auth_provider: str = "oidc",
     auth_session_mode: str = "cookie",
     include_oidc: bool = False,
 ) -> str:
@@ -68,15 +68,15 @@ def make_fetcher(mapping: dict[str, str]):
     return fetcher
 
 
-def test_validator_accepts_password_bootstrap() -> None:
+def test_validator_accepts_oidc_bootstrap() -> None:
     validator = load_validator_module()
     ui_origin = "https://asset-allocation-ui.example.com"
     result = validator.validate_deployed_ui_oidc(
         ui_origin=ui_origin,
-        ui_auth_provider="password",
+        ui_auth_provider="oidc",
         fetcher=make_fetcher(
             {
-                f"{ui_origin}/ui-config.js": build_ui_config_js(),
+                f"{ui_origin}/ui-config.js": build_ui_config_js(include_oidc=True),
             }
         ),
     )
@@ -91,11 +91,12 @@ def test_validator_rejects_non_same_origin_api_base_url() -> None:
     with pytest.raises(validator.ValidationError) as excinfo:
         validator.validate_deployed_ui_oidc(
             ui_origin=ui_origin,
-            ui_auth_provider="password",
+            ui_auth_provider="oidc",
             fetcher=make_fetcher(
                 {
                     f"{ui_origin}/ui-config.js": build_ui_config_js(
-                        api_base_url="https://asset-allocation-api.example.com/api"
+                        api_base_url="https://asset-allocation-api.example.com/api",
+                        include_oidc=True,
                     ),
                 }
             ),
@@ -104,16 +105,22 @@ def test_validator_rejects_non_same_origin_api_base_url() -> None:
     assert "apiBaseUrl" in str(excinfo.value)
 
 
-def test_validator_rejects_oidc_fields_when_password_auth_is_enabled() -> None:
+def test_validator_rejects_oidc_fields_when_auth_is_disabled() -> None:
     validator = load_validator_module()
     ui_origin = "https://asset-allocation-ui.example.com"
     with pytest.raises(validator.ValidationError) as excinfo:
         validator.validate_deployed_ui_oidc(
             ui_origin=ui_origin,
-            ui_auth_provider="password",
+            ui_auth_enabled=False,
+            ui_auth_provider="disabled",
             fetcher=make_fetcher(
                 {
-                    f"{ui_origin}/ui-config.js": build_ui_config_js(include_oidc=True),
+                    f"{ui_origin}/ui-config.js": build_ui_config_js(
+                        ui_auth_enabled=False,
+                        auth_provider="disabled",
+                        auth_session_mode="bearer",
+                        include_oidc=True,
+                    ),
                 }
             ),
         )

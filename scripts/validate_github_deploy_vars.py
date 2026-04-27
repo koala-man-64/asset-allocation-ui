@@ -9,7 +9,7 @@ from collections.abc import Mapping
 
 
 TRUTHY_VALUES = {"1", "true", "yes", "y", "on", "t"}
-AUTH_PROVIDERS = {"disabled", "oidc", "password"}
+AUTH_PROVIDERS = {"disabled", "oidc"}
 PROD_RUNTIME_ALWAYS_REQUIRED = (
     "AZURE_CLIENT_ID",
     "AZURE_TENANT_ID",
@@ -111,14 +111,22 @@ def missing_prod_runtime_vars(variable_map: Mapping[str, str]) -> list[str]:
     auth_provider = normalize_text(variable_map.get("UI_AUTH_PROVIDER")).lower()
     if auth_provider and auth_provider not in AUTH_PROVIDERS:
         raise ValidationError(
-            "vars.UI_AUTH_PROVIDER must be one of disabled, oidc, or password."
+            "vars.UI_AUTH_PROVIDER must be one of disabled or oidc."
         )
 
-    if parse_bool(variable_map.get("UI_AUTH_ENABLED")) and auth_provider == "oidc":
+    if parse_bool(variable_map.get("UI_AUTH_ENABLED")):
+        if auth_provider != "oidc":
+            raise ValidationError(
+                "vars.UI_AUTH_PROVIDER must be oidc when UI_AUTH_ENABLED=true."
+            )
         missing.extend(
             name
             for name in PROD_RUNTIME_OIDC_REQUIRED
             if not normalize_text(variable_map.get(name, ""))
+        )
+    elif auth_provider != "disabled":
+        raise ValidationError(
+            "vars.UI_AUTH_PROVIDER must be disabled when UI_AUTH_ENABLED is false."
         )
     return missing
 

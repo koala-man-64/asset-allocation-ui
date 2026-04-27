@@ -12,9 +12,9 @@ UI_PUBLIC_HOSTNAME,deploy_var,var,deploy_config,true,Stable public UI hostname b
 CONTRACTS_REPOSITORY,deploy_var,var,deploy_config,true,Sibling contracts repo slug used by workflows.
 CONTRACTS_REF,deploy_var,var,deploy_config,true,Contracts ref to validate against by default.
 API_UPSTREAM,deploy_var,var,deploy_config,true,Reachable control-plane host used by the UI proxy for /api plus root-scoped /healthz and /readyz. Store host or host:port only.
-API_UPSTREAM_SCHEME,deploy_var,var,deploy_config,true,Scheme used by the UI proxy when connecting to API_UPSTREAM. Use https for the public ACA FQDN and http only for trusted internal upstreams.
+API_UPSTREAM_SCHEME,deploy_var,var,deploy_config,true,Scheme used by the UI proxy when connecting to API_UPSTREAM. Normal production routing should use the control-plane internal route rather than the public API origin.
 UI_AUTH_ENABLED,deploy_var,var,deploy_config,true,Boolean runtime toggle for browser authentication and login in the UI container.
-UI_AUTH_PROVIDER,deploy_var,var,deploy_config,true,Browser auth mode advertised by the UI runtime. Use password for the shared-password cookie flow and oidc only during the transition window.
+UI_AUTH_PROVIDER,deploy_var,var,deploy_config,true,Browser auth mode advertised by the UI runtime. Standard deployed environments use oidc; password is not part of the normal UI deploy path.
 UI_ALLOWED_INGRESS_CIDRS,deploy_var,var,deploy_config,true,Comma- or newline-delimited trusted source CIDRs allowed to reach the public UI Container App ingress.
 UI_OIDC_AUTHORITY,deploy_var,var,deploy_config,true,OIDC authority published by the UI-owned /ui-config.js bootstrap only when UI_AUTH_PROVIDER=oidc.
 UI_OIDC_CLIENT_ID,deploy_var,var,deploy_config,true,OIDC client id published by the UI-owned /ui-config.js bootstrap only when UI_AUTH_PROVIDER=oidc.

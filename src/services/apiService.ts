@@ -1082,6 +1082,16 @@ export const apiService = {
     });
   },
 
+  createOidcAuthSession(accessToken: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
+    return requestWithMeta<AuthSessionStatus>('/auth/session', {
+      method: 'POST',
+      headers: new Headers({
+        Authorization: `Bearer ${accessToken}`
+      }),
+      retryOnStatusCodes: false
+    });
+  },
+
   deleteAuthSession(): Promise<Record<string, never>> {
     return request<Record<string, never>>('/auth/session', {
       method: 'DELETE',

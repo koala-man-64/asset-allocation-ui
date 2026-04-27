@@ -46,16 +46,19 @@ def base_vars() -> dict[str, str]:
     }
 
 
-def test_validator_accepts_password_auth_with_allowlist_repo_vars() -> None:
+def test_validator_requires_oidc_when_ui_auth_is_enabled() -> None:
     validator = load_validator_module()
 
-    validator.validate_repo_variables(
-        {
-            **base_vars(),
-            "UI_AUTH_PROVIDER": "password",
-        },
-        "prod-runtime",
-    )
+    with pytest.raises(validator.ValidationError) as excinfo:
+        validator.validate_repo_variables(
+            {
+                **base_vars(),
+                "UI_AUTH_PROVIDER": "disabled",
+            },
+            "prod-runtime",
+        )
+
+    assert "UI_AUTH_PROVIDER must be oidc when UI_AUTH_ENABLED=true." in str(excinfo.value)
 
 
 def test_validator_requires_oidc_repo_vars_only_for_oidc_provider() -> None:
@@ -83,7 +86,7 @@ def test_validator_requires_ingress_allowlist_repo_var() -> None:
         validator.validate_repo_variables(
             {
                 **base_vars(),
-                "UI_AUTH_PROVIDER": "password",
+                "UI_AUTH_PROVIDER": "oidc",
                 "UI_ALLOWED_INGRESS_CIDRS": "",
             },
             "prod-runtime",
@@ -96,10 +99,10 @@ def test_parse_variable_map_json_normalizes_keys_and_values() -> None:
     validator = load_validator_module()
 
     parsed = validator.parse_variable_map_json(
-        '{" UI_AUTH_PROVIDER ":" password ","UI_ALLOWED_INGRESS_CIDRS":" 203.0.113.10/32 "}'
+        '{" UI_AUTH_PROVIDER ":" oidc ","UI_ALLOWED_INGRESS_CIDRS":" 203.0.113.10/32 "}'
     )
 
     assert parsed == {
-        "UI_AUTH_PROVIDER": "password",
+        "UI_AUTH_PROVIDER": "oidc",
         "UI_ALLOWED_INGRESS_CIDRS": "203.0.113.10/32",
     }

@@ -143,47 +143,61 @@ function deriveOidcRedirectUri(
 }
 
 const runtimeConfig = typeof window === 'undefined' ? {} : window.__API_UI_CONFIG__ || {};
+const isDevLike = Boolean(import.meta.env.DEV || import.meta.env.MODE === 'test');
 const rawUiAuthEnabled = resolveBoolean(
   runtimeConfig.uiAuthEnabled,
-  import.meta.env.VITE_UI_AUTH_ENABLED,
+  isDevLike ? import.meta.env.VITE_UI_AUTH_ENABLED : undefined,
   true
 );
 const oidcAuthority = resolveString(
   runtimeConfig.oidcAuthority,
-  import.meta.env.VITE_OIDC_AUTHORITY
+  isDevLike ? import.meta.env.VITE_OIDC_AUTHORITY : undefined
 );
-const oidcClientId = resolveString(runtimeConfig.oidcClientId, import.meta.env.VITE_OIDC_CLIENT_ID);
-const oidcScopes = resolveScopes(runtimeConfig.oidcScopes ?? import.meta.env.VITE_OIDC_SCOPES);
+const oidcClientId = resolveString(
+  runtimeConfig.oidcClientId,
+  isDevLike ? import.meta.env.VITE_OIDC_CLIENT_ID : undefined
+);
+const oidcScopes = resolveScopes(
+  runtimeConfig.oidcScopes ?? (isDevLike ? import.meta.env.VITE_OIDC_SCOPES : undefined)
+);
 const oidcAudience = resolveScopes(
-  runtimeConfig.oidcAudience ?? import.meta.env.VITE_OIDC_AUDIENCE
+  runtimeConfig.oidcAudience ?? (isDevLike ? import.meta.env.VITE_OIDC_AUDIENCE : undefined)
 );
 const oidcRedirectUri = deriveOidcRedirectUri(
-  runtimeConfig.oidcRedirectUri,
+  runtimeConfig.oidcRedirectUri ?? (isDevLike ? import.meta.env.VITE_OIDC_REDIRECT_URI : undefined),
   oidcAuthority,
   oidcClientId,
   oidcScopes
 );
 const oidcPostLogoutRedirectUri = derivePostLogoutRedirectUri(
-  runtimeConfig.oidcPostLogoutRedirectUri,
+  runtimeConfig.oidcPostLogoutRedirectUri ??
+    (isDevLike ? import.meta.env.VITE_OIDC_POST_LOGOUT_REDIRECT_URI : undefined),
   oidcRedirectUri
 );
 const inferredAuthProvider =
-  resolveAuthProvider(runtimeConfig.authProvider, import.meta.env.VITE_UI_AUTH_PROVIDER) ??
-  (rawUiAuthEnabled ? (oidcAuthority || oidcClientId || oidcScopes.length > 0 ? 'oidc' : 'password') : 'disabled');
-const uiAuthEnabled = rawUiAuthEnabled && inferredAuthProvider !== 'disabled';
+  resolveAuthProvider(
+    runtimeConfig.authProvider,
+    isDevLike ? import.meta.env.VITE_UI_AUTH_PROVIDER : undefined
+  ) ??
+  (rawUiAuthEnabled && (oidcAuthority || oidcClientId || oidcScopes.length > 0) ? 'oidc' : 'disabled');
+const uiAuthEnabled = rawUiAuthEnabled;
 const authProvider: AuthProvider = uiAuthEnabled ? inferredAuthProvider : 'disabled';
-const authRequired =
-  authProvider !== 'disabled' &&
-  resolveBoolean(
-    runtimeConfig.authRequired,
-    runtimeConfig.uiAuthEnabled,
-    import.meta.env.VITE_UI_AUTH_ENABLED,
-    true
-  );
+const authRequired = uiAuthEnabled
+  ? resolveBoolean(
+      runtimeConfig.authRequired,
+      runtimeConfig.uiAuthEnabled,
+      isDevLike ? import.meta.env.VITE_UI_AUTH_ENABLED : undefined,
+      true
+    )
+  : false;
 const authSessionMode = resolveAuthSessionMode(
-  authProvider === 'password' ? 'cookie' : 'bearer',
+  'cookie',
   authProvider === 'password' ? 'cookie' : runtimeConfig.authSessionMode,
-  authProvider === 'password' ? 'cookie' : import.meta.env.VITE_AUTH_SESSION_MODE
+  authProvider === 'password'
+    ? 'cookie'
+    : isDevLike
+      ? import.meta.env.VITE_AUTH_SESSION_MODE
+      : undefined
 );
 const oidcEnabled =
   authRequired &&
@@ -193,7 +207,7 @@ const oidcEnabled =
     Boolean(oidcAuthority && oidcClientId && oidcRedirectUri && oidcScopes.length > 0)
   );
 const apiBaseUrl = normalizeApiBaseUrl(
-  runtimeConfig.apiBaseUrl || import.meta.env.VITE_API_BASE_URL,
+  runtimeConfig.apiBaseUrl || (isDevLike ? import.meta.env.VITE_API_BASE_URL : undefined),
   '/api'
 );
 
