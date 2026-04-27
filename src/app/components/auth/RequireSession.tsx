@@ -35,18 +35,23 @@ export function RequireSession({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SessionState>(
     config.authRequired ? 'checking' : 'allowed'
   );
+  const [verifiedRoute, setVerifiedRoute] = useState<string | null>(
+    config.authRequired ? null : route
+  );
   const [errorMessage, setErrorMessage] = useState('');
   const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     if (!config.authRequired) {
       setState('allowed');
+      setVerifiedRoute(route);
       setErrorMessage('');
       return;
     }
 
     if (config.oidcEnabled && !auth.ready) {
       setState('checking');
+      setVerifiedRoute(null);
       setErrorMessage('');
       return;
     }
@@ -67,12 +72,14 @@ export function RequireSession({ children }: { children: ReactNode }) {
           subjectPresent: Boolean(response.data.subject)
         });
         setState('allowed');
+        setVerifiedRoute(route);
       })
       .catch((error) => {
         if (cancelled) {
           return;
         }
         if (error instanceof ApiError && error.status === 401) {
+          setVerifiedRoute(null);
           logUiDiagnostic('AuthSession', 'protected-session-missing', {
             route,
             status: error.status
@@ -82,10 +89,12 @@ export function RequireSession({ children }: { children: ReactNode }) {
         }
         if (error instanceof ApiError && error.status === 403) {
           setState('forbidden');
+          setVerifiedRoute(null);
           setErrorMessage(error.message);
           return;
         }
         setState('error');
+        setVerifiedRoute(null);
         setErrorMessage(error instanceof Error ? error.message : String(error ?? 'Unknown error'));
       });
 
@@ -94,8 +103,12 @@ export function RequireSession({ children }: { children: ReactNode }) {
     };
   }, [auth.ready, navigate, retryToken, route]);
 
-  if (state === 'allowed') {
+  if (state === 'allowed' && verifiedRoute === route) {
     return <RealtimeEnabledContent>{children}</RealtimeEnabledContent>;
+  }
+
+  if (state === 'allowed') {
+    return null;
   }
 
   if (state === 'forbidden') {
