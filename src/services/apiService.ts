@@ -162,6 +162,33 @@ function buildRequestUrl(
   return url;
 }
 
+function normalizeCookieSessionApiBaseUrl(apiBaseUrl: string): string {
+  const trimmed = String(apiBaseUrl || '').trim().replace(/\/+$/, '');
+  if (!trimmed) {
+    return '/api';
+  }
+  if (typeof window === 'undefined' || !/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+    const normalizedPath = parsed.pathname.replace(/\/+$/, '') || '/api';
+    if (parsed.origin === window.location.origin) {
+      return normalizedPath;
+    }
+
+    logApiRequest('cookie-session-cross-origin-api-base-coerced', {
+      configuredApiBaseUrl: summarizeUrlForLogs(trimmed),
+      coercedApiBaseUrl: summarizeUrlForLogs(normalizedPath),
+      currentOrigin: window.location.origin
+    }, 'warn');
+    return normalizedPath.startsWith('/api') ? normalizedPath : '/api';
+  } catch {
+    return '/api';
+  }
+}
+
 async function wait(delayMs: number): Promise<void> {
   if (delayMs <= 0) {
     return;
@@ -320,7 +347,10 @@ async function performRequest<T>(
   config: RequestConfig = {}
 ): Promise<ResponseWithMeta<T>> {
   const { params, headers, timeoutMs, retryOnStatusCodes, retryAttempts, ...customConfig } = config;
-  const apiBaseUrl = uiConfig.apiBaseUrl;
+  const useCookieSession = uiConfig.authSessionMode === 'cookie';
+  const apiBaseUrl = useCookieSession
+    ? normalizeCookieSessionApiBaseUrl(uiConfig.apiBaseUrl)
+    : uiConfig.apiBaseUrl;
   const maxAttempts = Number.isFinite(retryAttempts)
     ? Math.max(1, Math.floor(Number(retryAttempts)))
     : API_REQUEST_MAX_ATTEMPTS;
@@ -337,7 +367,6 @@ async function performRequest<T>(
   const requestMethod = String(customConfig.method ?? 'GET')
     .trim()
     .toUpperCase() || 'GET';
-  const useCookieSession = uiConfig.authSessionMode === 'cookie';
   const hasBody = customConfig.body !== undefined && customConfig.body !== null;
   if (hasBody && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json');

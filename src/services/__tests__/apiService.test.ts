@@ -135,4 +135,22 @@ describe('apiService cookie auth transport', () => {
     await expect(request('/system/status-view')).rejects.toThrow(/API Error: 401 Unauthorized/);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('forces cookie-session API traffic back onto the same-origin /api mount', async () => {
+    windowWithConfig.__API_UI_CONFIG__ = {
+      apiBaseUrl: 'https://asset-allocation-api.example.com/api',
+      authProvider: 'password',
+      authSessionMode: 'cookie',
+      authRequired: true
+    };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    const { request } = await importApiService();
+
+    await expect(request('/system/status-view')).resolves.toMatchObject({ ok: true });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/healthz');
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/system/status-view');
+  });
 });
