@@ -12,6 +12,7 @@ vi.mock('lucide-react', () => ({
   Activity: () => <div data-testid="icon-activity" />,
   BadgeDollarSign: () => <div data-testid="icon-badge-dollar-sign" />,
   Briefcase: () => <div data-testid="icon-briefcase" />,
+  Cookie: () => <div data-testid="icon-cookie" />,
   Database: () => <div data-testid="icon-database" />,
   Layers3: () => <div data-testid="icon-layers-3" />,
   Landmark: () => <div data-testid="icon-landmark" />,

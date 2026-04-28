@@ -1,6 +1,26 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const AUTH_ENV_KEYS = [
+  'VITE_UI_AUTH_ENABLED',
+  'VITE_UI_AUTH_PROVIDER',
+  'VITE_AUTH_SESSION_MODE',
+  'VITE_OIDC_AUTHORITY',
+  'VITE_OIDC_CLIENT_ID',
+  'VITE_OIDC_SCOPES',
+  'VITE_OIDC_AUDIENCE',
+  'VITE_OIDC_REDIRECT_URI',
+  'VITE_OIDC_POST_LOGOUT_REDIRECT_URI'
+] as const;
 
 describe('config auth resolution', () => {
+  beforeEach(() => {
+    delete window.__API_UI_CONFIG__;
+    vi.resetModules();
+    for (const key of AUTH_ENV_KEYS) {
+      vi.stubEnv(key, '');
+    }
+  });
+
   afterEach(() => {
     delete window.__API_UI_CONFIG__;
     vi.unstubAllEnvs();
