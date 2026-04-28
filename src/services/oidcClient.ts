@@ -35,7 +35,7 @@ function buildMsalConfiguration(): Configuration {
       redirectUri: config.oidcRedirectUri
     },
     cache: {
-      cacheLocation: BrowserCacheLocation.MemoryStorage
+      cacheLocation: BrowserCacheLocation.SessionStorage
     },
     system: {
       loggerOptions: {
