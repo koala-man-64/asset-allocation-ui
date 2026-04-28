@@ -6,10 +6,12 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Cookie,
   GripVertical,
   Pin,
   PinOff
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Button } from '@/app/components/ui/button';
 import {
@@ -31,6 +33,8 @@ import { useUIStore } from '@/stores/useUIStore';
 import { prefetchNavigationData } from '@/app/components/layout/prefetchNavigationData';
 import { useLegacyPinnedNavMigration } from '@/app/components/layout/useLegacyPinnedNavMigration';
 import { useNavigationClock } from '@/app/components/layout/useNavigationClock';
+import { clearAssociatedAuthCookies } from '@/services/authCookieCleanup';
+import { DataService } from '@/services/DataService';
 
 interface DragState {
   index: number;
@@ -42,6 +46,8 @@ export function LeftNavigation() {
   const { isMobile, setOpen, setOpenMobile, state } = useSidebar();
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
+  const [isClearingAuthCookies, setIsClearingAuthCookies] = useState(false);
+  const [authCookieStatus, setAuthCookieStatus] = useState('');
   const queryClient = useQueryClient();
   const pinnedPaths = useUIStore((store) => store.pinnedNavPaths);
   const navOrderBySection = useUIStore((store) => store.navOrderBySection);
@@ -61,6 +67,33 @@ export function LeftNavigation() {
   const clearDragState = () => {
     setDragState(null);
     setDropTargetPath(null);
+  };
+
+  const handleClearAuthCookies = async () => {
+    setIsClearingAuthCookies(true);
+    setAuthCookieStatus('');
+
+    let serverSessionCleared = true;
+    try {
+      await DataService.deleteAuthSession();
+    } catch (error) {
+      serverSessionCleared = false;
+      console.warn('[LeftNavigation] failed to clear server auth session', error);
+    } finally {
+      clearAssociatedAuthCookies();
+      setIsClearingAuthCookies(false);
+    }
+
+    const message = serverSessionCleared
+      ? 'Auth cookies cleared.'
+      : 'Local auth cookies cleared; server session reset failed.';
+    setAuthCookieStatus(message);
+
+    if (serverSessionCleared) {
+      toast.success(message);
+    } else {
+      toast.warning(message);
+    }
   };
 
   const handleDragStart = (item: NavItem, zoneKey: NavZoneKey, index: number) => {
@@ -341,18 +374,43 @@ export function LeftNavigation() {
 
       {!collapsed && (
         <SidebarFooter className="border-t border-sidebar-border/40 px-4 py-3">
-          <div
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            className="flex flex-col gap-1 text-left text-mcm-walnut/65"
-          >
-            <span className="text-[10px] font-semibold uppercase tracking-[0.16em]">
-              UPTIME CLOCK
-            </span>
-            <span className="font-mono text-xs text-mcm-walnut">
-              {centralClock.time} {centralClock.tz}
-            </span>
+          <div className="space-y-3">
+            <div
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className="flex flex-col gap-1 text-left text-mcm-walnut/65"
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em]">
+                UPTIME CLOCK
+              </span>
+              <span className="font-mono text-xs text-mcm-walnut">
+                {centralClock.time} {centralClock.tz}
+              </span>
+            </div>
+
+            <div className="border-t border-sidebar-border/30 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleClearAuthCookies();
+                }}
+                disabled={isClearingAuthCookies}
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-mcm-walnut/65 underline-offset-4 transition-colors hover:text-mcm-walnut hover:underline disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                <Cookie className="h-3 w-3" />
+                {isClearingAuthCookies ? 'Clearing cookies...' : 'Clear auth cookies'}
+              </button>
+              {authCookieStatus ? (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className="mt-1 text-[10px] leading-4 text-mcm-walnut/55"
+                >
+                  {authCookieStatus}
+                </p>
+              ) : null}
+            </div>
           </div>
         </SidebarFooter>
       )}

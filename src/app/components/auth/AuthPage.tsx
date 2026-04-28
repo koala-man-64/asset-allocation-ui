@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/app/components/ui/button';
@@ -133,6 +133,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const auth = useAuth();
+  const { checkSession, signIn } = auth;
   const returnTo = useMemo(() => getReturnTo(location, mode), [location, mode]);
   const [state, setState] = useState<AuthPageState>(
     mode === 'callback' ? 'submitting' : 'checking-session'
@@ -143,25 +144,30 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
   const oidcLaunchAttemptedRef = useRef(false);
   const callbackHandledRef = useRef(false);
 
-  async function launchOidcRedirect(source: string): Promise<void> {
-    storePostLoginRedirectPath(returnTo);
-    oidcLaunchAttemptedRef.current = true;
-    setState('redirecting');
-    setMessage('Redirecting to Microsoft Entra to continue sign-in.');
-    logUiDiagnostic('AuthPage', 'oidc-login-redirect-started', {
-      mode,
-      returnTo,
-      source
-    });
-    try {
-      await startOidcLogin();
-      setState('ready');
-      setMessage('Continue sign-in to complete authentication.');
-    } catch (oidcError) {
-      setState('error');
-      setMessage(oidcError instanceof Error ? oidcError.message : String(oidcError ?? 'Unknown error'));
-    }
-  }
+  const launchOidcRedirect = useCallback(
+    async (source: string): Promise<void> => {
+      storePostLoginRedirectPath(returnTo);
+      oidcLaunchAttemptedRef.current = true;
+      setState('redirecting');
+      setMessage('Redirecting to Microsoft Entra to continue sign-in.');
+      logUiDiagnostic('AuthPage', 'oidc-login-redirect-started', {
+        mode,
+        returnTo,
+        source
+      });
+      try {
+        await startOidcLogin();
+        setState('ready');
+        setMessage('Continue sign-in to complete authentication.');
+      } catch (oidcError) {
+        setState('error');
+        setMessage(
+          oidcError instanceof Error ? oidcError.message : String(oidcError ?? 'Unknown error')
+        );
+      }
+    },
+    [mode, returnTo]
+  );
 
   useEffect(() => {
     if (mode !== 'callback' || callbackHandledRef.current) {
@@ -193,7 +199,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
         } finally {
           disposeOidcClient();
         }
-        const session = await auth.checkSession();
+        const session = await checkSession();
         if (cancelled) {
           return;
         }
@@ -215,7 +221,9 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
         }
         setState('error');
         setMessage(
-          callbackError instanceof Error ? callbackError.message : String(callbackError ?? 'Unknown error')
+          callbackError instanceof Error
+            ? callbackError.message
+            : String(callbackError ?? 'Unknown error')
         );
       }
     })();
@@ -223,7 +231,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
     return () => {
       cancelled = true;
     };
-  }, [auth, mode, navigate, returnTo]);
+  }, [checkSession, mode, navigate, returnTo]);
 
   useEffect(() => {
     if (mode === 'callback' || checkedSessionRef.current) {
@@ -267,7 +275,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
           if (mode === 'logout-complete') {
             const restartPath = consumePostLogoutRestartPath();
             if (config.authProvider === 'oidc' && restartPath) {
-              auth.signIn(restartPath);
+              signIn(restartPath);
               return;
             }
             setState('ready');
@@ -288,15 +296,18 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
         }
         setState('error');
         setMessage(
-          sessionError instanceof Error ? sessionError.message : String(sessionError ?? 'Unknown error')
+          sessionError instanceof Error
+            ? sessionError.message
+            : String(sessionError ?? 'Unknown error')
         );
       }
     })();
 
     return () => {
       cancelled = true;
+      checkedSessionRef.current = false;
     };
-  }, [auth, mode, navigate, returnTo]);
+  }, [launchOidcRedirect, mode, navigate, returnTo, signIn]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -319,8 +330,12 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
       navigate(returnTo, { replace: true });
     } catch (loginError) {
       setPassword('');
-      setState(loginError instanceof ApiError && loginError.status === 403 ? 'access-denied' : 'error');
-      setMessage(loginError instanceof Error ? loginError.message : String(loginError ?? 'Unknown error'));
+      setState(
+        loginError instanceof ApiError && loginError.status === 403 ? 'access-denied' : 'error'
+      );
+      setMessage(
+        loginError instanceof Error ? loginError.message : String(loginError ?? 'Unknown error')
+      );
     }
   }
 
