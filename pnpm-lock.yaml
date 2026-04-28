@@ -22,8 +22,8 @@ importers:
   .:
     dependencies:
       '@asset-allocation/contracts':
-        specifier: 3.10.0
-        version: 3.10.0
+        specifier: 3.11.0
+        version: 3.11.0
       '@azure/msal-browser':
         specifier: 5.3.0
         version: 5.3.0
@@ -308,8 +308,8 @@ packages:
   '@asamuzakjp/nwsapi@2.3.9':
     resolution: {integrity: sha512-n8GuYSrI9bF7FFZ/SjhwevlHc8xaVlb/7HmHelnc/PZXBD2ZR49NnN9sMMuDdEGPeeRQ5d0hqlSlEpgCX3Wl0Q==}
 
-  '@asset-allocation/contracts@3.10.0':
-    resolution: {integrity: sha512-ABfsQh8N07jyrJfxnDSW0O+dziIpitwqK/nEeEivUad9wWsElST2GtIIjJusNL5O2D331JQqzxAyw500+YZEMg==}
+  '@asset-allocation/contracts@3.11.0':
+    resolution: {integrity: sha512-pgGAEW7dciFKtVEs4xUr6L9Hoi0cGT6so0CKWd5hTtcy3JpYpfY3OiwkJtgHSJJKo6XHJJw5qWTEPrFTbRaiSA==}
 
   '@axe-core/playwright@4.11.2':
     resolution: {integrity: sha512-iP6hfNl9G0j/SEUSo8M7D80RbcDo9KRAAfDP4IT5OHB+Wm6zUHIrm8Y51BKI+Oyqduvipf9u1hcRy57zCBKzWQ==}
@@ -3612,7 +3612,7 @@ snapshots:
 
   '@asamuzakjp/nwsapi@2.3.9': {}
 
-  '@asset-allocation/contracts@3.10.0': {}
+  '@asset-allocation/contracts@3.11.0': {}
 
   '@axe-core/playwright@4.11.2(playwright-core@1.59.1)':
     dependencies:

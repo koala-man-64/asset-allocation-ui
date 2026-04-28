@@ -31,13 +31,11 @@ function buildMsalConfiguration(): Configuration {
     auth: {
       authority: config.oidcAuthority,
       clientId: config.oidcClientId,
-      navigateToLoginRequestUrl: false,
       postLogoutRedirectUri: config.oidcPostLogoutRedirectUri || undefined,
       redirectUri: config.oidcRedirectUri
     },
     cache: {
-      cacheLocation: BrowserCacheLocation.MemoryStorage,
-      temporaryCacheLocation: BrowserCacheLocation.SessionStorage
+      cacheLocation: BrowserCacheLocation.MemoryStorage
     },
     system: {
       loggerOptions: {
@@ -87,7 +85,9 @@ export async function startOidcLogin(): Promise<void> {
 
 export async function consumeOidcRedirectAccessToken(): Promise<string> {
   const app = await getOidcClient();
-  const result = await app.handleRedirectPromise();
+  const result = await app.handleRedirectPromise({
+    navigateToLoginRequestUrl: false
+  });
   const account = resolveAccount(app, result);
   if (account) {
     app.setActiveAccount(account);

@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      RUNTIME_COMMON_VERSION: "3.4.7"
     steps:
       - name: Validate manual dispatch release ref
         if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -64,12 +65,14 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           package = json.loads(Path("asset-allocation-ui/package.json").read_text(encoding="utf-8"))
           contracts = package["dependencies"]["@asset-allocation/contracts"]
           with Path("ui-versions.txt").open("w", encoding="utf-8") as handle:
               handle.write(f"contracts_version={contracts}\n")
+              handle.write(f"runtime_common_version={os.environ['RUNTIME_COMMON_VERSION']}\n")
               handle.write(f"ui_version={package['version']}\n")
           PY
           cat ui-versions.txt >> "$GITHUB_OUTPUT"
@@ -147,7 +150,7 @@ jobs:
               "image_digest": os.environ["IMAGE_DIGEST"],
               "version_matrix": {
                   "contracts": package["dependencies"]["@asset-allocation/contracts"],
-                  "runtime_common": None,
+                  "runtime_common": os.environ["RUNTIME_COMMON_VERSION"],
                   "control_plane": None,
                   "jobs": None,
                   "ui": package["version"],
@@ -178,5 +181,6 @@ jobs:
             echo ""
             echo "- Image: \`${IMAGE_DIGEST}\`"
             echo "- Contracts: \`${{ steps.versions.outputs.contracts_version }}\`"
+            echo "- Runtime common: \`${{ steps.versions.outputs.runtime_common_version }}\`"
             echo "- Manifest: \`artifacts/release-manifest.json\`"
           } >> "${GITHUB_STEP_SUMMARY}"
