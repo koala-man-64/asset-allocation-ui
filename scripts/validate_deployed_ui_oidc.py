@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import sys
+import time
 from typing import Any, Callable
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -181,6 +182,49 @@ def validate_deployed_ui_oidc(
     }
 
 
+def validate_deployed_ui_oidc_with_retries(
+    ui_origin: str,
+    ui_auth_enabled: bool = True,
+    expected_api_base_url: str = "/api",
+    ui_auth_provider: str = "oidc",
+    timeout_seconds: float = 20.0,
+    retry_attempts: int = 1,
+    retry_delay_seconds: float = 10.0,
+    fetcher: Callable[[str, float], str] | None = None,
+    sleeper: Callable[[float], None] = time.sleep,
+    reporter: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    attempts = max(1, retry_attempts)
+    last_error: Exception | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            return validate_deployed_ui_oidc(
+                ui_origin=ui_origin,
+                ui_auth_enabled=ui_auth_enabled,
+                expected_api_base_url=expected_api_base_url,
+                ui_auth_provider=ui_auth_provider,
+                timeout_seconds=timeout_seconds,
+                fetcher=fetcher,
+            )
+        except Exception as exc:
+            last_error = exc
+            if attempt >= attempts:
+                break
+            if reporter is not None:
+                reporter(
+                    f"Attempt {attempt}/{attempts}: {exc}. "
+                    f"Waiting {retry_delay_seconds:g}s for UI runtime config to converge."
+                )
+            sleeper(retry_delay_seconds)
+
+    if isinstance(last_error, ValidationError):
+        raise last_error
+    raise ValidationError(
+        str(last_error) or "UI runtime config validation failed."
+    ) from last_error
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Validate the deployed UI runtime config against the expected auth mode."
@@ -211,6 +255,18 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=20.0,
         help="HTTP timeout in seconds for fetching ui-config.js.",
     )
+    parser.add_argument(
+        "--retry-attempts",
+        type=int,
+        default=1,
+        help="Number of validation attempts before failing. Defaults to 1.",
+    )
+    parser.add_argument(
+        "--retry-delay-seconds",
+        type=float,
+        default=10.0,
+        help="Seconds to wait between retry attempts. Defaults to 10.",
+    )
     return parser
 
 
@@ -219,12 +275,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        result = validate_deployed_ui_oidc(
+        result = validate_deployed_ui_oidc_with_retries(
             ui_origin=args.ui_origin,
             ui_auth_enabled=parse_bool(args.ui_auth_enabled),
             ui_auth_provider=args.ui_auth_provider,
             expected_api_base_url=args.expected_api_base_url,
             timeout_seconds=args.timeout_seconds,
+            retry_attempts=args.retry_attempts,
+            retry_delay_seconds=args.retry_delay_seconds,
+            reporter=lambda message: print(message, file=sys.stderr),
         )
     except ValidationError as exc:
         print(str(exc), file=sys.stderr)

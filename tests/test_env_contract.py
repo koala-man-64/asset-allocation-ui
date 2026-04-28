@@ -257,6 +257,8 @@ def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None
     assert '--ui-origin "https://${fqdn}"' in text
     assert '--ui-auth-enabled "${UI_AUTH_ENABLED}"' in text
     assert '--ui-auth-provider "${UI_AUTH_PROVIDER}"' in text
+    assert text.count("--retry-attempts 18") >= 2
+    assert text.count("--retry-delay-seconds 10") >= 2
     assert "https://${fqdn}/ui-config.js" in text
     assert "https://${fqdn}/api/system/status-view" in text
     assert "https://${fqdn}/api/realtime/ticket" in text

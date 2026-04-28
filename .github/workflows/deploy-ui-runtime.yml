@@ -245,7 +245,9 @@ jobs:
           python scripts/validate_deployed_ui_oidc.py \
             --ui-origin "https://${fqdn}" \
             --ui-auth-enabled "${UI_AUTH_ENABLED}" \
-            --ui-auth-provider "${UI_AUTH_PROVIDER}"
+            --ui-auth-provider "${UI_AUTH_PROVIDER}" \
+            --retry-attempts 18 \
+            --retry-delay-seconds 10
           expect_one_of GET "https://${fqdn}/api/system/status-view" 200 401 403 405
           expect_one_of POST "https://${fqdn}/api/realtime/ticket" 200 401 403 405
           echo "fqdn=${fqdn}" >> "$GITHUB_OUTPUT"
@@ -283,7 +285,9 @@ jobs:
           python scripts/validate_deployed_ui_oidc.py \
             --ui-origin "https://${UI_PUBLIC_HOSTNAME}" \
             --ui-auth-enabled "${UI_AUTH_ENABLED}" \
-            --ui-auth-provider "${UI_AUTH_PROVIDER}"
+            --ui-auth-provider "${UI_AUTH_PROVIDER}" \
+            --retry-attempts 18 \
+            --retry-delay-seconds 10
 
           {
             echo "bound_hostname=${UI_PUBLIC_HOSTNAME}"
