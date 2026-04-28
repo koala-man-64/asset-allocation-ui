@@ -40,7 +40,7 @@ export type { FinanceData, MarketData };
 const SUPPRESSED_SESSION_AUTH_MESSAGE =
   'Interactive sign-in was suppressed because /auth/session succeeded recently';
 
-function shouldUseSystemStatusFallback(error: unknown): boolean {
+function isKnownSystemStatusFallbackError(error: unknown): boolean {
   if (!(error instanceof ApiError)) {
     return false;
   }
@@ -50,6 +50,42 @@ function shouldUseSystemStatusFallback(error: unknown): boolean {
   }
 
   return error.status === 401 && error.message.includes(SUPPRESSED_SESSION_AUTH_MESSAGE);
+}
+
+async function shouldUseSystemStatusFallback(error: unknown): Promise<boolean> {
+  if (isKnownSystemStatusFallbackError(error)) {
+    return true;
+  }
+
+  if (!(error instanceof ApiError) || error.status !== 401) {
+    return false;
+  }
+
+  try {
+    const session = await apiService.getAuthSessionStatusWithMeta();
+    logUiDiagnostic(
+      'DataService',
+      'system-status-view-401-session-still-valid',
+      {
+        requestId: session.meta.requestId,
+        authMode: session.data.authMode,
+        grantedRoles: session.data.grantedRoles
+      },
+      'warn'
+    );
+    return true;
+  } catch (sessionError) {
+    logUiDiagnostic(
+      'DataService',
+      'system-status-view-401-session-check-failed',
+      {
+        statusViewError: error.message,
+        sessionError: sessionError instanceof Error ? sessionError.message : String(sessionError)
+      },
+      'warn'
+    );
+    return false;
+  }
 }
 
 function buildEmptyMetadataSnapshot(error: unknown): DomainMetadataSnapshotResponse {
@@ -207,7 +243,7 @@ export const DataService = {
     try {
       return await apiService.getSystemStatusView(params, signal);
     } catch (error) {
-      if (shouldUseSystemStatusFallback(error)) {
+      if (await shouldUseSystemStatusFallback(error)) {
         return buildFallbackSystemStatusView(params, error, signal);
       }
       throw error;
