@@ -110,9 +110,7 @@ def missing_prod_runtime_vars(variable_map: Mapping[str, str]) -> list[str]:
 
     auth_provider = normalize_text(variable_map.get("UI_AUTH_PROVIDER")).lower()
     if auth_provider and auth_provider not in AUTH_PROVIDERS:
-        raise ValidationError(
-            "vars.UI_AUTH_PROVIDER must be one of disabled or oidc."
-        )
+        raise ValidationError("vars.UI_AUTH_PROVIDER must be one of disabled or oidc.")
 
     if parse_bool(variable_map.get("UI_AUTH_ENABLED")):
         if auth_provider != "oidc":

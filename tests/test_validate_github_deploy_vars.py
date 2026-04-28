@@ -58,7 +58,9 @@ def test_validator_requires_oidc_when_ui_auth_is_enabled() -> None:
             "prod-runtime",
         )
 
-    assert "UI_AUTH_PROVIDER must be oidc when UI_AUTH_ENABLED=true." in str(excinfo.value)
+    assert "UI_AUTH_PROVIDER must be oidc when UI_AUTH_ENABLED=true." in str(
+        excinfo.value
+    )
 
 
 def test_validator_requires_oidc_repo_vars_only_for_oidc_provider() -> None:
