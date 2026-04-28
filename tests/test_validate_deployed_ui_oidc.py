@@ -85,6 +85,34 @@ def test_validator_accepts_oidc_bootstrap() -> None:
     assert result["config"]["apiBaseUrl"] == "/api"
 
 
+def test_validator_retries_stale_password_bootstrap_until_oidc() -> None:
+    validator = load_validator_module()
+    ui_origin = "https://asset-allocation-ui.example.com"
+    responses = [
+        build_ui_config_js(auth_provider="password"),
+        build_ui_config_js(include_oidc=True),
+    ]
+    sleep_delays: list[float] = []
+
+    def fetcher(url: str, timeout_seconds: float) -> str:
+        del timeout_seconds
+        assert url == f"{ui_origin}/ui-config.js"
+        return responses.pop(0)
+
+    result = validator.validate_deployed_ui_oidc_with_retries(
+        ui_origin=ui_origin,
+        ui_auth_provider="oidc",
+        fetcher=fetcher,
+        retry_attempts=2,
+        retry_delay_seconds=0.25,
+        sleeper=sleep_delays.append,
+    )
+
+    assert result["config"]["authProvider"] == "oidc"
+    assert sleep_delays == [0.25]
+    assert responses == []
+
+
 def test_validator_rejects_non_same_origin_api_base_url() -> None:
     validator = load_validator_module()
     ui_origin = "https://asset-allocation-ui.example.com"
