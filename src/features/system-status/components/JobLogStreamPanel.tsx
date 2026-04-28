@@ -422,6 +422,7 @@ export function JobLogStreamPanel({
   });
   const requestControllerRef = useRef<AbortController | null>(null);
   const usageRequestControllerRef = useRef<AbortController | null>(null);
+  const usageRequestInFlightRef = useRef(false);
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
   const monitoredJobSelectId = useId();
@@ -576,9 +577,13 @@ export function JobLogStreamPanel({
     let isDisposed = false;
 
     const refreshSignals = async () => {
-      usageRequestControllerRef.current?.abort();
+      if (usageRequestInFlightRef.current && !usageRequestControllerRef.current?.signal.aborted) {
+        return;
+      }
+
       const controller = new AbortController();
       usageRequestControllerRef.current = controller;
+      usageRequestInFlightRef.current = true;
 
       try {
         const systemHealth = await DataService.getSystemHealth(
@@ -594,6 +599,11 @@ export function JobLogStreamPanel({
       } catch (error: unknown) {
         if (!controller.signal.aborted) {
           console.debug('[JobLogStreamPanel] live usage refresh failed', error);
+        }
+      } finally {
+        if (usageRequestControllerRef.current === controller) {
+          usageRequestControllerRef.current = null;
+          usageRequestInFlightRef.current = false;
         }
       }
     };

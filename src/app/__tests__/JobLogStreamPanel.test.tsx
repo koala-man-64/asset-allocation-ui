@@ -483,6 +483,63 @@ describe('JobLogStreamPanel', () => {
     expect(screen.getByText('1 GiB')).toBeInTheDocument();
   });
 
+  it('skips a live usage poll while the previous system health refresh is still running', async () => {
+    vi.useFakeTimers();
+    vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
+      jobName: 'beta-job',
+      runsRequested: 1,
+      runsReturned: 1,
+      tailLines: 10,
+      runs: [
+        {
+          tail: ['beta snapshot']
+        }
+      ]
+    });
+
+    let resolveHealth: (value: Awaited<ReturnType<typeof DataService.getSystemHealth>>) => void;
+    const signals: AbortSignal[] = [];
+    vi.mocked(DataService.getSystemHealth).mockImplementation((_params, signal) => {
+      if (signal) {
+        signals.push(signal);
+      }
+
+      return new Promise((resolve) => {
+        resolveHealth = resolve;
+      });
+    });
+
+    renderWithProviders(<JobLogStreamPanel jobs={[JOBS[1]]} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    expect(DataService.getSystemHealth).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(DataService.getSystemHealth).toHaveBeenCalledTimes(1);
+    expect(signals[0]?.aborted).toBe(false);
+
+    resolveHealth!({
+      overall: 'healthy',
+      dataLayers: [],
+      recentJobs: [],
+      alerts: [],
+      resources: []
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(DataService.getSystemHealth).toHaveBeenCalledTimes(2);
+  });
+
   it('matches Azure metric names even when they include spaces', async () => {
     const job: JobLogStreamTarget = {
       ...JOBS[1],
