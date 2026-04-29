@@ -5,7 +5,7 @@ import type {
   IntrabarConflictPolicy,
   RegimePolicy,
   RegimePolicyMode,
-  StrategyDetail,
+  StrategyDetail
 } from '@/types/strategy';
 
 export type StrategyEditorMode = 'create' | 'edit' | 'duplicate';
@@ -86,8 +86,8 @@ export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): Str
         : undefined,
       riskPolicy: incomingRiskPolicy
         ? {
-            ...strategy.config.riskPolicy,
-            notes: strategy.config.riskPolicy.notes ?? ''
+            ...incomingRiskPolicy,
+            notes: incomingRiskPolicy.notes ?? ''
           }
         : undefined,
       exits: strategy.config.exits || []
