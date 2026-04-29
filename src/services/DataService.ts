@@ -52,6 +52,10 @@ function isKnownSystemStatusFallbackError(error: unknown): boolean {
   return error.status === 401 && error.message.includes(SUPPRESSED_SESSION_AUTH_MESSAGE);
 }
 
+function isUnauthenticatedSessionStatusError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
 async function shouldUseSystemStatusFallback(error: unknown): Promise<boolean> {
   if (isKnownSystemStatusFallbackError(error)) {
     return true;
@@ -186,7 +190,9 @@ export const DataService = {
       const response = await apiService.getAuthSessionStatusWithMeta();
       return response;
     } catch (error) {
-      console.error('[DataService] getAuthSessionStatusWithMeta error', error);
+      if (!isUnauthenticatedSessionStatusError(error)) {
+        console.error('[DataService] getAuthSessionStatusWithMeta error', error);
+      }
       throw error;
     }
   },

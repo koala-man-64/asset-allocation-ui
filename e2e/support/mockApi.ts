@@ -411,6 +411,199 @@ const tradeAccountById = Object.fromEntries(
   tradeAccounts.map((account) => [account.accountId, account])
 );
 
+type TradeAccountMock = (typeof tradeAccounts)[number];
+
+function brokerCapabilitiesFromTrade(account: TradeAccountMock) {
+  return {
+    canReadBalances: account.capabilities.canReadAccount,
+    canReadPositions: account.capabilities.canReadPositions,
+    canReadOrders: account.capabilities.canReadOrders,
+    canTrade:
+      account.capabilities.canSubmitPaper ||
+      account.capabilities.canSubmitSandbox ||
+      account.capabilities.canSubmitLive,
+    canReconnect: false,
+    canPauseSync: false,
+    canRefresh: false,
+    canAcknowledgeAlerts: false,
+    canReadTradingPolicy: account.capabilities.canReadAccount,
+    canWriteTradingPolicy: !account.capabilities.readOnly,
+    canReadAllocation: account.capabilities.canReadAccount,
+    canWriteAllocation: !account.capabilities.readOnly,
+    canReleaseTradeConfirmation: !account.capabilities.readOnly,
+    readOnlyReason: account.capabilities.readOnly ? account.capabilities.unsupportedReason : null
+  };
+}
+
+function brokerSyncStatusFromTrade(account: TradeAccountMock) {
+  const states = [
+    account.freshness.balancesState,
+    account.freshness.positionsState,
+    account.freshness.ordersState
+  ];
+  if (states.every((state) => state === 'fresh')) {
+    return 'fresh';
+  }
+  if (states.some((state) => state === 'stale')) {
+    return 'stale';
+  }
+  return 'never_synced';
+}
+
+function brokerOverallStatusFromTrade(account: TradeAccountMock) {
+  const syncStatus = brokerSyncStatusFromTrade(account);
+  if (account.readiness === 'blocked' || account.killSwitchActive || !account.capabilities.canReadAccount) {
+    return 'critical';
+  }
+  if (account.readiness === 'review' || syncStatus !== 'fresh' || account.unresolvedAlertCount > 0) {
+    return 'warning';
+  }
+  return 'healthy';
+}
+
+function brokerConnectionHealthFromTrade(account: TradeAccountMock) {
+  const syncStatus = brokerSyncStatusFromTrade(account);
+  const overallStatus = brokerOverallStatusFromTrade(account);
+  return {
+    overallStatus,
+    authStatus: account.capabilities.canReadAccount ? 'authenticated' : 'not_connected',
+    connectionState:
+      !account.capabilities.canReadAccount ? 'disconnected' : syncStatus === 'fresh' ? 'connected' : 'degraded',
+    syncStatus,
+    lastCheckedAt: account.snapshotAsOf,
+    lastSuccessfulSyncAt: syncStatus === 'fresh' || syncStatus === 'stale' ? account.lastSyncedAt : null,
+    lastFailedSyncAt: null,
+    authExpiresAt: null,
+    staleReason: syncStatus === 'stale' ? account.freshness.staleReason : null,
+    failureMessage: account.readiness === 'blocked' ? account.readinessReason : null,
+    syncPaused: false
+  };
+}
+
+function brokerAllocationForTradeAccount(account: TradeAccountMock) {
+  return {
+    portfolioName: account.accountId === 'acct-live' ? 'Live Alpha Portfolio' : 'Core Paper Portfolio',
+    portfolioVersion: 1,
+    allocationMode: 'percent',
+    allocatableCapital: account.buyingPower,
+    allocatedPercent: 100,
+    allocatedNotionalBaseCcy: account.buyingPower,
+    remainingPercent: 0,
+    remainingNotionalBaseCcy: 0,
+    sharedActivePortfolio: false,
+    effectiveFrom: '2026-04-18',
+    items: [
+      {
+        sleeveId: 'core',
+        sleeveName: 'Core',
+        strategy: {
+          strategyName: 'quality-trend',
+          strategyVersion: 4
+        },
+        allocationMode: 'percent',
+        targetWeightPct: 100,
+        targetNotionalBaseCcy: null,
+        derivedWeightPct: 100,
+        enabled: true,
+        notes: ''
+      }
+    ]
+  };
+}
+
+function brokerAccountFromTradeAccount(account: TradeAccountMock) {
+  const allocationSummary = brokerAllocationForTradeAccount(account);
+  return {
+    accountId: account.accountId,
+    broker: account.provider,
+    name: account.name,
+    accountNumberMasked: account.accountNumberMasked,
+    baseCurrency: account.baseCurrency,
+    overallStatus: brokerOverallStatusFromTrade(account),
+    tradeReadiness: account.readiness,
+    tradeReadinessReason: account.readinessReason,
+    highestAlertSeverity: account.unresolvedAlertCount > 0 ? 'warning' : null,
+    connectionHealth: brokerConnectionHealthFromTrade(account),
+    equity: account.equity,
+    cash: account.cash,
+    buyingPower: account.buyingPower,
+    openPositionCount: account.positionCount,
+    openOrderCount: account.openOrderCount,
+    lastSyncedAt: account.lastSyncedAt,
+    snapshotAsOf: account.snapshotAsOf,
+    activePortfolioName: allocationSummary.portfolioName,
+    strategyLabel: null,
+    configurationVersion: 1,
+    allocationSummary,
+    alertCount: account.unresolvedAlertCount
+  };
+}
+
+function brokerConfigurationFromTradeAccount(account: TradeAccountMock) {
+  return {
+    accountId: account.accountId,
+    accountName: account.name,
+    baseCurrency: account.baseCurrency,
+    configurationVersion: 1,
+    requestedPolicy: {
+      maxOpenPositions: 20,
+      maxSinglePositionExposure: {
+        mode: 'pct_of_allocatable_capital',
+        value: 10
+      },
+      allowedSides: ['long'],
+      allowedAssetClasses: ['equity'],
+      requireOrderConfirmation: account.confirmationRequired
+    },
+    effectivePolicy: {
+      maxOpenPositions: 20,
+      maxSinglePositionExposure: {
+        mode: 'pct_of_allocatable_capital',
+        value: 10
+      },
+      allowedSides: ['long'],
+      allowedAssetClasses: ['equity'],
+      requireOrderConfirmation: account.confirmationRequired
+    },
+    capabilities: brokerCapabilitiesFromTrade(account),
+    allocation: brokerAllocationForTradeAccount(account),
+    warnings: [],
+    updatedAt: NOW,
+    updatedBy: 'playwright',
+    audit: []
+  };
+}
+
+const brokerAccounts = tradeAccounts.map((account) => brokerAccountFromTradeAccount(account));
+const brokerAccountById = Object.fromEntries(
+  brokerAccounts.map((account) => [account.accountId, account])
+);
+const brokerConfigurationByAccountId = Object.fromEntries(
+  tradeAccounts.map((account) => [account.accountId, brokerConfigurationFromTradeAccount(account)])
+);
+const brokerAccountDetailsById = Object.fromEntries(
+  tradeAccounts.map((account) => [
+    account.accountId,
+    {
+      account: brokerAccountFromTradeAccount(account),
+      capabilities: brokerCapabilitiesFromTrade(account),
+      accountType: account.environment === 'paper' ? 'paper' : 'other',
+      tradingBlocked: account.readiness === 'blocked' || account.killSwitchActive,
+      tradingBlockedReason:
+        account.readiness === 'blocked'
+          ? account.readinessReason || 'Account is blocked from trading.'
+          : null,
+      unsettledFunds: null,
+      dayTradeBuyingPower: null,
+      maintenanceExcess: null,
+      alerts: [],
+      syncRuns: [],
+      recentActivity: [],
+      configuration: brokerConfigurationFromTradeAccount(account)
+    }
+  ])
+);
+
 const tradeOrdersByAccountId = {
   'acct-paper': [
     {
@@ -799,6 +992,10 @@ function tradeAccountIdFromPath(apiPath: string) {
   return decodeURIComponent(apiPath.split('/')[2] || '');
 }
 
+function brokerAccountIdFromPath(apiPath: string) {
+  return decodeURIComponent(apiPath.split('/')[2] || '');
+}
+
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({
     status,
@@ -873,6 +1070,42 @@ async function handleApiRoute(route: Route) {
 
   if (apiPath === '/realtime/ticket') {
     return json(route, { ticket: 'playwright-ticket-123' });
+  }
+
+  if (apiPath === '/broker-accounts') {
+    return json(route, { accounts: brokerAccounts, generatedAt: NOW });
+  }
+
+  if (apiPath.startsWith('/broker-accounts/')) {
+    const accountId = brokerAccountIdFromPath(apiPath);
+    if (!brokerAccountById[accountId]) {
+      return json(route, { detail: 'Unknown broker account' }, 404);
+    }
+
+    if (apiPath === `/broker-accounts/${accountId}`) {
+      return json(route, brokerAccountDetailsById[accountId]);
+    }
+
+    if (apiPath === `/broker-accounts/${accountId}/configuration`) {
+      return json(route, brokerConfigurationByAccountId[accountId]);
+    }
+
+    if (
+      apiPath === `/broker-accounts/${accountId}/trading-policy` ||
+      apiPath === `/broker-accounts/${accountId}/allocation`
+    ) {
+      return json(route, brokerConfigurationByAccountId[accountId]);
+    }
+
+    if (
+      apiPath === `/broker-accounts/${accountId}/reconnect` ||
+      apiPath === `/broker-accounts/${accountId}/sync/pause` ||
+      apiPath === `/broker-accounts/${accountId}/sync/resume` ||
+      apiPath === `/broker-accounts/${accountId}/refresh` ||
+      apiPath.match(/^\/broker-accounts\/([^/]+)\/alerts\/([^/]+)\/acknowledge$/)
+    ) {
+      return json(route, { detail: 'Action is not implemented in Account Operations v1.' }, 501);
+    }
   }
 
   if (apiPath === '/trade-accounts') {

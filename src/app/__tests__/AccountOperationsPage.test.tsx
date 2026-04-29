@@ -528,6 +528,17 @@ describe('AccountOperationsPage', () => {
     expect(await screen.findByText(/no connected accounts/i)).toBeInTheDocument();
   });
 
+  it('shows an unavailable panel when the account list request fails', async () => {
+    vi.mocked(accountOperationsApi.listAccounts).mockRejectedValue(
+      new Error('API Error: 404 - Not Found')
+    );
+
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account operations unavailable/i)).toBeInTheDocument();
+    expect(screen.getByText(/api error: 404 - not found/i)).toBeInTheDocument();
+  });
+
   it('keeps the board visible when the selected account detail request fails', async () => {
     const user = userEvent.setup();
     vi.mocked(accountOperationsApi.getAccountDetail).mockRejectedValue(new Error('detail failed'));
