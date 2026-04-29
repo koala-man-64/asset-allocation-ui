@@ -10,7 +10,6 @@ import {
   Folder,
   Globe,
   Landmark,
-  Layers3,
   LogIn,
   Orbit,
   ScanSearch,
@@ -325,13 +324,7 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     load: () =>
       import('@/features/universes/UniverseConfigPage').then((module) => ({
         default: module.UniverseConfigPage
-      })),
-    nav: {
-      label: 'Universe Configurations',
-      icon: Globe,
-      sectionKey: 'live-operations',
-      subgroupKey: 'strategy-setup'
-    }
+      }))
   },
   {
     key: 'rankings',
@@ -339,27 +332,7 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     load: () =>
       import('@/features/rankings/RankingConfigPage').then((module) => ({
         default: module.RankingConfigPage
-      })),
-    nav: {
-      label: 'Ranking Configurations',
-      icon: Layers3,
-      sectionKey: 'live-operations',
-      subgroupKey: 'strategy-setup'
-    }
-  },
-  {
-    key: 'strategy-exploration',
-    path: '/strategy-exploration',
-    load: () =>
-      import('@/features/strategy-exploration/StrategyDataCatalogPage').then((module) => ({
-        default: module.StrategyDataCatalogPage
-      })),
-    nav: {
-      label: 'Strategy Exploration',
-      icon: Target,
-      sectionKey: 'live-operations',
-      subgroupKey: 'strategy-setup'
-    }
+      }))
   },
   {
     key: 'postgres-explorer',

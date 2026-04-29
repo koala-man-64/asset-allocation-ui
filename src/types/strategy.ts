@@ -7,6 +7,7 @@ import type {
   UniverseSource,
   UniverseValue,
 } from '@asset-allocation/contracts';
+import type { StrategyRiskPolicy } from '@/types/strategyAnalytics';
 
 export type {
   ExitRule,
@@ -34,6 +35,9 @@ export type {
 export type UniverseConditionOperator = ContractUniverseConditionOperator;
 
 export type UniverseGroupOperator = 'and' | 'or';
+export type StrategyConfigWithRiskPolicy = StrategyConfig & {
+  riskPolicy?: StrategyRiskPolicy | null;
+};
 
 export type JobCategory = 'data-pipeline' | 'strategy-compute' | 'operational-support';
 export type JobMetadataSource = 'tags' | 'legacy-catalog' | 'unknown';
@@ -182,7 +186,7 @@ export interface StrategySummary {
 }
 
 export interface StrategyDetail extends StrategySummary {
-  config: StrategyConfig;
+  config: StrategyConfigWithRiskPolicy;
 }
 
 export interface UniverseConfigSummary {

@@ -61,6 +61,7 @@ export function buildEmptyStrategy(): StrategyDetail {
       costModel: 'default',
       intrabarConflictPolicy: 'stop_first',
       regimePolicy: undefined,
+      riskPolicy: undefined,
       exits: []
     }
   };
@@ -80,6 +81,12 @@ export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): Str
         ? {
             ...buildDefaultRegimePolicy(),
             ...incomingPolicy
+          }
+        : undefined,
+      riskPolicy: strategy.config.riskPolicy
+        ? {
+            notes: '',
+            ...strategy.config.riskPolicy
           }
         : undefined,
       exits: strategy.config.exits || []

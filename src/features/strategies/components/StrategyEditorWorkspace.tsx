@@ -63,11 +63,12 @@ interface StrategyEditorWorkspaceProps {
   onSaved: (strategy: StrategyDetail) => void;
 }
 
-const SECTION_IDS = ['metadata', 'config', 'regime', 'exits'] as const;
+const SECTION_IDS = ['metadata', 'config', 'regime', 'risk', 'exits'] as const;
 const SECTION_LABELS: Record<(typeof SECTION_IDS)[number], string> = {
   metadata: 'Desk Identity',
   config: 'Core Setup',
   regime: 'Regime Gates',
+  risk: 'Risk Policy',
   exits: 'Exit Stack'
 };
 
@@ -175,6 +176,8 @@ export function StrategyEditorWorkspace({
   const watchedRegimePolicy = watch('config.regimePolicy');
   const hasRegimePolicy = Boolean(watchedRegimePolicy);
   const effectiveRegimePolicy = watchedRegimePolicy || buildDefaultRegimePolicy();
+  const watchedRiskPolicy = watch('config.riskPolicy');
+  const hasRiskPolicy = Boolean(watchedRiskPolicy);
   const watchedExits = watch('config.exits') || [];
   const draftName = watch('name');
   const rankingSchemasErrorMessage = formatSystemStatusText(rankingSchemasQuery.error);
@@ -660,6 +663,159 @@ export function StrategyEditorWorkspace({
               ) : (
                 <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
                   No regime policy configured for this draft.
+                </div>
+              )}
+            </section>
+
+            <section id="risk" className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-display text-lg text-foreground">Risk Policy</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Strategy-level risk limits use the shared StrategyRiskPolicy payload and are saved only with the strategy draft.
+                  </p>
+                </div>
+
+                {hasRiskPolicy ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      setValue('config.riskPolicy', undefined, {
+                        shouldDirty: true,
+                        shouldTouch: true
+                      })
+                    }
+                  >
+                    Remove Policy
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={() =>
+                      setValue(
+                        'config.riskPolicy',
+                        { notes: '' },
+                        {
+                          shouldDirty: true,
+                          shouldTouch: true
+                        }
+                      )
+                    }
+                  >
+                    Add Policy
+                  </Button>
+                )}
+              </div>
+
+              {hasRiskPolicy ? (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-gross-exposure">Gross Exposure Limit</Label>
+                      <Input
+                        id="risk-gross-exposure"
+                        type="number"
+                        step="0.01"
+                        {...register('config.riskPolicy.grossExposureLimit', {
+                          setValueAs: toOptionalNumber
+                        })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-net-exposure">Net Exposure Limit</Label>
+                      <Input
+                        id="risk-net-exposure"
+                        type="number"
+                        step="0.01"
+                        {...register('config.riskPolicy.netExposureLimit', {
+                          setValueAs: toOptionalNumber
+                        })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-single-name">Single Name Max Weight</Label>
+                      <Input
+                        id="risk-single-name"
+                        type="number"
+                        step="0.01"
+                        {...register('config.riskPolicy.singleNameMaxWeight', {
+                          setValueAs: toOptionalNumber
+                        })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-sector-max">Sector Max Weight</Label>
+                      <Input
+                        id="risk-sector-max"
+                        type="number"
+                        step="0.01"
+                        {...register('config.riskPolicy.sectorMaxWeight', {
+                          setValueAs: toOptionalNumber
+                        })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-turnover-budget">Turnover Budget</Label>
+                      <Input
+                        id="risk-turnover-budget"
+                        type="number"
+                        step="0.01"
+                        {...register('config.riskPolicy.turnoverBudget', {
+                          setValueAs: toOptionalNumber
+                        })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-drawdown-limit">Max Drawdown Limit</Label>
+                      <Input
+                        id="risk-drawdown-limit"
+                        type="number"
+                        step="0.01"
+                        {...register('config.riskPolicy.maxDrawdownLimit', {
+                          setValueAs: toOptionalNumber
+                        })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-participation">Liquidity Participation Rate</Label>
+                      <Input
+                        id="risk-participation"
+                        type="number"
+                        step="0.01"
+                        {...register('config.riskPolicy.liquidityParticipationRate', {
+                          setValueAs: toOptionalNumber
+                        })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-max-notional">Max Trade Notional</Label>
+                      <Input
+                        id="risk-max-notional"
+                        type="number"
+                        step="1"
+                        {...register('config.riskPolicy.maxTradeNotionalBaseCcy', {
+                          setValueAs: toOptionalNumber
+                        })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="risk-notes">Risk Notes</Label>
+                    <Textarea
+                      id="risk-notes"
+                      {...register('config.riskPolicy.notes')}
+                      placeholder="Record desk constraints, limit rationale, or liquidity caveats."
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
+                  No strategy risk policy configured for this draft.
                 </div>
               )}
             </section>
