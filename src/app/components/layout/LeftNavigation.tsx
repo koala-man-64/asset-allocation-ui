@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react';
+import { Fragment, useState, type DragEvent } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -28,7 +28,13 @@ import {
 } from '@/app/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { cn } from '@/app/components/ui/utils';
-import { resolveVisibleNavSections, type NavItem, type NavZoneKey } from '@/app/navigationModel';
+import {
+  getNavSubgroupTitle,
+  resolveVisibleNavSections,
+  type NavItem,
+  type NavSection,
+  type NavZoneKey
+} from '@/app/navigationModel';
 import { useUIStore } from '@/stores/useUIStore';
 import { prefetchNavigationData } from '@/app/components/layout/prefetchNavigationData';
 import { useLegacyPinnedNavMigration } from '@/app/components/layout/useLegacyPinnedNavMigration';
@@ -302,6 +308,38 @@ export function LeftNavigation() {
     );
   };
 
+  const renderSubgroupLabel = (title: string, itemPath: string, isFirstSubgroup: boolean) => (
+    <SidebarMenuItem
+      key={`subgroup-${itemPath}`}
+      role="presentation"
+      className={cn('px-3 pb-1 pt-3', isFirstSubgroup && 'pt-1', collapsed && 'hidden')}
+    >
+      <span className="block truncate text-[10px] font-black uppercase tracking-[0.16em] text-mcm-walnut/45">
+        {title}
+      </span>
+    </SidebarMenuItem>
+  );
+
+  const renderSectionMenuItems = (section: NavSection) => {
+    let previousSubgroupKey: string | undefined;
+
+    return section.items.map((item, index) => {
+      const subgroupTitle = getNavSubgroupTitle(item.subgroupKey);
+      const showSubgroupLabel = subgroupTitle !== null && item.subgroupKey !== previousSubgroupKey;
+
+      previousSubgroupKey = item.subgroupKey;
+
+      return (
+        <Fragment key={item.path}>
+          {showSubgroupLabel && subgroupTitle
+            ? renderSubgroupLabel(subgroupTitle, item.path, index === 0)
+            : null}
+          {renderNavItem(item, section.key, index, section.items.length)}
+        </Fragment>
+      );
+    });
+  };
+
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border/40">
       <SidebarHeader className="border-b border-sidebar-border/40 px-3 py-3">
@@ -362,11 +400,7 @@ export function LeftNavigation() {
               {section.title}
             </SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu>
-                {section.items.map((item, index) =>
-                  renderNavItem(item, section.key, index, section.items.length)
-                )}
-              </SidebarMenu>
+              <SidebarMenu>{renderSectionMenuItems(section)}</SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         ))}

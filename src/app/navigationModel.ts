@@ -2,7 +2,10 @@ import type { ElementType } from 'react';
 import {
   APP_NAVIGATION_REGISTRY,
   NAV_SECTION_TITLES,
-  type NavSectionKey
+  NAV_SUBGROUP_ORDER_BY_SECTION,
+  NAV_SUBGROUP_TITLES,
+  type NavSectionKey,
+  type NavSubgroupKey
 } from '@/app/routeRegistry';
 export type { NavSectionKey } from '@/app/routeRegistry';
 export type NavZoneKey = NavSectionKey | 'pinned';
@@ -12,6 +15,7 @@ export interface NavItem {
   label: string;
   icon: ElementType;
   sectionKey: NavSectionKey;
+  subgroupKey?: NavSubgroupKey;
 }
 
 export interface NavSection {
@@ -22,11 +26,35 @@ export interface NavSection {
 
 export type NavOrderBySection = Record<NavSectionKey, string[]>;
 
+function orderNavItemsForSection(sectionKey: NavSectionKey, items: NavItem[]): NavItem[] {
+  const subgroupOrder = NAV_SUBGROUP_ORDER_BY_SECTION[sectionKey];
+  if (!subgroupOrder) {
+    return items;
+  }
+
+  const subgroupIndex = new Map(
+    subgroupOrder.map((subgroupKey, index) => [subgroupKey, index] as const)
+  );
+
+  return items
+    .map((item, originalIndex) => ({ item, originalIndex }))
+    .sort((left, right) => {
+      const leftSubgroupIndex = left.item.subgroupKey
+        ? (subgroupIndex.get(left.item.subgroupKey) ?? Number.MAX_SAFE_INTEGER)
+        : Number.MAX_SAFE_INTEGER;
+      const rightSubgroupIndex = right.item.subgroupKey
+        ? (subgroupIndex.get(right.item.subgroupKey) ?? Number.MAX_SAFE_INTEGER)
+        : Number.MAX_SAFE_INTEGER;
+
+      return leftSubgroupIndex - rightSubgroupIndex || left.originalIndex - right.originalIndex;
+    })
+    .map(({ item }) => item);
+}
+
 export const NAV_SECTIONS: NavSection[] = Object.entries(NAV_SECTION_TITLES).map(
-  ([sectionKey, title]) => ({
-    key: sectionKey as NavSectionKey,
-    title,
-    items: APP_NAVIGATION_REGISTRY.flatMap((item) => {
+  ([sectionKey, title]) => {
+    const typedSectionKey = sectionKey as NavSectionKey;
+    const items = APP_NAVIGATION_REGISTRY.flatMap((item) => {
       if (item.sectionKey !== sectionKey) {
         return [];
       }
@@ -36,11 +64,18 @@ export const NAV_SECTIONS: NavSection[] = Object.entries(NAV_SECTION_TITLES).map
           path: item.path,
           label: item.label,
           icon: item.icon as ElementType,
-          sectionKey: item.sectionKey
+          sectionKey: item.sectionKey,
+          subgroupKey: item.subgroupKey
         }
       ];
-    })
-  })
+    });
+
+    return {
+      key: typedSectionKey,
+      title,
+      items: orderNavItemsForSection(typedSectionKey, items)
+    };
+  }
 );
 
 const NAV_ITEM_BY_PATH = new Map(
@@ -89,6 +124,14 @@ export function getDefaultSectionForPath(path: string): NavSectionKey | null {
 
 export function findNavItem(path: string): NavItem | undefined {
   return NAV_ITEM_BY_PATH.get(path);
+}
+
+export function getNavSubgroupTitle(subgroupKey?: NavSubgroupKey): string | null {
+  if (!subgroupKey) {
+    return null;
+  }
+
+  return NAV_SUBGROUP_TITLES[subgroupKey] ?? null;
 }
 
 export function normalizePinnedNavPaths(paths?: readonly string[] | null): string[] {

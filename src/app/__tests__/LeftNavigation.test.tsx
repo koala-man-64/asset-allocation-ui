@@ -127,6 +127,12 @@ describe('LeftNavigation', () => {
     expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login');
     expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument();
     expect(screen.getByText('UPTIME CLOCK')).toBeInTheDocument();
+    expect(screen.getByText('DATA ACCESS')).toBeInTheDocument();
+    expect(screen.getByText('MONITORING')).toBeInTheDocument();
+    expect(screen.getByText('DATA HYGIENE')).toBeInTheDocument();
+    expect(screen.getByText('STRATEGY SETUP')).toBeInTheDocument();
+    expect(screen.getByText('PORTFOLIO & TRADING')).toBeInTheDocument();
+    expect(screen.getByText('OPS TOOLS')).toBeInTheDocument();
   });
 
   it('navigates through the shell when a nav link is clicked', async () => {

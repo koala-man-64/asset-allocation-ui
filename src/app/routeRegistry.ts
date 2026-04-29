@@ -22,12 +22,20 @@ import {
 import { STOCK_DETAIL_BASE_PATH, STOCK_DETAIL_ROUTE } from '@/features/stocks/stockRoutes';
 
 export type NavSectionKey = 'market-intelligence' | 'live-operations' | 'access';
+export type NavSubgroupKey =
+  | 'data-access'
+  | 'monitoring'
+  | 'data-hygiene'
+  | 'strategy-setup'
+  | 'portfolio-trading'
+  | 'ops-tools';
 
 export interface AppRouteNavigationMeta {
   path?: string;
   label: string;
   icon: ElementType;
   sectionKey: NavSectionKey;
+  subgroupKey?: NavSubgroupKey;
 }
 
 export interface AppNavigationItemDefinition {
@@ -35,6 +43,7 @@ export interface AppNavigationItemDefinition {
   label: string;
   icon: ElementType;
   sectionKey: NavSectionKey;
+  subgroupKey?: NavSubgroupKey;
 }
 
 export interface AppRouteDefinition {
@@ -52,6 +61,26 @@ export const NAV_SECTION_TITLES: Record<NavSectionKey, string> = {
   access: 'ACCESS'
 };
 
+export const NAV_SUBGROUP_TITLES: Record<NavSubgroupKey, string> = {
+  'data-access': 'DATA ACCESS',
+  monitoring: 'MONITORING',
+  'data-hygiene': 'DATA HYGIENE',
+  'strategy-setup': 'STRATEGY SETUP',
+  'portfolio-trading': 'PORTFOLIO & TRADING',
+  'ops-tools': 'OPS TOOLS'
+};
+
+export const NAV_SUBGROUP_ORDER_BY_SECTION: Partial<Record<NavSectionKey, NavSubgroupKey[]>> = {
+  'live-operations': [
+    'data-access',
+    'monitoring',
+    'data-hygiene',
+    'strategy-setup',
+    'portfolio-trading',
+    'ops-tools'
+  ]
+};
+
 export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
   {
     key: 'data-explorer',
@@ -63,7 +92,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Data Explorer',
       icon: Folder,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'data-access'
     }
   },
   {
@@ -76,7 +106,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Regime Monitor',
       icon: Orbit,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'monitoring'
     }
   },
   {
@@ -89,7 +120,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Intraday Monitor',
       icon: Activity,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'monitoring'
     }
   },
   {
@@ -102,7 +134,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Data Quality',
       icon: ScanSearch,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'data-hygiene'
     }
   },
   {
@@ -115,7 +148,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Data Profiling',
       icon: BarChart3,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'data-hygiene'
     }
   },
   {
@@ -128,7 +162,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'System Status',
       icon: Activity,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'monitoring'
     }
   },
   {
@@ -141,7 +176,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Debug Symbols',
       icon: Bug,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'ops-tools'
     }
   },
   {
@@ -154,7 +190,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Runtime Config',
       icon: SlidersHorizontal,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'ops-tools'
     }
   },
   {
@@ -167,7 +204,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Symbol Purge',
       icon: Filter,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'data-hygiene'
     }
   },
   {
@@ -180,7 +218,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Symbol Enrichment',
       icon: Sparkles,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'data-hygiene'
     }
   },
   {
@@ -220,7 +259,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Strategies',
       icon: Target,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'strategy-setup'
     }
   },
   {
@@ -233,7 +273,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Account Operations',
       icon: Landmark,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'portfolio-trading'
     }
   },
   {
@@ -246,7 +287,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Trade Desk',
       icon: BadgeDollarSign,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'portfolio-trading'
     }
   },
   {
@@ -259,7 +301,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Trade Monitor',
       icon: BarChart3,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'portfolio-trading'
     }
   },
   {
@@ -272,7 +315,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Portfolio Workspace',
       icon: Briefcase,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'portfolio-trading'
     }
   },
   {
@@ -285,7 +329,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Universe Configurations',
       icon: Globe,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'strategy-setup'
     }
   },
   {
@@ -298,7 +343,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Ranking Configurations',
       icon: Layers3,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'strategy-setup'
     }
   },
   {
@@ -311,7 +357,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Strategy Exploration',
       icon: Target,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'strategy-setup'
     }
   },
   {
@@ -324,7 +371,8 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Postgres Explorer',
       icon: Database,
-      sectionKey: 'live-operations'
+      sectionKey: 'live-operations',
+      subgroupKey: 'data-access'
     }
   }
 ];
@@ -349,7 +397,8 @@ export const APP_NAVIGATION_REGISTRY: AppNavigationItemDefinition[] = [
         path: route.nav.path ?? route.path,
         label: route.nav.label,
         icon: route.nav.icon,
-        sectionKey: route.nav.sectionKey
+        sectionKey: route.nav.sectionKey,
+        subgroupKey: route.nav.subgroupKey
       }
     ];
   }),

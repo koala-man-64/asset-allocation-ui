@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   createDefaultNavOrderBySection,
+  getNavSubgroupTitle,
   moveNavItemWithinSectionOrder,
+  NAV_SECTIONS,
   normalizeNavOrderBySection,
   normalizePinnedNavPaths,
   resolveVisibleNavSections
@@ -67,5 +69,25 @@ describe('navigationModel', () => {
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/accounts');
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/intraday-monitor');
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/portfolios');
+  });
+
+  it('orders live operations by subgroup metadata', () => {
+    const liveOperationsSection = NAV_SECTIONS.find((section) => section.key === 'live-operations');
+    const subgroupTransitions = liveOperationsSection?.items
+      .filter((item, index, items) => item.subgroupKey !== items[index - 1]?.subgroupKey)
+      .map((item) => getNavSubgroupTitle(item.subgroupKey));
+
+    expect(liveOperationsSection?.items.slice(0, 2).map((item) => item.path)).toEqual([
+      '/data-explorer',
+      '/postgres-explorer'
+    ]);
+    expect(subgroupTransitions).toEqual([
+      'DATA ACCESS',
+      'MONITORING',
+      'DATA HYGIENE',
+      'STRATEGY SETUP',
+      'PORTFOLIO & TRADING',
+      'OPS TOOLS'
+    ]);
   });
 });
