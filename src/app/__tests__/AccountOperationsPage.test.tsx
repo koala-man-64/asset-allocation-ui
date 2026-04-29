@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountOperationsPage } from '@/features/accounts/AccountOperationsPage';
 import { accountOperationsApi } from '@/services/accountOperationsApi';
+import { ApiError } from '@/services/apiService';
 import { renderWithProviders } from '@/test/utils';
 import { toast } from 'sonner';
 import type {
@@ -342,6 +343,32 @@ const detailResponse: BrokerAccountDetail = {
   configuration: configurationResponse
 };
 
+const cloneJson = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+function cloneConfiguration(
+  overrides: Partial<BrokerAccountConfiguration> = {}
+): BrokerAccountConfiguration {
+  return {
+    ...cloneJson(configurationResponse),
+    ...overrides
+  };
+}
+
+function detailWithConfiguration(configuration: BrokerAccountConfiguration): BrokerAccountDetail {
+  return {
+    ...cloneJson(detailResponse),
+    capabilities: configuration.capabilities,
+    configuration
+  };
+}
+
+function mockLoadedConfiguration(configuration: BrokerAccountConfiguration): void {
+  vi.mocked(accountOperationsApi.getAccountDetail).mockResolvedValue(
+    detailWithConfiguration(configuration)
+  );
+  vi.mocked(accountOperationsApi.getConfiguration).mockResolvedValue(configuration);
+}
+
 function buildActionResponse(
   action: BrokerAccountActionResponse['action']
 ): BrokerAccountActionResponse {
@@ -493,6 +520,124 @@ describe('AccountOperationsPage', () => {
         })
       );
     });
+  });
+
+  it('validates trading policy inputs before saving', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /open dossier/i })[0]);
+    await user.click(screen.getByRole('tab', { name: 'Configuration' }));
+
+    await user.click(await screen.findByRole('button', { name: 'long' }));
+    expect(screen.getByText(/select at least one allowed side/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /save trading policy/i }));
+
+    expect(screen.getByText(/resolve the inline validation errors before saving/i)).toBeInTheDocument();
+    expect(accountOperationsApi.saveTradingPolicy).not.toHaveBeenCalled();
+  });
+
+  it('disables trading policy controls when policy writes are not allowed', async () => {
+    const readOnlyConfiguration = cloneConfiguration({
+      capabilities: {
+        ...configurationResponse.capabilities,
+        canWriteTradingPolicy: false,
+        readOnlyReason: 'Broker account is read-only during permissions review.'
+      }
+    });
+    mockLoadedConfiguration(readOnlyConfiguration);
+
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /open dossier/i })[0]);
+    await user.click(screen.getByRole('tab', { name: 'Configuration' }));
+
+    expect(await screen.findByText(/broker account is read-only/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/max open positions/i)).toBeDisabled();
+    expect(screen.getByLabelText(/max single-position exposure/i)).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'long' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'option' })).toBeDisabled();
+  });
+
+  it('blocks retry after a stale trading policy save until the draft is discarded', async () => {
+    vi.mocked(accountOperationsApi.saveTradingPolicy).mockRejectedValueOnce(
+      new ApiError(409, 'Configuration version conflict')
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /open dossier/i })[0]);
+    await user.click(screen.getByRole('tab', { name: 'Configuration' }));
+
+    const maxOpenPositionsInput = await screen.findByLabelText(/max open positions/i);
+    await user.clear(maxOpenPositionsInput);
+    await user.type(maxOpenPositionsInput, '24');
+    await user.click(screen.getByRole('button', { name: /save trading policy/i }));
+
+    expect(
+      await screen.findByText(/configuration changed on the server/i)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save trading policy/i })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: /discard changes/i }));
+    expect(screen.getByRole('button', { name: /no changes/i })).toBeDisabled();
+  });
+
+  it('saves policy before allocation and passes the returned version to allocation', async () => {
+    const savedPolicyConfiguration = cloneConfiguration({
+      configurationVersion: 8,
+      requestedPolicy: {
+        ...configurationResponse.requestedPolicy,
+        maxOpenPositions: 24
+      },
+      effectivePolicy: {
+        ...configurationResponse.effectivePolicy,
+        maxOpenPositions: 24
+      }
+    });
+    const savedAllocationConfiguration = cloneConfiguration({
+      configurationVersion: 9
+    });
+    vi.mocked(accountOperationsApi.saveTradingPolicy).mockResolvedValueOnce(
+      savedPolicyConfiguration
+    );
+    vi.mocked(accountOperationsApi.saveAllocation).mockResolvedValueOnce(
+      savedAllocationConfiguration
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /open dossier/i })[0]);
+    await user.click(screen.getByRole('tab', { name: 'Configuration' }));
+
+    const maxOpenPositionsInput = await screen.findByLabelText(/max open positions/i);
+    await user.clear(maxOpenPositionsInput);
+    await user.type(maxOpenPositionsInput, '24');
+    await user.type(screen.getByLabelText(/allocation notes/i), 'rebalance review');
+
+    await user.click(screen.getByRole('button', { name: /save configuration/i }));
+
+    await waitFor(() => {
+      expect(accountOperationsApi.saveTradingPolicy).toHaveBeenCalled();
+      expect(accountOperationsApi.saveAllocation).toHaveBeenCalledWith(
+        disconnectedAccount.accountId,
+        expect.objectContaining({
+          expectedConfigurationVersion: 8,
+          notes: 'rebalance review'
+        })
+      );
+    });
+    expect(
+      vi.mocked(accountOperationsApi.saveTradingPolicy).mock.invocationCallOrder[0]
+    ).toBeLessThan(vi.mocked(accountOperationsApi.saveAllocation).mock.invocationCallOrder[0]);
   });
 
   it('disables the refresh action while a refresh mutation is pending', async () => {

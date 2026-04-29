@@ -574,6 +574,45 @@ function brokerConfigurationFromTradeAccount(account: TradeAccountMock) {
   };
 }
 
+function effectivePolicyFromRequestedPolicy(
+  account: TradeAccountMock,
+  requestedPolicy: ReturnType<typeof brokerConfigurationFromTradeAccount>['requestedPolicy']
+) {
+  const allowedSides = requestedPolicy.allowedSides.filter((side) => side === 'long' || side === 'short');
+  const allowedAssetClasses = requestedPolicy.allowedAssetClasses.filter((assetClass) => {
+    if (assetClass === 'option') {
+      return account.capabilities.supportsOptions;
+    }
+    return account.capabilities.supportsEquities || account.capabilities.supportsEtfs;
+  });
+
+  return {
+    ...requestedPolicy,
+    allowedSides: allowedSides.length ? allowedSides : ['long'],
+    allowedAssetClasses: allowedAssetClasses.length ? allowedAssetClasses : ['equity']
+  };
+}
+
+function brokerAccountDetailFromTradeAccount(account: TradeAccountMock) {
+  return {
+    account: brokerAccountFromTradeAccount(account),
+    capabilities: brokerCapabilitiesFromTrade(account),
+    accountType: account.environment === 'paper' ? 'paper' : 'other',
+    tradingBlocked: account.readiness === 'blocked' || account.killSwitchActive,
+    tradingBlockedReason:
+      account.readiness === 'blocked'
+        ? account.readinessReason || 'Account is blocked from trading.'
+        : null,
+    unsettledFunds: null,
+    dayTradeBuyingPower: null,
+    maintenanceExcess: null,
+    alerts: [],
+    syncRuns: [],
+    recentActivity: [],
+    configuration: brokerConfigurationFromTradeAccount(account)
+  };
+}
+
 const brokerAccounts = tradeAccounts.map((account) => brokerAccountFromTradeAccount(account));
 const brokerAccountById = Object.fromEntries(
   brokerAccounts.map((account) => [account.accountId, account])
@@ -582,27 +621,52 @@ const brokerConfigurationByAccountId = Object.fromEntries(
   tradeAccounts.map((account) => [account.accountId, brokerConfigurationFromTradeAccount(account)])
 );
 const brokerAccountDetailsById = Object.fromEntries(
-  tradeAccounts.map((account) => [
-    account.accountId,
-    {
-      account: brokerAccountFromTradeAccount(account),
-      capabilities: brokerCapabilitiesFromTrade(account),
-      accountType: account.environment === 'paper' ? 'paper' : 'other',
-      tradingBlocked: account.readiness === 'blocked' || account.killSwitchActive,
-      tradingBlockedReason:
-        account.readiness === 'blocked'
-          ? account.readinessReason || 'Account is blocked from trading.'
-          : null,
-      unsettledFunds: null,
-      dayTradeBuyingPower: null,
-      maintenanceExcess: null,
-      alerts: [],
-      syncRuns: [],
-      recentActivity: [],
-      configuration: brokerConfigurationFromTradeAccount(account)
-    }
-  ])
+  tradeAccounts.map((account) => [account.accountId, brokerAccountDetailFromTradeAccount(account)])
 );
+
+function syncBrokerConfiguration(
+  accountId: string,
+  configuration: ReturnType<typeof brokerConfigurationFromTradeAccount>
+) {
+  brokerConfigurationByAccountId[accountId] = configuration;
+
+  const currentAccount = brokerAccountById[accountId];
+  if (currentAccount) {
+    const nextAccount = {
+      ...currentAccount,
+      configurationVersion: configuration.configurationVersion,
+      allocationSummary: configuration.allocation
+    };
+    brokerAccountById[accountId] = nextAccount;
+    const accountIndex = brokerAccounts.findIndex((account) => account.accountId === accountId);
+    if (accountIndex >= 0) {
+      brokerAccounts[accountIndex] = nextAccount;
+    }
+  }
+
+  const currentDetail = brokerAccountDetailsById[accountId];
+  if (currentDetail) {
+    brokerAccountDetailsById[accountId] = {
+      ...currentDetail,
+      account: brokerAccountById[accountId] ?? currentDetail.account,
+      capabilities: configuration.capabilities,
+      configuration
+    };
+  }
+}
+
+function resetBrokerMocks() {
+  brokerAccounts.splice(
+    0,
+    brokerAccounts.length,
+    ...tradeAccounts.map((account) => brokerAccountFromTradeAccount(account))
+  );
+  for (const account of tradeAccounts) {
+    brokerAccountById[account.accountId] = brokerAccountFromTradeAccount(account);
+    brokerConfigurationByAccountId[account.accountId] = brokerConfigurationFromTradeAccount(account);
+    brokerAccountDetailsById[account.accountId] = brokerAccountDetailFromTradeAccount(account);
+  }
+}
 
 const tradeOrdersByAccountId = {
   'acct-paper': [
@@ -1004,6 +1068,61 @@ function json(route: Route, body: unknown, status = 200) {
   });
 }
 
+function requestJson(route: Route): Record<string, unknown> {
+  const body = route.request().postData();
+  return body ? JSON.parse(body) as Record<string, unknown> : {};
+}
+
+function saveBrokerTradingPolicy(route: Route, accountId: string) {
+  const current = brokerConfigurationByAccountId[accountId];
+  const tradeAccount = tradeAccountById[accountId];
+  const payload = requestJson(route);
+  const expectedConfigurationVersion = payload.expectedConfigurationVersion;
+
+  if (
+    typeof expectedConfigurationVersion === 'number' &&
+    expectedConfigurationVersion !== current.configurationVersion
+  ) {
+    return json(
+      route,
+      {
+        detail: `Configuration version conflict for account '${accountId}': expected ${expectedConfigurationVersion}, found ${current.configurationVersion}.`
+      },
+      409
+    );
+  }
+
+  const requestedPolicy = (payload.requestedPolicy ?? current.requestedPolicy) as typeof current.requestedPolicy;
+  const nextConfiguration = {
+    ...current,
+    configurationVersion: current.configurationVersion + 1,
+    requestedPolicy,
+    effectivePolicy: effectivePolicyFromRequestedPolicy(tradeAccount, requestedPolicy),
+    updatedAt: NOW,
+    updatedBy: 'playwright',
+    audit: [
+      {
+        auditId: `audit-policy-${accountId}-${current.configurationVersion + 1}`,
+        accountId,
+        category: 'trading_policy',
+        outcome: 'saved',
+        requestedAt: NOW,
+        actor: 'playwright',
+        requestId: 'playwright-request',
+        grantedRoles: ['AssetAllocation.AccountPolicy.Write'],
+        summary: 'Updated trading policy from account operations.',
+        before: current.requestedPolicy,
+        after: requestedPolicy,
+        denialReason: null
+      },
+      ...current.audit
+    ]
+  };
+
+  syncBrokerConfiguration(accountId, nextConfiguration);
+  return json(route, nextConfiguration);
+}
+
 function jobLogsPayload(jobName: string) {
   return {
     jobName,
@@ -1090,10 +1209,11 @@ async function handleApiRoute(route: Route) {
       return json(route, brokerConfigurationByAccountId[accountId]);
     }
 
-    if (
-      apiPath === `/broker-accounts/${accountId}/trading-policy` ||
-      apiPath === `/broker-accounts/${accountId}/allocation`
-    ) {
+    if (apiPath === `/broker-accounts/${accountId}/trading-policy`) {
+      return saveBrokerTradingPolicy(route, accountId);
+    }
+
+    if (apiPath === `/broker-accounts/${accountId}/allocation`) {
       return json(route, brokerConfigurationByAccountId[accountId]);
     }
 
@@ -1192,6 +1312,8 @@ async function handleApiRoute(route: Route) {
 }
 
 export async function registerUiApiMocks(page: Page) {
+  resetBrokerMocks();
+
   await page.route('**/healthz', async (route) => {
     await route.fulfill({
       status: 200,

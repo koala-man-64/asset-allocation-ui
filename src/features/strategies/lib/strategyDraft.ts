@@ -70,6 +70,7 @@ export function buildEmptyStrategy(): StrategyDetail {
 export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): StrategyDetail {
   const base = buildEmptyStrategy();
   const incomingPolicy = strategy.config.regimePolicy;
+  const incomingRiskPolicy = strategy.config.riskPolicy;
 
   return {
     ...base,
@@ -83,10 +84,10 @@ export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): Str
             ...incomingPolicy
           }
         : undefined,
-      riskPolicy: strategy.config.riskPolicy
+      riskPolicy: incomingRiskPolicy
         ? {
-            notes: '',
-            ...strategy.config.riskPolicy
+            ...incomingRiskPolicy,
+            notes: incomingRiskPolicy.notes || ''
           }
         : undefined,
       exits: strategy.config.exits || []

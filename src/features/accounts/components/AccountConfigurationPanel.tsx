@@ -13,8 +13,7 @@ import {
   formatCurrency,
   formatNumber,
   formatPercent,
-  formatTimestamp,
-  statusBadgeVariant
+  formatTimestamp
 } from '@/features/accounts/lib/accountPresentation';
 import { ApiError } from '@/services/apiService';
 import type {
@@ -59,6 +58,8 @@ type AllocationDraft = {
 
 const POLICY_SIDE_OPTIONS: readonly BrokerPolicySide[] = ['long', 'short'];
 const POLICY_ASSET_OPTIONS: readonly BrokerPolicyAssetClass[] = ['equity', 'option'];
+const STALE_CONFIGURATION_MESSAGE =
+  'Configuration changed on the server. Reload or discard local edits before retrying.';
 
 function createRowId(): string {
   return `allocation-${Math.random().toString(36).slice(2, 10)}`;
@@ -284,13 +285,17 @@ function allocationErrors(draft: AllocationDraft): string[] {
 }
 
 function explainSaveError(error: unknown): string {
-  if (error instanceof ApiError && (error.status === 409 || error.status === 412)) {
-    return 'Configuration changed on the server. Discard local edits, reload, and retry.';
+  if (isStaleConfigurationError(error)) {
+    return STALE_CONFIGURATION_MESSAGE;
   }
   if (error instanceof Error) {
     return error.message;
   }
   return String(error);
+}
+
+function isStaleConfigurationError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 409 || error.status === 412);
 }
 
 function auditBadgeVariant(record: BrokerAccountConfigurationAuditRecord): 'default' | 'secondary' | 'destructive' | 'outline' {
@@ -339,6 +344,7 @@ export function AccountConfigurationPanel({
   const [baseConfigurationVersion, setBaseConfigurationVersion] = useState<number | null>(null);
   const [serverMessage, setServerMessage] = useState<string | null>(null);
   const [pendingRemoteVersion, setPendingRemoteVersion] = useState<number | null>(null);
+  const [staleVersionBlocked, setStaleVersionBlocked] = useState(false);
 
   const policyDirty =
     policyDraft !== null &&
@@ -369,11 +375,14 @@ export function AccountConfigurationPanel({
       setBaseConfigurationVersion(configuration.configurationVersion);
       setServerMessage(null);
       setPendingRemoteVersion(null);
+      setStaleVersionBlocked(false);
       return;
     }
 
     if (configuration.configurationVersion !== baseConfigurationVersion) {
       setPendingRemoteVersion(configuration.configurationVersion);
+      setStaleVersionBlocked(true);
+      setServerMessage(STALE_CONFIGURATION_MESSAGE);
     }
   }, [baseConfigurationVersion, configuration, dirty]);
 
@@ -382,6 +391,7 @@ export function AccountConfigurationPanel({
   const writeAllocationEnabled = activeConfiguration?.capabilities.canWriteAllocation !== false;
   const readOnlyReason = activeConfiguration?.capabilities.readOnlyReason;
   const busy = savingPolicy || savingAllocation;
+  const saveBlockedByStaleVersion = staleVersionBlocked || pendingRemoteVersion !== null;
 
   const policyValidationErrors = useMemo(
     () => (policyDraft ? policyErrors(policyDraft) : []),
@@ -420,6 +430,10 @@ export function AccountConfigurationPanel({
     setBaseConfigurationVersion(configuration.configurationVersion);
     setServerMessage(null);
     setPendingRemoteVersion(null);
+    setStaleVersionBlocked(false);
+    if (saveBlockedByStaleVersion) {
+      onReload();
+    }
   };
 
   const syncPolicyFromConfiguration = (nextConfiguration: BrokerAccountConfiguration) => {
@@ -438,6 +452,10 @@ export function AccountConfigurationPanel({
 
   const handleSave = async () => {
     if (!policyDraft || !allocationDraft || baseConfigurationVersion === null) {
+      return;
+    }
+    if (saveBlockedByStaleVersion) {
+      setServerMessage(STALE_CONFIGURATION_MESSAGE);
       return;
     }
     if (policyValidationErrors.length || allocationValidationErrors.length) {
@@ -461,6 +479,7 @@ export function AccountConfigurationPanel({
         if (!allocationDirty) {
           syncAllocationFromConfiguration(savedPolicyConfiguration);
           setPendingRemoteVersion(null);
+          setStaleVersionBlocked(false);
           toast.success('Trading policy saved.');
           return;
         }
@@ -476,12 +495,16 @@ export function AccountConfigurationPanel({
           syncPolicyFromConfiguration(savedAllocationConfiguration);
         }
         setPendingRemoteVersion(null);
+        setStaleVersionBlocked(false);
         toast.success(policyDirty ? 'Configuration saved.' : 'Allocation saved.');
       }
     } catch (saveError) {
       if (savedPolicyConfiguration) {
         syncPolicyFromConfiguration(savedPolicyConfiguration);
         setBaseConfigurationVersion(savedPolicyConfiguration.configurationVersion);
+      }
+      if (isStaleConfigurationError(saveError)) {
+        setStaleVersionBlocked(true);
       }
       setPendingRemoteVersion(savedPolicyConfiguration?.configurationVersion ?? pendingRemoteVersion);
       setServerMessage(explainSaveError(saveError));
@@ -617,17 +640,40 @@ export function AccountConfigurationPanel({
               Account hard limits override downstream strategy soft limits in the control plane.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex max-w-full flex-wrap gap-2" aria-label="Effective trading policy">
+            <Badge variant="secondary">Effective</Badge>
+            <Badge variant="outline">
+              {activeConfiguration.effectivePolicy.maxOpenPositions === null ||
+              activeConfiguration.effectivePolicy.maxOpenPositions === undefined
+                ? 'No position cap'
+                : `Max ${formatNumber(activeConfiguration.effectivePolicy.maxOpenPositions)} positions`}
+            </Badge>
+            <Badge variant="outline">
+              {activeConfiguration.effectivePolicy.maxSinglePositionExposure
+                ? activeConfiguration.effectivePolicy.maxSinglePositionExposure.mode ===
+                  'pct_of_allocatable_capital'
+                  ? `${formatPercent(activeConfiguration.effectivePolicy.maxSinglePositionExposure.value)} max exposure`
+                  : `${formatCurrency(
+                      activeConfiguration.effectivePolicy.maxSinglePositionExposure.value,
+                      account.baseCurrency
+                    )} max exposure`
+                : 'No exposure cap'}
+            </Badge>
             {activeConfiguration.effectivePolicy.allowedSides.map((side) => (
               <Badge key={side} variant="outline">
-                {side}
+                Side: {side}
               </Badge>
             ))}
             {activeConfiguration.effectivePolicy.allowedAssetClasses.map((assetClass) => (
               <Badge key={assetClass} variant="outline">
-                {assetClass}
+                Instrument: {assetClass}
               </Badge>
             ))}
+            <Badge variant="outline">
+              {activeConfiguration.effectivePolicy.requireOrderConfirmation
+                ? 'Confirmation required'
+                : 'Confirmation not required'}
+            </Badge>
           </div>
         </div>
 
@@ -673,6 +719,7 @@ export function AccountConfigurationPanel({
                   type="button"
                   size="sm"
                   variant={policyDraft.exposureMode === value ? 'default' : 'outline'}
+                  aria-pressed={policyDraft.exposureMode === value}
                   disabled={!writeTradingPolicyEnabled || busy}
                   onClick={() =>
                     setPolicyDraft((current) =>
@@ -699,6 +746,7 @@ export function AccountConfigurationPanel({
                     type="button"
                     size="sm"
                     variant={selected ? 'default' : 'outline'}
+                    aria-pressed={selected}
                     disabled={!writeTradingPolicyEnabled || busy}
                     onClick={() =>
                       setPolicyDraft((current) => {
@@ -730,6 +778,7 @@ export function AccountConfigurationPanel({
                     type="button"
                     size="sm"
                     variant={selected ? 'default' : 'outline'}
+                    aria-pressed={selected}
                     disabled={!writeTradingPolicyEnabled || busy}
                     onClick={() =>
                       setPolicyDraft((current) => {
@@ -763,6 +812,7 @@ export function AccountConfigurationPanel({
               type="button"
               size="sm"
               variant={policyDraft.requireOrderConfirmation ? 'default' : 'outline'}
+              aria-pressed={policyDraft.requireOrderConfirmation}
               disabled={!writeTradingPolicyEnabled || busy}
               onClick={() =>
                 setPolicyDraft((current) =>
@@ -1193,6 +1243,7 @@ export function AccountConfigurationPanel({
               disabled={
                 !dirty ||
                 busy ||
+                saveBlockedByStaleVersion ||
                 (policyDirty && !writeTradingPolicyEnabled) ||
                 (allocationDirty && !writeAllocationEnabled)
               }
