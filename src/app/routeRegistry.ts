@@ -9,6 +9,7 @@ import {
   Filter,
   Folder,
   Globe,
+  History,
   Landmark,
   LogIn,
   Orbit,
@@ -258,6 +259,20 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     nav: {
       label: 'Strategies',
       icon: Target,
+      sectionKey: 'live-operations',
+      subgroupKey: 'strategy-setup'
+    }
+  },
+  {
+    key: 'backtests',
+    path: '/backtests',
+    load: () =>
+      import('@/features/backtests/BacktestWorkspacePage').then((module) => ({
+        default: module.BacktestWorkspacePage
+      })),
+    nav: {
+      label: 'Backtests',
+      icon: History,
       sectionKey: 'live-operations',
       subgroupKey: 'strategy-setup'
     }

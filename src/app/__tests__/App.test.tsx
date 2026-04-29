@@ -63,6 +63,10 @@ vi.mock('@/features/strategies/StrategyConfigPage', () => ({
   StrategyConfigPage: () => <div data-testid="mock-strategy-config">Mock Strategy Workbench</div>
 }));
 
+vi.mock('@/features/backtests/BacktestWorkspacePage', () => ({
+  BacktestWorkspacePage: () => <div data-testid="mock-backtest-workspace">Mock Backtest Workspace</div>
+}));
+
 vi.mock('@/features/portfolios/PortfolioWorkspacePage', () => ({
   PortfolioWorkspacePage: () => (
     <div data-testid="mock-portfolio-workspace">Mock Portfolio Workspace</div>
@@ -140,6 +144,13 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-strategy-config')).toBeInTheDocument();
+  });
+
+  it('renders the backtest workspace route through the application shell', async () => {
+    window.history.pushState({}, 'Backtests', '/backtests');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-backtest-workspace')).toBeInTheDocument();
   });
 
   it('renders the ranking workbench route through the application shell', async () => {
