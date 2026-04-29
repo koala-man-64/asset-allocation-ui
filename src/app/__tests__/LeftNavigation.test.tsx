@@ -164,12 +164,9 @@ describe('LeftNavigation', () => {
             '/symbol-purge',
             '/symbol-enrichment',
             '/runtime-config',
-            '/strategy-exploration',
             '/strategies',
             '/accounts',
             '/portfolios',
-            '/universes',
-            '/rankings',
             '/trade-desk',
             '/trade-monitor'
           ]
@@ -196,16 +193,16 @@ describe('LeftNavigation', () => {
         '/symbol-purge',
         '/symbol-enrichment',
         '/runtime-config',
-        '/strategy-exploration',
         '/accounts',
         '/portfolios',
-        '/universes',
-        '/rankings',
         '/trade-desk',
         '/trade-monitor',
         '/login'
       ])
     );
+    expect(screen.queryByRole('link', { name: 'Strategy Exploration' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Universe Configurations' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Ranking Configurations' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute(
       'aria-current',
       'page'
@@ -264,11 +261,11 @@ describe('LeftNavigation', () => {
     renderNavigation(['/rankings']);
 
     await waitFor(() => {
-      expect(useUIStore.getState().pinnedNavPaths).toEqual(['/rankings', '/strategies']);
+      expect(useUIStore.getState().pinnedNavPaths).toEqual(['/strategies']);
     });
 
     expect(getRenderedLinks().slice(0, 4)).toEqual(
-      navSnapshot(['/rankings', '/strategies', '/stock-explorer', '/stock-detail'])
+      navSnapshot(['/strategies', '/stock-explorer', '/stock-detail', '/data-explorer'])
     );
     expect(screen.getAllByRole('link', { name: 'Strategies' })).toHaveLength(1);
   });

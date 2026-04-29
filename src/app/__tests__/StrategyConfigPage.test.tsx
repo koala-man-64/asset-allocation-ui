@@ -5,6 +5,7 @@ import { StrategyConfigPage } from '@/features/strategies/StrategyConfigPage';
 import { backtestApi } from '@/services/backtestApi';
 import { rankingApi } from '@/services/rankingApi';
 import { strategyApi } from '@/services/strategyApi';
+import { strategyAnalyticsApi } from '@/services/strategyAnalyticsApi';
 import { universeApi } from '@/services/universeApi';
 import { renderWithProviders } from '@/test/utils';
 import { toast } from 'sonner';
@@ -25,19 +26,36 @@ vi.mock('@/services/backtestApi', () => ({
   backtestApi: {
     listRuns: vi.fn(),
     submitRun: vi.fn(),
-    getTrades: vi.fn()
+    getTrades: vi.fn(),
+    getSummary: vi.fn(),
+    getTimeseries: vi.fn(),
+    getRolling: vi.fn()
   }
 }));
 
 vi.mock('@/services/rankingApi', () => ({
   rankingApi: {
-    listRankingSchemas: vi.fn()
+    listRankingSchemas: vi.fn(),
+    getRankingSchemaDetail: vi.fn(),
+    getRankingCatalog: vi.fn(),
+    saveRankingSchema: vi.fn()
+  }
+}));
+
+vi.mock('@/services/strategyAnalyticsApi', () => ({
+  strategyAnalyticsApi: {
+    compareStrategies: vi.fn(),
+    getScenarioForecast: vi.fn(),
+    getAllocationExposure: vi.fn(),
+    getTradeHistory: vi.fn()
   }
 }));
 
 vi.mock('@/services/universeApi', () => ({
   universeApi: {
-    listUniverseConfigs: vi.fn()
+    listUniverseConfigs: vi.fn(),
+    getUniverseConfigDetail: vi.fn(),
+    saveUniverseConfig: vi.fn()
   }
 }));
 
@@ -75,6 +93,13 @@ function buildStrategyDetail(name: string, overrides: Partial<Record<string, unk
         modelName: 'default-regime',
         mode: 'observe_only'
       },
+      riskPolicy: {
+        grossExposureLimit: 1,
+        singleNameMaxWeight: 0.08,
+        turnoverBudget: 0.35,
+        maxTradeNotionalBaseCcy: 250000,
+        notes: 'Desk risk envelope'
+      },
       exits: [
         {
           id: 'stop-8',
@@ -105,6 +130,49 @@ describe('StrategyConfigPage', () => {
         updated_at: '2026-03-08T00:00:00Z'
       }
     ]);
+    (rankingApi.getRankingSchemaDetail as Mock).mockResolvedValue({
+      name: 'quality-momentum',
+      description: 'Quality and momentum factors',
+      version: 1,
+      updated_at: '2026-03-08T00:00:00Z',
+      config: {
+        universeConfigName: 'large-cap-quality',
+        groups: [
+          {
+            name: 'Quality',
+            weight: 1,
+            transforms: [{ type: 'percentile_rank', params: {} }],
+            factors: [
+              {
+                name: 'roe',
+                table: 'market_data',
+                column: 'return_20d',
+                weight: 1,
+                direction: 'desc',
+                missingValuePolicy: 'exclude',
+                transforms: [{ type: 'zscore', params: {} }]
+              }
+            ]
+          }
+        ],
+        overallTransforms: []
+      }
+    });
+    (rankingApi.getRankingCatalog as Mock).mockResolvedValue({
+      source: 'postgres_gold',
+      tables: [
+        {
+          name: 'market_data',
+          asOfColumn: 'date',
+          columns: [{ name: 'return_20d', dataType: 'float', valueKind: 'number' }]
+        }
+      ]
+    });
+    (rankingApi.saveRankingSchema as Mock).mockResolvedValue({
+      status: 'ok',
+      message: 'saved',
+      version: 2
+    });
     (universeApi.listUniverseConfigs as Mock).mockResolvedValue([
       {
         name: 'large-cap-quality',
@@ -113,12 +181,108 @@ describe('StrategyConfigPage', () => {
         updated_at: '2026-03-08T00:00:00Z'
       }
     ]);
+    (universeApi.getUniverseConfigDetail as Mock).mockResolvedValue({
+      name: 'large-cap-quality',
+      description: 'Large cap quality universe',
+      version: 1,
+      updated_at: '2026-03-08T00:00:00Z',
+      config: {
+        source: 'postgres_gold',
+        root: {
+          kind: 'group',
+          operator: 'and',
+          clauses: [{ kind: 'condition', field: 'market.close', operator: 'gt', value: 0 }]
+        }
+      }
+    });
+    (universeApi.saveUniverseConfig as Mock).mockResolvedValue({
+      status: 'ok',
+      message: 'saved',
+      version: 2
+    });
     (backtestApi.listRuns as Mock).mockResolvedValue({ runs: [], limit: 6, offset: 0 });
     (backtestApi.getTrades as Mock).mockResolvedValue({ trades: [], total: 0, limit: 20, offset: 0 });
+    (backtestApi.getSummary as Mock).mockResolvedValue({
+      run_id: 'run-1',
+      total_return: 0.12,
+      sharpe_ratio: 1.1,
+      max_drawdown: -0.05,
+      cost_drag_bps: 12,
+      trades: 4,
+      closed_positions: 2
+    });
+    (backtestApi.getTimeseries as Mock).mockResolvedValue({
+      points: [],
+      total_points: 0,
+      truncated: false
+    });
+    (backtestApi.getRolling as Mock).mockResolvedValue({
+      points: [],
+      total_points: 0,
+      truncated: false
+    });
     (backtestApi.submitRun as Mock).mockResolvedValue({
       run_id: 'run-1',
       status: 'queued',
       submitted_at: '2026-03-08T00:00:00Z'
+    });
+    (strategyApi.getUniverseCatalog as Mock).mockResolvedValue({
+      source: 'postgres_gold',
+      fields: [
+        {
+          field: 'market.close',
+          dataType: 'float',
+          valueKind: 'number',
+          operators: ['gt', 'gte', 'lt', 'lte', 'eq']
+        }
+      ]
+    });
+    (strategyApi.previewUniverse as Mock).mockResolvedValue({
+      source: 'postgres_gold',
+      symbolCount: 2,
+      sampleSymbols: ['AAPL', 'MSFT'],
+      fieldsUsed: ['market.close'],
+      warnings: []
+    });
+    (strategyAnalyticsApi.getAllocationExposure as Mock).mockResolvedValue({
+      strategyName: 'quality-trend',
+      asOf: '2026-04-29T12:00:00Z',
+      totalMarketValue: 100000,
+      aggregateTargetWeight: 0.6,
+      aggregateActualWeight: 0.58,
+      exposures: [],
+      positions: [],
+      warnings: []
+    });
+    (strategyAnalyticsApi.getTradeHistory as Mock).mockResolvedValue({
+      strategyName: 'quality-trend',
+      trades: [],
+      total: 0,
+      limit: 100,
+      offset: 0,
+      warnings: []
+    });
+    (strategyAnalyticsApi.compareStrategies as Mock).mockResolvedValue({
+      asOf: '2026-04-29T12:00:00Z',
+      benchmarkSymbol: 'SPY',
+      costModel: 'default',
+      barSize: '1d',
+      strategies: [
+        { strategyName: 'quality-trend', role: 'baseline' },
+        { strategyName: 'mean-revert', role: 'challenger' }
+      ],
+      metrics: [],
+      runEvidence: [],
+      warnings: [],
+      blockedReasons: []
+    });
+    (strategyAnalyticsApi.getScenarioForecast as Mock).mockResolvedValue({
+      asOf: '2026-04-29T12:00:00Z',
+      horizon: '3M',
+      regimeAssumption: 'current',
+      source: 'control_plane',
+      forecasts: [],
+      warnings: []
     });
   });
 
@@ -161,30 +325,33 @@ describe('StrategyConfigPage', () => {
       limit: 6,
       offset: 0
     });
-    (backtestApi.getTrades as Mock).mockResolvedValue({
+    (strategyAnalyticsApi.getTradeHistory as Mock).mockResolvedValue({
+      strategyName: 'quality-trend',
       trades: [
         {
-          execution_date: '2026-04-15T13:00:00Z',
+          source: 'backtest',
+          timestamp: '2026-04-15T13:00:00Z',
           symbol: 'MSFT',
+          side: 'buy',
           quantity: 25,
           price: 410.5,
           notional: 10262.5,
           commission: 2.5,
-          slippage_cost: 1.0,
-          cash_after: 90000,
-          trade_role: 'entry'
+          slippageCost: 1.0
         }
       ],
       total: 1,
-      limit: 20,
+      limit: 100,
       offset: 0
     });
 
     renderWithProviders(<StrategyConfigPage />);
 
     expect(await screen.findByRole('heading', { name: 'quality-trend' })).toBeInTheDocument();
-    expect(screen.getAllByText(/top 25 with 90-bar lookback/i)).toHaveLength(2);
-    expect(await screen.findByRole('heading', { name: /latest backtest trade history/i })).toBeInTheDocument();
+    expect(screen.getByText(/top 25 with 90-bar lookback/i)).toBeInTheDocument();
+    expect(screen.getByText(/strategy editor panel/i)).toBeInTheDocument();
+    expect(screen.getByText(/strategy explorer panel/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /trade history/i })).toBeInTheDocument();
     expect(screen.getByText('MSFT')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /duplicate as new/i }));
@@ -325,7 +492,7 @@ describe('StrategyConfigPage', () => {
 
     renderWithProviders(<StrategyConfigPage />);
 
-    expect(await screen.findAllByText(/top 25 with 90-bar lookback/i)).toHaveLength(2);
+    expect(await screen.findByText(/top 25 with 90-bar lookback/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /edit strategy/i }));
     expect(await screen.findByRole('heading', { name: /edit strategy/i })).toBeInTheDocument();
@@ -384,7 +551,7 @@ describe('StrategyConfigPage', () => {
 
     renderWithProviders(<StrategyConfigPage />);
 
-    expect(await screen.findAllByText(/top 25 with 90-bar lookback/i)).toHaveLength(2);
+    expect(await screen.findByText(/top 25 with 90-bar lookback/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /edit strategy/i }));
     expect(await screen.findByRole('heading', { name: /edit strategy/i })).toBeInTheDocument();

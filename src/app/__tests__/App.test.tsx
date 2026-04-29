@@ -85,11 +85,6 @@ vi.mock('@/features/rankings/RankingConfigPage', () => ({
   RankingConfigPage: () => <div data-testid="mock-ranking-config">Mock Ranking Workbench</div>
 }));
 
-vi.mock('@/features/strategy-exploration/StrategyDataCatalogPage', () => ({
-  StrategyDataCatalogPage: () => (
-    <div data-testid="mock-strategy-data-catalog">Mock Strategy Data Catalog</div>
-  )
-}));
 vi.mock('@/features/symbol-enrichment/SymbolEnrichmentPage', () => ({
   SymbolEnrichmentPage: () => <div data-testid="mock-symbol-enrichment">Mock Symbol Enrichment</div>
 }));
@@ -207,6 +202,7 @@ describe('App Smoke Test', () => {
     '/run-configurations',
     '/universe-configurations',
     '/ranking-configurations',
+    '/strategy-exploration',
     '/strategy-exploration/data-catalog',
     '/data-admin/symbol-purge'
   ])('redirects removed alias route %s back to the canonical shell entrypoint', async (path) => {
