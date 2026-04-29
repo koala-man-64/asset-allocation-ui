@@ -73,7 +73,7 @@ export function StrategyLibraryRail({
             />
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="flex flex-col gap-3">
             <Select value={sortOrder} onValueChange={(value) => onSortOrderChange(value as StrategyLibrarySort)}>
               <SelectTrigger aria-label="Sort strategies">
                 <SelectValue placeholder="Sort strategies" />
@@ -87,7 +87,7 @@ export function StrategyLibraryRail({
               </SelectContent>
             </Select>
 
-            <Button onClick={onCreateStrategy} className="sm:ml-auto">
+            <Button onClick={onCreateStrategy} className="w-full">
               <Plus className="h-4 w-4" />
               Create Strategy
             </Button>
