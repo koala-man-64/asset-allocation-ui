@@ -1,5 +1,4 @@
-import { ArrowUpRight, Layers3, Orbit, TableProperties, Target } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { TableProperties } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -9,7 +8,6 @@ import {
   TableRow
 } from '@/app/components/ui/table';
 import { Badge } from '@/app/components/ui/badge';
-import { Button } from '@/app/components/ui/button';
 import { PageLoader } from '@/app/components/common/PageLoader';
 import type { RunRecordResponse, TradeResponse } from '@/services/backtestApi';
 import type { StrategyDetail } from '@/types/strategy';
@@ -227,38 +225,13 @@ export function StrategyDossier({
                 <div>
                   <h4 className="font-display text-lg text-foreground">Attachments</h4>
                   <p className="text-sm text-muted-foreground">
-                    Universe and ranking authoring stay on their own routes.
+                    Universe and ranking authoring now lives inside the Strategies workspace.
                   </p>
                 </div>
 
-                <div className="space-y-3">
-                  <Button asChild variant="outline" className="w-full justify-between">
-                    <Link to="/universes">
-                      <span className="inline-flex items-center gap-2">
-                        <Orbit className="h-4 w-4" />
-                        Universe configurations
-                      </span>
-                      <ArrowUpRight className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" className="w-full justify-between">
-                    <Link to="/rankings">
-                      <span className="inline-flex items-center gap-2">
-                        <Layers3 className="h-4 w-4" />
-                        Ranking configurations
-                      </span>
-                      <ArrowUpRight className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" className="w-full justify-between">
-                    <Link to="/strategy-exploration">
-                      <span className="inline-flex items-center gap-2">
-                        <Target className="h-4 w-4" />
-                        Strategy exploration
-                      </span>
-                      <ArrowUpRight className="h-4 w-4" />
-                    </Link>
-                  </Button>
+                <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/60 p-4 text-sm text-muted-foreground">
+                  Use the Strategy Editor Panel to edit the attached universe draft, ranking schema,
+                  regime policy, and risk policy without leaving /strategies.
                 </div>
 
                 <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/60 p-4">

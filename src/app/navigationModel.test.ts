@@ -33,7 +33,10 @@ describe('navigationModel', () => {
     expect(normalizedOrder['live-operations']).toContain('/symbol-enrichment');
     expect(normalizedOrder['live-operations']).toContain('/accounts');
     expect(normalizedOrder['live-operations']).toContain('/portfolios');
-    expect(normalizedOrder['live-operations']).toContain('/rankings');
+    expect(normalizedOrder['live-operations']).toContain('/backtests');
+    expect(normalizedOrder['live-operations']).not.toContain('/strategy-exploration');
+    expect(normalizedOrder['live-operations']).not.toContain('/universes');
+    expect(normalizedOrder['live-operations']).not.toContain('/rankings');
     expect(normalizedOrder.access).toEqual(['/login']);
   });
 
@@ -59,13 +62,16 @@ describe('navigationModel', () => {
       createDefaultNavOrderBySection()
     );
 
-    expect(pinnedItems.map((item) => item.label)).toEqual(['Ranking Configurations', 'Strategies']);
+    expect(pinnedItems.map((item) => item.label)).toEqual(['Strategies']);
 
     const liveOperationsSection = visibleSections.find(
       (section) => section.key === 'live-operations'
     );
     expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/rankings');
+    expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/universes');
+    expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/strategy-exploration');
     expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/strategies');
+    expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/backtests');
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/accounts');
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/intraday-monitor');
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/portfolios');

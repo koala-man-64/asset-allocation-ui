@@ -63,6 +63,10 @@ vi.mock('@/features/strategies/StrategyConfigPage', () => ({
   StrategyConfigPage: () => <div data-testid="mock-strategy-config">Mock Strategy Workbench</div>
 }));
 
+vi.mock('@/features/backtests/BacktestWorkspacePage', () => ({
+  BacktestWorkspacePage: () => <div data-testid="mock-backtest-workspace">Mock Backtest Workspace</div>
+}));
+
 vi.mock('@/features/portfolios/PortfolioWorkspacePage', () => ({
   PortfolioWorkspacePage: () => (
     <div data-testid="mock-portfolio-workspace">Mock Portfolio Workspace</div>
@@ -85,11 +89,6 @@ vi.mock('@/features/rankings/RankingConfigPage', () => ({
   RankingConfigPage: () => <div data-testid="mock-ranking-config">Mock Ranking Workbench</div>
 }));
 
-vi.mock('@/features/strategy-exploration/StrategyDataCatalogPage', () => ({
-  StrategyDataCatalogPage: () => (
-    <div data-testid="mock-strategy-data-catalog">Mock Strategy Data Catalog</div>
-  )
-}));
 vi.mock('@/features/symbol-enrichment/SymbolEnrichmentPage', () => ({
   SymbolEnrichmentPage: () => <div data-testid="mock-symbol-enrichment">Mock Symbol Enrichment</div>
 }));
@@ -145,6 +144,13 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-strategy-config')).toBeInTheDocument();
+  });
+
+  it('renders the backtest workspace route through the application shell', async () => {
+    window.history.pushState({}, 'Backtests', '/backtests');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-backtest-workspace')).toBeInTheDocument();
   });
 
   it('renders the ranking workbench route through the application shell', async () => {
@@ -207,6 +213,7 @@ describe('App Smoke Test', () => {
     '/run-configurations',
     '/universe-configurations',
     '/ranking-configurations',
+    '/strategy-exploration',
     '/strategy-exploration/data-catalog',
     '/data-admin/symbol-purge'
   ])('redirects removed alias route %s back to the canonical shell entrypoint', async (path) => {

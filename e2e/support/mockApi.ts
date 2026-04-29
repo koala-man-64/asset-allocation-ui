@@ -275,9 +275,9 @@ const dataProfilePayload = {
 const backtestRunsPayload = {
   runs: [
     {
-      run_id: 'run-playwright-queued',
-      run_name: 'playwright queued backtest',
-      status: 'queued',
+      run_id: 'run-playwright-completed',
+      run_name: 'playwright completed backtest',
+      status: 'completed',
       submitted_at: NOW,
       start_date: '2026-01-01',
       end_date: '2026-04-18'
@@ -285,6 +285,242 @@ const backtestRunsPayload = {
   ],
   limit: 8,
   offset: 0
+};
+
+const strategySummaries = [
+  {
+    name: 'quality-trend',
+    type: 'configured',
+    description: 'Quality trend desk note',
+    updated_at: NOW
+  },
+  {
+    name: 'defensive-value',
+    type: 'configured',
+    description: 'Defensive value desk note',
+    updated_at: '2026-04-17T14:30:00Z'
+  }
+];
+
+const strategyDetails = {
+  'quality-trend': {
+    name: 'quality-trend',
+    type: 'configured',
+    description: 'Quality trend desk note',
+    output_table_name: 'quality_trend_daily',
+    updated_at: NOW,
+    config: {
+      universeConfigName: 'large-cap-quality',
+      rankingSchemaName: 'quality-momentum',
+      rebalance: 'weekly',
+      longOnly: true,
+      topN: 25,
+      lookbackWindow: 90,
+      holdingPeriod: 30,
+      costModel: 'default',
+      regimePolicy: {
+        modelName: 'default-regime',
+        mode: 'observe_only'
+      },
+      riskPolicy: {
+        grossExposureLimit: 1,
+        singleNameMaxWeight: 0.08,
+        turnoverBudget: 0.35,
+        maxTradeNotionalBaseCcy: 250000,
+        notes: 'Desk risk envelope'
+      },
+      intrabarConflictPolicy: 'stop_first',
+      exits: []
+    }
+  },
+  'defensive-value': {
+    name: 'defensive-value',
+    type: 'configured',
+    description: 'Defensive value desk note',
+    output_table_name: 'defensive_value_daily',
+    updated_at: '2026-04-17T14:30:00Z',
+    config: {
+      universeConfigName: 'large-cap-quality',
+      rankingSchemaName: 'quality-momentum',
+      rebalance: 'monthly',
+      longOnly: true,
+      topN: 20,
+      lookbackWindow: 63,
+      holdingPeriod: 21,
+      costModel: 'default',
+      intrabarConflictPolicy: 'stop_first',
+      exits: []
+    }
+  }
+};
+
+const universeCatalogPayload = {
+  source: 'postgres_gold',
+  fields: [
+    {
+      field: 'market.close',
+      dataType: 'float',
+      valueKind: 'number',
+      operators: ['gt', 'gte', 'lt', 'lte', 'eq']
+    }
+  ]
+};
+
+const universeDetailPayload = {
+  name: 'large-cap-quality',
+  description: 'Large cap quality universe',
+  version: 1,
+  updated_at: NOW,
+  config: {
+    source: 'postgres_gold',
+    root: {
+      kind: 'group',
+      operator: 'and',
+      clauses: [{ kind: 'condition', field: 'market.close', operator: 'gt', value: 0 }]
+    }
+  }
+};
+
+const rankingCatalogPayload = {
+  source: 'postgres_gold',
+  tables: [
+    {
+      name: 'market_data',
+      asOfColumn: 'date',
+      columns: [{ name: 'return_20d', dataType: 'float', valueKind: 'number' }]
+    }
+  ]
+};
+
+const rankingDetailPayload = {
+  name: 'quality-momentum',
+  description: 'Quality and momentum factors',
+  version: 1,
+  updated_at: NOW,
+  config: {
+    universeConfigName: 'large-cap-quality',
+    groups: [
+      {
+        name: 'Quality',
+        weight: 1,
+        transforms: [{ type: 'percentile_rank', params: {} }],
+        factors: [
+          {
+            name: 'return-20d',
+            table: 'market_data',
+            column: 'return_20d',
+            weight: 1,
+            direction: 'desc',
+            missingValuePolicy: 'exclude',
+            transforms: [{ type: 'zscore', params: {} }]
+          }
+        ]
+      }
+    ],
+    overallTransforms: []
+  }
+};
+
+const strategyComparisonPayload = {
+  asOf: NOW,
+  benchmarkSymbol: 'SPY',
+  costModel: 'default',
+  barSize: '1d',
+  strategies: [
+    { strategyName: 'quality-trend', role: 'baseline' },
+    { strategyName: 'defensive-value', role: 'challenger' }
+  ],
+  metrics: [
+    {
+      metric: 'sharpe_ratio',
+      label: 'Sharpe',
+      unit: 'score',
+      values: {
+        'quality-trend': 1.2,
+        'defensive-value': 0.9
+      },
+      winnerStrategyName: 'quality-trend',
+      notes: ''
+    }
+  ],
+  runEvidence: [],
+  warnings: [],
+  blockedReasons: []
+};
+
+const strategyForecastPayload = {
+  asOf: NOW,
+  horizon: '3M',
+  regimeAssumption: 'current',
+  source: 'control_plane',
+  forecasts: [
+    {
+      strategyName: 'quality-trend',
+      expectedReturn: 0.03,
+      expectedActiveReturn: 0.01,
+      downside: -0.04,
+      upside: 0.08,
+      confidence: 'medium',
+      sampleSize: 12,
+      sampleMode: 'regime_conditioned',
+      appliedRegimeCode: 'current',
+      source: 'backtest',
+      notes: ['Matched historical regime windows.']
+    }
+  ],
+  warnings: []
+};
+
+const strategyAllocationPayload = {
+  strategyName: 'quality-trend',
+  asOf: NOW,
+  totalMarketValue: 100000,
+  aggregateTargetWeight: 0.6,
+  aggregateActualWeight: 0.58,
+  exposures: [
+    {
+      accountId: 'acct-paper',
+      accountName: 'Core Paper',
+      portfolioName: 'Core Paper Portfolio',
+      portfolioVersion: 1,
+      sleeveId: 'core',
+      sleeveName: 'Core',
+      strategyName: 'quality-trend',
+      strategyVersion: 4,
+      asOf: '2026-04-18',
+      targetWeight: 0.6,
+      actualWeight: 0.58,
+      drift: -0.02,
+      marketValue: 58000,
+      status: 'active'
+    }
+  ],
+  positions: [],
+  warnings: []
+};
+
+const strategyTradeHistoryPayload = {
+  strategyName: 'quality-trend',
+  trades: [
+    {
+      source: 'portfolio_ledger',
+      timestamp: NOW,
+      symbol: 'MSFT',
+      side: 'buy',
+      quantity: 10,
+      price: 420,
+      notional: 4200,
+      commission: 1,
+      slippageCost: 0.5,
+      accountId: 'acct-paper',
+      portfolioName: 'Core Paper Portfolio',
+      eventId: 'evt-001'
+    }
+  ],
+  total: 1,
+  limit: 100,
+  offset: 0,
+  warnings: []
 };
 
 const tradeFreshnessPayload = {
@@ -1175,8 +1411,100 @@ async function handleApiRoute(route: Route) {
     return json(route, systemStatusViewPayload.systemHealth);
   }
 
+  if (apiPath === '/strategies') {
+    return json(route, strategySummaries);
+  }
+
+  if (apiPath.startsWith('/strategies/') && apiPath.endsWith('/detail')) {
+    const strategyName = decodeURIComponent(apiPath.split('/')[2] || '');
+    const detail = strategyDetails[strategyName as keyof typeof strategyDetails];
+    return detail ? json(route, detail) : json(route, { message: 'Unknown strategy' }, 404);
+  }
+
+  if (apiPath === '/strategies/analytics/compare') {
+    return json(route, strategyComparisonPayload);
+  }
+
+  if (apiPath === '/strategies/analytics/forecast') {
+    return json(route, strategyForecastPayload);
+  }
+
+  if (apiPath === '/strategies/analytics/allocations') {
+    return json(route, strategyAllocationPayload);
+  }
+
+  if (apiPath === '/strategies/analytics/trades') {
+    return json(route, strategyTradeHistoryPayload);
+  }
+
+  if (apiPath === '/universes') {
+    return json(route, [
+      {
+        name: 'large-cap-quality',
+        description: 'Large cap quality universe',
+        version: 1,
+        updated_at: NOW
+      }
+    ]);
+  }
+
+  if (apiPath === '/universes/catalog') {
+    return json(route, universeCatalogPayload);
+  }
+
+  if (apiPath === '/universes/large-cap-quality/detail') {
+    return json(route, universeDetailPayload);
+  }
+
+  if (apiPath === '/rankings') {
+    return json(route, [
+      {
+        name: 'quality-momentum',
+        description: 'Quality and momentum factors',
+        version: 1,
+        updated_at: NOW
+      }
+    ]);
+  }
+
+  if (apiPath === '/rankings/catalog') {
+    return json(route, rankingCatalogPayload);
+  }
+
+  if (apiPath === '/rankings/quality-momentum/detail') {
+    return json(route, rankingDetailPayload);
+  }
+
   if (apiPath === '/backtests') {
     return json(route, backtestRunsPayload);
+  }
+
+  if (apiPath === '/backtests/run-playwright-completed/summary') {
+    return json(route, {
+      run_id: 'run-playwright-completed',
+      total_return: 0.12,
+      sharpe_ratio: 1.1,
+      max_drawdown: -0.05,
+      cost_drag_bps: 12,
+      trades: 4,
+      closed_positions: 2
+    });
+  }
+
+  if (apiPath === '/backtests/run-playwright-completed/metrics/timeseries') {
+    return json(route, {
+      points: [],
+      total_points: 2,
+      truncated: false
+    });
+  }
+
+  if (apiPath === '/backtests/run-playwright-completed/metrics/rolling') {
+    return json(route, {
+      points: [],
+      total_points: 2,
+      truncated: false
+    });
   }
 
   if (apiPath === '/data/gold/market') {
