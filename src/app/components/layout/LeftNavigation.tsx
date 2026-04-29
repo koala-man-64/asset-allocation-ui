@@ -311,10 +311,9 @@ export function LeftNavigation() {
   const renderSubgroupLabel = (title: string, itemPath: string, isFirstSubgroup: boolean) => (
     <SidebarMenuItem
       key={`subgroup-${itemPath}`}
-      role="presentation"
       className={cn('px-3 pb-1 pt-3', isFirstSubgroup && 'pt-1', collapsed && 'hidden')}
     >
-      <span className="block truncate text-[10px] font-black uppercase tracking-[0.16em] text-mcm-walnut/45">
+      <span className="block truncate text-[10px] font-black uppercase tracking-[0.16em] text-mcm-walnut/60">
         {title}
       </span>
     </SidebarMenuItem>

@@ -1,20 +1,18 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Database } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { Button } from '@/app/components/ui/button';
 import { strategyApi } from '@/services/strategyApi';
 import { backtestApi } from '@/services/backtestApi';
 import type { StrategyDetail, StrategySummary } from '@/types/strategy';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
-import { StrategyActionRail } from '@/features/strategies/components/StrategyActionRail';
 import {
   StrategyBacktestDialog,
   type StrategyBacktestDraft
 } from '@/features/strategies/components/StrategyBacktestDialog';
 import { StrategyDeleteDialog } from '@/features/strategies/components/StrategyDeleteDialog';
-import { StrategyDossier } from '@/features/strategies/components/StrategyDossier';
+import { StrategyEditorPanel } from '@/features/strategies/components/StrategyEditorPanel';
 import { StrategyEditorWorkspace } from '@/features/strategies/components/StrategyEditorWorkspace';
+import { StrategyExplorerPanel } from '@/features/strategies/components/StrategyExplorerPanel';
 import { StrategyLibraryRail } from '@/features/strategies/components/StrategyLibraryRail';
 import type { StrategyEditorMode } from '@/features/strategies/lib/strategyDraft';
 import {
@@ -84,20 +82,6 @@ export function StrategyConfigPage() {
       }),
     enabled: Boolean(selectedStrategyName)
   });
-  const latestTradeHistoryRun =
-    recentRunsQuery.data?.runs.find((run) => run.status === 'completed') ||
-    recentRunsQuery.data?.runs[0] ||
-    null;
-  const recentTradesQuery = useQuery({
-    queryKey: ['backtest', 'trades', latestTradeHistoryRun?.run_id],
-    queryFn: () =>
-      backtestApi.getTrades(String(latestTradeHistoryRun?.run_id), {
-        limit: 20,
-        offset: 0
-      }),
-    enabled: Boolean(latestTradeHistoryRun?.run_id)
-  });
-
   const filteredStrategies = useMemo(() => {
     const query = deferredSearchText.trim().toLowerCase();
     const matchingStrategies = query
@@ -168,7 +152,6 @@ export function StrategyConfigPage() {
   const strategiesErrorMessage = formatSystemStatusText(strategiesError);
   const detailErrorMessage = formatSystemStatusText(detailQuery.error);
   const recentRunsErrorMessage = formatSystemStatusText(recentRunsQuery.error);
-  const recentTradesErrorMessage = formatSystemStatusText(recentTradesQuery.error);
 
   const editorSourceDetail =
     editorState?.strategyName && editorState.strategyName === selectedStrategyName
@@ -211,23 +194,17 @@ export function StrategyConfigPage() {
           <p className="page-kicker">Strategies</p>
           <h1 className="page-title">Strategy Workspace</h1>
           <p className="page-subtitle">
-            A trading-desk workspace for browsing strategies, reading the dossier, and making safer
-            CRUD changes without leaving the existing contracts and backtest APIs.
+            A single trading-desk workspace for strategy editing, universe and ranking drafts,
+            portfolio-backed allocations, historical evidence, and server-backed comparisons.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" asChild className="gap-2">
-            <Link to="/strategy-exploration">
-              <Database className="h-4 w-4" />
-              Strategy Exploration
-            </Link>
-          </Button>
           <Button onClick={() => openEditor('create')}>Create Strategy</Button>
         </div>
       </div>
 
-      <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1.15fr)_minmax(360px,0.92fr)]">
+      <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1fr)_minmax(420px,1fr)]">
         <StrategyLibraryRail
           strategies={filteredStrategies}
           selectedStrategyName={selectedStrategyName}
@@ -241,20 +218,6 @@ export function StrategyConfigPage() {
           onCreateStrategy={() => openEditor('create')}
         />
 
-        <StrategyDossier
-          selectedStrategyName={selectedStrategyName}
-          strategy={detailQuery.data}
-          isLoading={detailQuery.isLoading}
-          errorMessage={detailErrorMessage}
-          recentRuns={recentRunsQuery.data?.runs || []}
-          recentRunsLoading={recentRunsQuery.isLoading}
-          recentRunsError={recentRunsErrorMessage}
-          recentTrades={recentTradesQuery.data?.trades || []}
-          recentTradesLoading={recentTradesQuery.isLoading}
-          recentTradesError={recentTradesErrorMessage}
-          recentTradesRunId={latestTradeHistoryRun?.run_id || null}
-        />
-
         {editorState ? (
           <StrategyEditorWorkspace
             mode={editorState.mode}
@@ -266,10 +229,16 @@ export function StrategyConfigPage() {
             onSaved={handleSaved}
           />
         ) : (
-          <StrategyActionRail
+          <StrategyEditorPanel
+            selectedStrategyName={selectedStrategyName}
             selectedStrategy={selectedStrategy}
-            selectedDetail={detailQuery.data}
+            strategy={detailQuery.data}
+            isLoading={detailQuery.isLoading}
+            errorMessage={detailErrorMessage}
             detailReady={Boolean(detailQuery.data) && !detailQuery.isLoading && !detailErrorMessage}
+            recentRuns={recentRunsQuery.data?.runs || []}
+            recentRunsLoading={recentRunsQuery.isLoading}
+            recentRunsError={recentRunsErrorMessage}
             onCreateStrategy={() => openEditor('create')}
             onEditStrategy={() => openEditor('edit')}
             onDuplicateStrategy={() => openEditor('duplicate')}
@@ -277,6 +246,13 @@ export function StrategyConfigPage() {
             onDeleteStrategy={() => selectedStrategy && setStrategyPendingDelete(selectedStrategy)}
           />
         )}
+
+        <StrategyExplorerPanel
+          selectedStrategyName={selectedStrategyName}
+          strategy={detailQuery.data}
+          strategies={strategies}
+          recentRuns={recentRunsQuery.data?.runs || []}
+        />
       </div>
 
       <StrategyBacktestDialog

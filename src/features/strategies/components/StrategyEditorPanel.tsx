@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
   CopyPlus,
   PencilLine,
@@ -462,6 +463,14 @@ export function StrategyEditorPanel({
             <Button variant="outline" onClick={onOpenBacktest} disabled={!selectedStrategy}>
               <Play className="h-4 w-4" />
               Launch Backtest
+            </Button>
+            <Button asChild variant="secondary">
+              <Link
+                to={`/backtests${selectedStrategyName ? `?strategy=${encodeURIComponent(selectedStrategyName)}` : ''}`}
+              >
+                <Play className="h-4 w-4" />
+                Backtests
+              </Link>
             </Button>
           </div>
         </div>

@@ -85,8 +85,8 @@ export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): Str
         : undefined,
       riskPolicy: strategy.config.riskPolicy
         ? {
-            notes: '',
-            ...strategy.config.riskPolicy
+            ...strategy.config.riskPolicy,
+            notes: strategy.config.riskPolicy.notes ?? ''
           }
         : undefined,
       exits: strategy.config.exits || []

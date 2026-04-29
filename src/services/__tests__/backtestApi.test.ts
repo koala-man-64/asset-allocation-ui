@@ -139,6 +139,68 @@ describe('backtestApi', () => {
   });
 
   describe('backtest result endpoints', () => {
+    it('posts the validation endpoint with shared run request payload', async () => {
+      await invokeWithWarmup(
+        jsonResponse({ verdict: 'pass', checks: [], blockedReasons: [], warnings: [] }),
+        (api) =>
+          api.validateRun({
+            strategyRef: { strategyName: 'quality-trend' },
+            startTs: '2026-03-03T14:30:00Z',
+            endTs: '2026-03-03T14:35:00Z',
+            barSize: '5m',
+            assumptions: { benchmarkSymbol: 'SPY', costModel: 'desk-default' }
+          })
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      const options = fetchMock.mock.calls[1]?.[1] as RequestInit;
+
+      expect(url.pathname).toBe('/api/backtests/validation');
+      expect(options.method).toBe('POST');
+      expect(JSON.parse(String(options.body))).toMatchObject({
+        strategyRef: { strategyName: 'quality-trend' },
+        assumptions: { benchmarkSymbol: 'SPY' }
+      });
+    });
+
+    it('posts the split run creation endpoint', async () => {
+      await invokeWithWarmup(
+        jsonResponse({
+          run: { run_id: 'run-1', status: 'queued', submitted_at: '2026-03-03T14:30:00Z' },
+          created: true,
+          reusedInflight: false,
+          streamUrl: '/api/backtests/run-1/events'
+        }),
+        (api) =>
+          api.runBacktest({
+            strategyRef: { strategyName: 'quality-trend' },
+            startTs: '2026-03-03T14:30:00Z',
+            endTs: '2026-03-03T14:35:00Z',
+            barSize: '5m'
+          })
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      const options = fetchMock.mock.calls[1]?.[1] as RequestInit;
+
+      expect(url.pathname).toBe('/api/backtests/runs');
+      expect(options.method).toBe('POST');
+    });
+
+    it('fetches run detail', async () => {
+      await invokeWithWarmup(
+        jsonResponse({
+          run: { run_id: 'run-1', status: 'completed', submitted_at: '2026-03-03T14:30:00Z' },
+          effectiveConfig: {},
+          warnings: []
+        }),
+        (api) => api.getRunDetail('run-1')
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      expect(url.pathname).toBe('/api/backtests/run-1/detail');
+    });
+
     it('fetches summary without a source query parameter', async () => {
       await invokeWithWarmup(
         jsonResponse({ run_id: 'run-1', sharpe_ratio: 1.2 }),
@@ -186,6 +248,60 @@ describe('backtestApi', () => {
       expect(url.searchParams.get('limit')).toBe('100');
       expect(url.searchParams.get('offset')).toBe('50');
       expect(url.searchParams.get('source')).toBeNull();
+    });
+
+    it('fetches replay with paging and symbol filter', async () => {
+      await invokeWithWarmup(
+        jsonResponse({ runId: 'run-1', events: [], total: 0, limit: 50, offset: 10, warnings: [] }),
+        (api) => api.getReplay('run-1', { limit: 50, offset: 10, symbol: 'MSFT' })
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      expect(url.pathname).toBe('/api/backtests/run-1/replay');
+      expect(url.searchParams.get('limit')).toBe('50');
+      expect(url.searchParams.get('offset')).toBe('10');
+      expect(url.searchParams.get('symbol')).toBe('MSFT');
+    });
+
+    it('fetches attribution exposure', async () => {
+      await invokeWithWarmup(
+        jsonResponse({ runId: 'run-1', slices: [], concentration: [], warnings: [] }),
+        (api) => api.getAttributionExposure('run-1')
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      expect(url.pathname).toBe('/api/backtests/run-1/attribution-exposure');
+    });
+
+    it('posts run comparison', async () => {
+      await invokeWithWarmup(
+        jsonResponse({
+          asOf: '2026-03-03T14:30:00Z',
+          alignment: 'aligned',
+          baselineRunId: 'run-1',
+          runs: [],
+          metrics: [],
+          alignmentWarnings: [],
+          blockedReasons: []
+        }),
+        (api) =>
+          api.compareRuns({
+            baselineRunId: 'run-1',
+            challengerRunIds: ['run-2'],
+            metricKeys: ['total_return']
+          })
+      );
+
+      const url = new URL(fetchMock.mock.calls[1]?.[0] as string, 'http://localhost');
+      const options = fetchMock.mock.calls[1]?.[1] as RequestInit;
+
+      expect(url.pathname).toBe('/api/backtests/compare');
+      expect(options.method).toBe('POST');
+      expect(JSON.parse(String(options.body))).toEqual({
+        baselineRunId: 'run-1',
+        challengerRunIds: ['run-2'],
+        metricKeys: ['total_return']
+      });
     });
   });
 });
