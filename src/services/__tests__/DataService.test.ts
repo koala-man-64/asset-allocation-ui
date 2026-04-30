@@ -52,6 +52,17 @@ const metadataSnapshot: DomainMetadataSnapshotResponse = {
   warnings: []
 };
 
+const systemStatusView = {
+  version: 1,
+  generatedAt: '2026-04-30T14:02:35.000Z',
+  systemHealth,
+  metadataSnapshot,
+  sources: {
+    systemHealth: 'cache',
+    metadataSnapshot: 'persisted-snapshot'
+  }
+};
+
 describe('DataService.getSystemStatusView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -111,10 +122,47 @@ describe('DataService.getSystemStatusView', () => {
     });
   });
 
-  it('falls back for an ordinary status-view 401 when the cookie session is still valid', async () => {
+  it('retries the unified status view after an ordinary 401 when the cookie session is valid', async () => {
     mockApiService.getSystemStatusView.mockRejectedValueOnce(
       new MockApiError(401, 'API Error: 401 Unauthorized')
     );
+    mockApiService.getSystemStatusView.mockResolvedValueOnce(systemStatusView);
+    mockApiService.getAuthSessionStatusWithMeta.mockResolvedValueOnce({
+      data: {
+        authMode: 'oidc',
+        subject: 'user-123',
+        requiredRoles: [],
+        grantedRoles: ['AssetAllocation.System.Read']
+      },
+      meta: {
+        requestId: 'session-1',
+        status: 200,
+        durationMs: 5,
+        url: '/api/auth/session'
+      }
+    });
+
+    await expect(DataService.getSystemStatusView()).resolves.toMatchObject(systemStatusView);
+    expect(mockApiService.getAuthSessionStatusWithMeta).toHaveBeenCalledTimes(1);
+    expect(mockApiService.getSystemStatusView).toHaveBeenCalledTimes(2);
+    expect(mockApiService.getSystemHealth).not.toHaveBeenCalled();
+    expect(mockApiService.getDomainMetadataSnapshot).not.toHaveBeenCalled();
+    expect(mockLogUiDiagnostic).toHaveBeenCalledWith(
+      'DataService',
+      'system-status-view-401-retry-succeeded',
+      expect.objectContaining({
+        sessionRequestId: 'session-1',
+        authMode: 'oidc',
+        grantedRoles: ['AssetAllocation.System.Read']
+      }),
+      'warn'
+    );
+  });
+
+  it('falls back for an ordinary status-view 401 when the retry also returns 401', async () => {
+    mockApiService.getSystemStatusView
+      .mockRejectedValueOnce(new MockApiError(401, 'API Error: 401 Unauthorized'))
+      .mockRejectedValueOnce(new MockApiError(401, 'API Error: 401 Unauthorized'));
     mockApiService.getAuthSessionStatusWithMeta.mockResolvedValueOnce({
       data: {
         authMode: 'oidc',
@@ -141,6 +189,7 @@ describe('DataService.getSystemStatusView', () => {
       }
     });
     expect(mockApiService.getAuthSessionStatusWithMeta).toHaveBeenCalledTimes(1);
+    expect(mockApiService.getSystemStatusView).toHaveBeenCalledTimes(2);
     expect(mockLogUiDiagnostic).toHaveBeenCalledWith(
       'DataService',
       'system-status-view-401-session-still-valid',

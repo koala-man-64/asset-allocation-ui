@@ -437,7 +437,7 @@ export function SystemStatusPage() {
     return <PageLoader text="Initializing System Link..." />;
   }
 
-  if (error || !systemHealth) {
+  if (!systemHealth) {
     return (
       <div className="p-6 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive font-mono">
         <h3 className="text-lg font-bold mb-2 uppercase">System Link Failure</h3>

@@ -346,6 +346,29 @@ describe('SystemStatusPage', () => {
     expect(await screen.findByTestId('mock-job-log-stream-panel')).toBeInTheDocument();
   });
 
+  it('keeps rendering cached status data while a background refresh is unauthorized', async () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(queryKeys.systemStatusView(), buildSystemStatusView());
+    vi.mocked(DataService.getSystemStatusView).mockRejectedValue(
+      new Error('API Error: 401 Unauthorized')
+    );
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <SystemStatusPage />
+        </BrowserRouter>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText('Risk Readout')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(DataService.getSystemStatusView).toHaveBeenCalled();
+    });
+    expect(screen.queryByText('System Link Failure')).not.toBeInTheDocument();
+  });
+
   it('keeps platinum as a layer but removes it as a data domain', async () => {
     domainLayerCoverageSpy.mockClear();
 

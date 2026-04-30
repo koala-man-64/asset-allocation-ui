@@ -56,13 +56,11 @@ function isUnauthenticatedSessionStatusError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401;
 }
 
-async function shouldUseSystemStatusFallback(error: unknown): Promise<boolean> {
-  if (isKnownSystemStatusFallbackError(error)) {
-    return true;
-  }
-
+async function confirmSessionAfterSystemStatus401(
+  error: unknown
+): Promise<ResponseWithMeta<AuthSessionStatus> | null> {
   if (!(error instanceof ApiError) || error.status !== 401) {
-    return false;
+    return null;
   }
 
   try {
@@ -77,7 +75,7 @@ async function shouldUseSystemStatusFallback(error: unknown): Promise<boolean> {
       },
       'warn'
     );
-    return true;
+    return session;
   } catch (sessionError) {
     logUiDiagnostic(
       'DataService',
@@ -88,7 +86,7 @@ async function shouldUseSystemStatusFallback(error: unknown): Promise<boolean> {
       },
       'warn'
     );
-    return false;
+    return null;
   }
 }
 
@@ -249,9 +247,48 @@ export const DataService = {
     try {
       return await apiService.getSystemStatusView(params, signal);
     } catch (error) {
-      if (await shouldUseSystemStatusFallback(error)) {
+      if (isKnownSystemStatusFallbackError(error)) {
         return buildFallbackSystemStatusView(params, error, signal);
       }
+
+      const session = await confirmSessionAfterSystemStatus401(error);
+      if (session) {
+        try {
+          const retry = await apiService.getSystemStatusView(params, signal);
+          logUiDiagnostic(
+            'DataService',
+            'system-status-view-401-retry-succeeded',
+            {
+              sessionRequestId: session.meta.requestId,
+              authMode: session.data.authMode,
+              grantedRoles: session.data.grantedRoles
+            },
+            'warn'
+          );
+          return retry;
+        } catch (retryError) {
+          logUiDiagnostic(
+            'DataService',
+            'system-status-view-401-retry-failed',
+            {
+              sessionRequestId: session.meta.requestId,
+              retryError:
+                retryError instanceof Error
+                  ? retryError.message
+                  : String(retryError ?? 'Unknown error')
+            },
+            'warn'
+          );
+          if (isKnownSystemStatusFallbackError(retryError)) {
+            return buildFallbackSystemStatusView(params, retryError, signal);
+          }
+          if (retryError instanceof ApiError && retryError.status === 401) {
+            return buildFallbackSystemStatusView(params, retryError, signal);
+          }
+          throw retryError;
+        }
+      }
+
       throw error;
     }
   },
