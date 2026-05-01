@@ -34,8 +34,12 @@ test('desktop smoke covers shell navigation, collapse state, and system-status a
   await expect(
     page.getByRole('heading', { name: 'Backtests, Rankings, and Regime Workflows' })
   ).toBeVisible();
-  await expect(page.getByText('aca-job-backtest-runner').first()).toBeVisible();
-  await expect(page.getByText('aca-job-market-bronze').first()).toBeVisible();
+  const operationalJobs = page.getByRole('region', {
+    name: 'Backtests, Rankings, and Regime Workflows'
+  });
+  await expect(operationalJobs.getByText('aca-job-backtest-runner').first()).toBeVisible();
+  await expect(operationalJobs.getByText('aca-job-market-bronze')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Expand market details' })).toBeVisible();
 
   const collapseButton = page.getByRole('button', { name: 'Collapse navigation' });
   await collapseButton.click();
