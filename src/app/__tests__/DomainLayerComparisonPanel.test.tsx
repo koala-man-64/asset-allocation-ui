@@ -163,6 +163,69 @@ function makeLayerTriggerLayers(): DataLayer[] {
   ];
 }
 
+function makeLayersWithHiddenCoverageDomains(): DataLayer[] {
+  return [
+    {
+      name: 'Bronze',
+      description: 'Raw ingestion',
+      status: 'healthy',
+      lastUpdated: NOW,
+      refreshFrequency: 'daily',
+      domains: [
+        {
+          name: 'market',
+          type: 'delta',
+          path: 'market-data',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'aca-job-market-bronze'
+        },
+        {
+          name: 'backtests',
+          type: 'delta',
+          path: 'backtests',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'aca-job-backtests-bronze'
+        },
+        {
+          name: 'ranking',
+          type: 'delta',
+          path: 'ranking',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'aca-job-ranking-bronze'
+        },
+        {
+          name: 'regime',
+          type: 'delta',
+          path: 'regime',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'aca-job-regime-bronze'
+        }
+      ]
+    },
+    {
+      name: 'Gold',
+      description: 'Feature store',
+      status: 'healthy',
+      lastUpdated: NOW,
+      refreshFrequency: 'daily',
+      domains: [
+        {
+          name: 'regime',
+          type: 'delta',
+          path: 'regime',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'gold-regime-job'
+        }
+      ]
+    }
+  ];
+}
+
 function makeJobs(status: JobRun['status'] = 'success', statusCode?: string): JobRun[] {
   return [
     {
@@ -767,42 +830,22 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     ]);
   });
 
-  it('does not infer the gold regime strategy-compute job from domain rows', async () => {
-    const user = userEvent.setup();
-
+  it('omits backtests, ranking, and regime domains from coverage rows', async () => {
     renderPanel({
-      dataLayers: [
-        {
-          name: 'Gold',
-          description: 'Feature store',
-          status: 'healthy',
-          lastUpdated: NOW,
-          refreshFrequency: 'Daily at 9:00 PM UTC',
-          domains: [
-            {
-              name: 'regime',
-              type: 'delta',
-              path: 'regime/',
-              lastUpdated: NOW,
-              status: 'healthy',
-              frequency: 'Daily at 9:00 PM UTC',
-              cron: '0 21 * * *'
-            }
-          ]
-        }
-      ],
+      dataLayers: makeLayersWithHiddenCoverageDomains(),
       recentJobs: []
     });
 
-    await user.click(await screen.findByRole('button', { name: 'Expand regime details' }));
-
-    const runButton = await screen.findByRole('button', { name: 'Run' });
-    expect(runButton).toBeDisabled();
-    expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
-
-    expect(triggerJobMock).not.toHaveBeenCalledWith('gold-regime-job', [
-      ['systemStatusView'],
-      ['systemHealth']
-    ]);
+    expect(
+      await screen.findByRole('button', { name: 'Expand market details' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Expand backtests details' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Expand ranking details' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Expand regime details' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Gold')).not.toBeInTheDocument();
   });
 });

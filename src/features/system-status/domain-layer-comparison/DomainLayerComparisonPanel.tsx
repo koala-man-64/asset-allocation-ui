@@ -99,6 +99,16 @@ import { formatMetadataTimestamp } from '@/features/system-status/lib/systemStat
 const LAYER_ORDER = ['bronze', 'silver', 'gold', 'platinum'] as const;
 type LayerKey = (typeof LAYER_ORDER)[number];
 const CHECKPOINT_RESET_LAYERS = new Set<LayerKey>(['silver', 'gold']);
+const HIDDEN_COVERAGE_DOMAIN_KEYS = new Set([
+  'backtest',
+  'backtests',
+  'backtesting',
+  'backtrests',
+  'ranking',
+  'rankings',
+  'regime',
+  'regimes'
+]);
 const DOMAIN_COLUMN_WIDTH_PX = 280;
 const PURGE_POLL_INTERVAL_MS = 1000;
 const PURGE_POLL_TIMEOUT_MS = 5 * 60_000;
@@ -116,6 +126,10 @@ const MEMORY_USAGE_RAW_SIGNAL_NAMES = [
   'workingsetbytes',
   'memorybytes'
 ];
+
+const isCoverageDomainVisible = (domainKey: string): boolean =>
+  !HIDDEN_COVERAGE_DOMAIN_KEYS.has(domainKey);
+
 type LayerVisualConfig = {
   accent: string;
   softBg: string;
@@ -721,7 +735,8 @@ export function DomainLayerComparisonPanel({
       if (!layer) continue;
       const hasDomains = (layer.domains || []).some((domain) => {
         const domainName = String(domain?.name || '').trim();
-        return Boolean(normalizeDomainKey(domainName));
+        const domainKey = normalizeDomainKey(domainName);
+        return Boolean(domainKey) && isCoverageDomainVisible(domainKey);
       });
       if (!hasDomains) continue;
       columns.push({ key, label: String(layer.name || key).trim() || key });
@@ -757,7 +772,7 @@ export function DomainLayerComparisonPanel({
         const domainName = String(domain?.name || '').trim();
         if (!domainName) continue;
         const domainKey = normalizeDomainKey(domainName);
-        if (!domainKey) continue;
+        if (!domainKey || !isCoverageDomainVisible(domainKey)) continue;
 
         const row = matrix.get(domainKey) || new Map<LayerKey, true>();
         row.set(layerColumn.key, true);
