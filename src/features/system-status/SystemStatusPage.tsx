@@ -46,7 +46,7 @@ const OperationalJobMonitorPanel = lazy(() =>
 );
 
 import {
-  buildAnchoredJobRunIndex,
+  buildLatestJobRunIndex,
   effectiveJobStatus,
   formatTimeAgo,
   getStatusConfig,
@@ -261,8 +261,8 @@ export function SystemStatusPage() {
     });
   }, [displayDataLayers, managedContainerJobs]);
 
-  const anchoredJobRuns = useMemo(
-    () => buildAnchoredJobRunIndex(systemHealth?.recentJobs || []),
+  const latestJobRuns = useMemo(
+    () => buildLatestJobRunIndex(systemHealth?.recentJobs || []),
     [systemHealth?.recentJobs]
   );
 
@@ -328,7 +328,7 @@ export function SystemStatusPage() {
       });
     }
 
-    for (const run of anchoredJobRuns.values()) {
+    for (const run of latestJobRuns.values()) {
       const hasStructuredMetadata = Boolean(
         run.jobCategory ||
           run.jobKey ||
@@ -354,7 +354,7 @@ export function SystemStatusPage() {
 
     return Array.from(items.entries())
       .map(([key, item]) => {
-        const latestRun = anchoredJobRuns.get(key);
+        const latestRun = latestJobRuns.get(key);
         const jobResource = jobResourcesByKey.get(key);
         return {
           ...item,
@@ -386,7 +386,7 @@ export function SystemStatusPage() {
         return left.label.localeCompare(right.label);
       })
       .map(({ sortLayerName: _sortLayerName, ...item }) => item);
-  }, [anchoredJobRuns, displayDataLayers, jobResourcesByKey, jobStates]);
+  }, [latestJobRuns, displayDataLayers, jobResourcesByKey, jobStates]);
 
   const operationalJobs = useMemo(
     () =>

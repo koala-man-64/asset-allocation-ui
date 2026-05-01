@@ -23,7 +23,7 @@ import { useJobTrigger } from '@/hooks/useJobTrigger';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
 import type { DataLayer, JobRun } from '@/types/strategy';
 import {
-  buildAnchoredJobRunIndex,
+  buildLatestJobRunIndex,
   formatDuration,
   formatRecordCount,
   formatSchedule,
@@ -204,7 +204,7 @@ export function ScheduledJobMonitor({
   };
 
   const jobIndex = useMemo(() => {
-    return buildAnchoredJobRunIndex(recentJobs || []);
+    return buildLatestJobRunIndex(recentJobs || []);
   }, [recentJobs]);
 
   const domainOrderIndex = useMemo(() => getDomainOrderIndex(dataLayers), [dataLayers]);

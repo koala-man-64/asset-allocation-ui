@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -40,6 +41,23 @@ const JOBS: JobLogStreamTarget[] = [
     startTime: '2026-03-11T12:00:00Z'
   }
 ];
+
+function ControlledJobLogStreamPanel({
+  initialJobName = 'alpha-job',
+  jobs = JOBS
+}: {
+  initialJobName?: string;
+  jobs?: JobLogStreamTarget[];
+}) {
+  const [selectedJobName, setSelectedJobName] = useState(initialJobName);
+  return (
+    <JobLogStreamPanel
+      jobs={jobs}
+      selectedJobName={selectedJobName}
+      onSelectedJobNameChange={setSelectedJobName}
+    />
+  );
+}
 
 describe('JobLogStreamPanel', () => {
   beforeEach(() => {
@@ -143,7 +161,7 @@ describe('JobLogStreamPanel', () => {
       });
 
     const user = userEvent.setup();
-    renderWithProviders(<JobLogStreamPanel jobs={JOBS} />);
+    renderWithProviders(<ControlledJobLogStreamPanel />);
 
     await waitFor(() => {
       expect(DataService.getJobLogs).toHaveBeenCalledWith(
@@ -164,8 +182,8 @@ describe('JobLogStreamPanel', () => {
 
     await user.click(screen.getByRole('combobox', { name: /monitored job/i }));
     expect((await screen.findAllByRole('option')).map((option) => option.textContent)).toEqual([
-      'Bronze / market / alpha-job',
-      'Silver / finance / beta-job'
+      'Silver / finance / beta-job',
+      'Bronze / market / alpha-job'
     ]);
     await user.click(await screen.findByRole('option', { name: 'Silver / finance / beta-job' }));
 
@@ -210,10 +228,46 @@ describe('JobLogStreamPanel', () => {
     window.removeEventListener(REALTIME_UNSUBSCRIBE_EVENT, captureUnsubscribe);
   });
 
-  it('prefers the live running state over the last completed run status', async () => {
+  it('defaults to a running job before idle jobs when the stream owns selection', async () => {
+    vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
+      jobName: 'beta-job',
+      runsRequested: 1,
+      runsReturned: 1,
+      tailLines: 10,
+      runs: [
+        {
+          executionName: 'beta-exec-001',
+          startTime: '2026-03-11T12:00:00Z',
+          tail: ['beta running snapshot'],
+          consoleLogs: [
+            {
+              timestamp: '2026-03-11T12:00:01Z',
+              stream_s: 'stdout',
+              executionName: 'beta-exec-001',
+              message: 'beta running snapshot'
+            }
+          ]
+        }
+      ]
+    });
+
+    renderWithProviders(<JobLogStreamPanel jobs={JOBS} />);
+
+    await waitFor(() => {
+      expect(DataService.getJobLogs).toHaveBeenCalledWith(
+        'beta-job',
+        { runs: 1 },
+        expect.any(AbortSignal)
+      );
+    });
+    expect(await screen.findByText('beta running snapshot')).toBeInTheDocument();
+    expect(screen.queryByText('No log output available.')).not.toBeInTheDocument();
+  });
+
+  it('shows the latest execution status instead of the live resource state', async () => {
     const job: JobLogStreamTarget = {
       ...JOBS[1],
-      recentStatus: 'success'
+      recentStatus: 'failed'
     };
 
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
@@ -231,8 +285,8 @@ describe('JobLogStreamPanel', () => {
     renderWithProviders(<JobLogStreamPanel jobs={[job]} />);
 
     expect(await screen.findByText('beta snapshot')).toBeInTheDocument();
-    expect(screen.getByText('RUNNING')).toBeInTheDocument();
-    expect(screen.queryByText('SUCCESS')).not.toBeInTheDocument();
+    expect(screen.getByText('FAILED')).toBeInTheDocument();
+    expect(screen.queryByText('RUNNING')).not.toBeInTheDocument();
   });
 
   it('anchors the console tail to an older active execution when one is still running', async () => {

@@ -253,8 +253,32 @@ function formatUsageValue(signal: ResourceSignal | null, metric: 'cpu' | 'memory
   return suffix ? `${value} ${suffix}` : value;
 }
 
+function jobDisplayRank(job: JobLogStreamTarget): number {
+  const status = effectiveJobStatus(job.recentStatus, job.runningState);
+  if (status === 'running') return 0;
+  if (status === 'failed') return 1;
+  if (status === 'warning') return 2;
+  if (status === 'pending') return 3;
+  return 4;
+}
+
+function jobStartEpoch(job: JobLogStreamTarget): number {
+  const parsed = job.startTime ? Date.parse(job.startTime) : NaN;
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
 function sortJobsForDisplay(jobs: JobLogStreamTarget[]): JobLogStreamTarget[] {
   return [...jobs].sort((left, right) => {
+    const rankDiff = jobDisplayRank(left) - jobDisplayRank(right);
+    if (rankDiff !== 0) {
+      return rankDiff;
+    }
+
+    const startDiff = jobStartEpoch(right) - jobStartEpoch(left);
+    if (startDiff !== 0) {
+      return startDiff;
+    }
+
     const labelComparison = left.label.localeCompare(right.label, undefined, {
       numeric: true,
       sensitivity: 'base'
@@ -425,6 +449,7 @@ export function JobLogStreamPanel({
   const usageRequestInFlightRef = useRef(false);
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
+  const manualSelectionRef = useRef(false);
   const monitoredJobSelectId = useId();
   const sortedJobs = useMemo(() => sortJobsForDisplay(jobs), [jobs]);
   const updateSelectedJobName = useCallback(
@@ -435,6 +460,13 @@ export function JobLogStreamPanel({
       onSelectedJobNameChange?.(jobName);
     },
     [isSelectedJobControlled, onSelectedJobNameChange]
+  );
+  const handleSelectedJobNameChange = useCallback(
+    (jobName: string) => {
+      manualSelectionRef.current = true;
+      updateSelectedJobName(jobName);
+    },
+    [updateSelectedJobName]
   );
   const runningJobCount = useMemo(
     () =>
@@ -457,6 +489,7 @@ export function JobLogStreamPanel({
 
   useEffect(() => {
     if (!sortedJobs.length) {
+      manualSelectionRef.current = false;
       updateSelectedJobName('');
       setSelectedExecutionName(null);
       setLogState({ lines: [], loading: false, error: null });
@@ -464,12 +497,23 @@ export function JobLogStreamPanel({
     }
 
     const selectionStillExists = sortedJobs.some((job) => job.name === selectedJobName);
-    if (selectionStillExists) {
+    const preferredJobName = sortedJobs[0]?.name ?? '';
+
+    if (!selectionStillExists) {
+      manualSelectionRef.current = false;
+      updateSelectedJobName(preferredJobName);
       return;
     }
 
-    updateSelectedJobName(sortedJobs[0]?.name ?? '');
-  }, [sortedJobs, selectedJobName, updateSelectedJobName]);
+    if (
+      !isSelectedJobControlled &&
+      !manualSelectionRef.current &&
+      preferredJobName &&
+      selectedJobName !== preferredJobName
+    ) {
+      updateSelectedJobName(preferredJobName);
+    }
+  }, [isSelectedJobControlled, sortedJobs, selectedJobName, updateSelectedJobName]);
 
   useEffect(() => {
     return () => {
@@ -689,7 +733,7 @@ export function JobLogStreamPanel({
             >
               Monitored Job
             </label>
-            <Select value={selectedJobName} onValueChange={updateSelectedJobName}>
+            <Select value={selectedJobName} onValueChange={handleSelectedJobNameChange}>
               <SelectTrigger
                 id={monitoredJobSelectId}
                 aria-label="Monitored job"

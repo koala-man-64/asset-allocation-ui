@@ -233,6 +233,15 @@ export function OperationalJobMonitorPanel({
     void onRefresh?.();
   };
 
+  const handleJobControlAction = (job: OperationalJobTarget, isRunning: boolean) => {
+    setSelectedJobName(job.name);
+    if (isRunning) {
+      void setJobSuspended(job.name, true);
+      return;
+    }
+    void triggerJob(job.name);
+  };
+
   const hasOperationalVisibility =
     jobs.length > 0 || backtestRuns.length > 0 || backtestRunsLoading || Boolean(backtestRunsError);
 
@@ -457,11 +466,7 @@ export function OperationalJobMonitorPanel({
                                   size="icon"
                                   className="h-8 w-8"
                                   disabled={controlsDisabled}
-                                  onClick={() =>
-                                    isRunning
-                                      ? void setJobSuspended(job.name, true)
-                                      : void triggerJob(job.name)
-                                  }
+                                  onClick={() => handleJobControlAction(job, isRunning)}
                                   aria-label={isRunning ? `Stop ${job.name}` : `Run ${job.name}`}
                                 >
                                   {isBusy ? (

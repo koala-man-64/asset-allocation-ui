@@ -57,7 +57,7 @@ const JOBS: OperationalJobTarget[] = [
     categoryLabel: 'Backtests',
     jobType: 'backtest',
     runningState: 'Running',
-    recentStatus: 'success',
+    recentStatus: 'running',
     startTime: '2026-04-18T14:31:00Z',
     duration: 120,
     recordsProcessed: 2400,
@@ -171,9 +171,36 @@ describe('OperationalJobMonitorPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Run aca-job-ranking-materialize' }));
     expect(triggerJobSpy).toHaveBeenCalledWith('aca-job-ranking-materialize');
+    expect(screen.getByTestId('mock-operational-log-stream')).toHaveTextContent(
+      'aca-job-ranking-materialize'
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop aca-job-backtest-runner' }));
     expect(setJobSuspendedSpy).toHaveBeenCalledWith('aca-job-backtest-runner', true);
+    expect(screen.getByTestId('mock-operational-log-stream')).toHaveTextContent(
+      'aca-job-backtest-runner'
+    );
+  });
+
+  it('runs a failed latest execution even when the managed resource still says running', () => {
+    renderWithProviders(
+      <OperationalJobMonitorPanel
+        jobs={[
+          {
+            ...JOBS[0],
+            recentStatus: 'failed',
+            runningState: 'Running'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('FAILED')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run aca-job-backtest-runner' }));
+
+    expect(triggerJobSpy).toHaveBeenCalledWith('aca-job-backtest-runner');
+    expect(setJobSuspendedSpy).not.toHaveBeenCalled();
   });
 
   it('selects a job for the focused log stream from the table action', async () => {

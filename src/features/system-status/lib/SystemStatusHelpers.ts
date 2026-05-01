@@ -379,6 +379,18 @@ export const selectAnchoredJobRun = <T extends AnchoredJobRunLike>(runs: T[] = [
   return selected;
 };
 
+export const selectLatestJobRun = <T extends AnchoredJobRunLike>(runs: T[] = []): T | null => {
+  let selected: T | null = null;
+
+  for (const run of runs) {
+    if (!selected || runStartEpoch(run.startTime) > runStartEpoch(selected.startTime)) {
+      selected = run;
+    }
+  }
+
+  return selected;
+};
+
 export const buildAnchoredJobRunIndex = (recentJobs: JobRun[] = []): Map<string, JobRun> => {
   const index = new Map<string, JobRun>();
 
@@ -396,9 +408,22 @@ export const buildAnchoredJobRunIndex = (recentJobs: JobRun[] = []): Map<string,
   return index;
 };
 
-// Backward-compatible alias for older imports. The selection is active-aware now.
+// Backward-compatible name for status consumers that need the newest execution result.
 export const buildLatestJobRunIndex = (recentJobs: JobRun[] = []): Map<string, JobRun> => {
-  return buildAnchoredJobRunIndex(recentJobs);
+  const index = new Map<string, JobRun>();
+
+  for (const job of recentJobs) {
+    const key = normalizeAzureJobName(job?.jobName);
+    if (!key) continue;
+
+    const existing = index.get(key);
+    const selected = selectLatestJobRun(existing ? [existing, job] : [job]);
+    if (selected) {
+      index.set(key, selected);
+    }
+  }
+
+  return index;
 };
 
 export const normalizeJobStatus = (value?: string | null): NormalizedJobStatus => {
@@ -454,15 +479,11 @@ export const effectiveJobStatus = (
   runStatus?: string | null,
   runningState?: string | null
 ): NormalizedJobStatus => {
-  if (hasActiveJobRunningState(runningState)) {
-    return 'running';
+  if (normalizeJobStateToken(runStatus)) {
+    return normalizeJobStatus(runStatus);
   }
   if (isSuspendedJobRunningState(runningState)) {
     return 'pending';
-  }
-  const normalizedRunStatus = normalizeJobStatus(runStatus);
-  if (normalizeJobStateToken(runStatus)) {
-    return normalizedRunStatus;
   }
   return normalizeJobStatus(runningState);
 };

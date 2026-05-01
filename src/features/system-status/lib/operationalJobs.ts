@@ -1,6 +1,6 @@
 import type { ManagedContainerJob } from '@/features/system-status/types';
 import {
-  buildAnchoredJobRunIndex,
+  buildLatestJobRunIndex,
   effectiveJobStatus,
   normalizeAzureJobName,
   resolveManagedJobName
@@ -185,7 +185,7 @@ export function buildOperationalJobTargets({
   jobStates?: Record<string, string>;
 }): OperationalJobTarget[] {
   const domainJobKeys = buildDomainJobKeySet(dataLayers);
-  const runByKey = buildAnchoredJobRunIndex(recentJobs);
+  const runByKey = buildLatestJobRunIndex(recentJobs);
   const targets = new Map<string, OperationalJobTarget>();
 
   for (const resource of managedContainerJobs) {

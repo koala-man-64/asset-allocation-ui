@@ -136,4 +136,48 @@ describe('operational job classification', () => {
       ])
     );
   });
+
+  it('uses the latest execution status even when the job resource is still running', () => {
+    const recentJobs: JobRun[] = [
+      {
+        jobName: 'aca-job-ranking-materialize',
+        jobType: 'data-ingest',
+        status: 'running',
+        startTime: '2026-04-18T14:20:00Z',
+        triggeredBy: 'manual'
+      },
+      {
+        jobName: 'aca-job-ranking-materialize',
+        jobType: 'data-ingest',
+        status: 'failed',
+        startTime: '2026-04-18T14:25:00Z',
+        triggeredBy: 'manual'
+      }
+    ];
+    const managedContainerJobs: ManagedContainerJob[] = [
+      {
+        name: 'aca-job-ranking-materialize',
+        runningState: 'Running',
+        lastModifiedAt: '2026-04-18T14:25:00Z'
+      }
+    ];
+
+    const targets = buildOperationalJobTargets({
+      dataLayers: DATA_LAYERS,
+      recentJobs,
+      managedContainerJobs,
+      jobStates: {
+        'aca-job-ranking-materialize': 'Running'
+      }
+    });
+
+    expect(targets).toEqual([
+      expect.objectContaining({
+        name: 'aca-job-ranking-materialize',
+        recentStatus: 'failed',
+        runningState: 'Running',
+        startTime: '2026-04-18T14:25:00Z'
+      })
+    ]);
+  });
 });

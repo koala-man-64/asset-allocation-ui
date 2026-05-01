@@ -381,6 +381,22 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     expect(screen.getByText('61%')).toBeInTheDocument();
   });
 
+  it('shows the latest failed execution instead of a running resource state', async () => {
+    renderPanel({
+      recentJobs: makeJobs('failed'),
+      managedContainerJobs: [
+        {
+          name: 'aca-job-market',
+          runningState: 'Running',
+          lastModifiedAt: NOW
+        }
+      ]
+    });
+
+    expect(await screen.findByText('FAIL')).toBeInTheDocument();
+    expect(screen.queryByText('RUN')).not.toBeInTheDocument();
+  });
+
   it('shows live raw cpu and memory usage for running jobs when percent signals are unavailable', async () => {
     const user = userEvent.setup();
 

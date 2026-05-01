@@ -477,7 +477,7 @@ describe('SystemStatusPage', () => {
     ]);
   });
 
-  it('passes the anchored active job run status and start time to the job console stream panel', async () => {
+  it('passes the latest execution status and start time to the job console stream panel', async () => {
     renderWithProviders(<SystemStatusPage />);
 
     await waitFor(() => {
@@ -499,8 +499,8 @@ describe('SystemStatusPage', () => {
         expect.objectContaining({
           name: 'aca-job-market',
           runningState: 'Running',
-          recentStatus: 'running',
-          startTime: MOCK_RUN_TIMESTAMPS.older,
+          recentStatus: 'success',
+          startTime: MOCK_RUN_TIMESTAMPS.latest,
           signals: expect.arrayContaining([
             expect.objectContaining({
               name: 'CpuUsage',
@@ -513,6 +513,48 @@ describe('SystemStatusPage', () => {
               unit: 'Bytes'
             })
           ])
+        })
+      ])
+    );
+  });
+
+  it('does not let a running resource state overwrite a failed latest execution', async () => {
+    const payload = buildSystemStatusView();
+    vi.mocked(DataService.getSystemStatusView).mockResolvedValue(
+      buildSystemStatusView({
+        systemHealth: {
+          ...payload.systemHealth,
+          recentJobs: payload.systemHealth.recentJobs.map((job) =>
+            job.jobName === 'aca-job-market' && job.startTime === MOCK_RUN_TIMESTAMPS.latest
+              ? { ...job, status: 'failed' as const }
+              : job
+          )
+        }
+      })
+    );
+
+    renderWithProviders(<SystemStatusPage />);
+
+    await waitFor(() => {
+      expect(jobLogStreamSpy).toHaveBeenCalled();
+    });
+
+    const jobStreamProps = jobLogStreamSpy.mock.calls.at(-1)?.[0] as {
+      jobs: Array<{
+        name: string;
+        runningState?: string | null;
+        recentStatus?: string | null;
+        startTime?: string | null;
+      }>;
+    };
+
+    expect(jobStreamProps.jobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'aca-job-market',
+          runningState: 'Running',
+          recentStatus: 'failed',
+          startTime: MOCK_RUN_TIMESTAMPS.latest
         })
       ])
     );
