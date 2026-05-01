@@ -18,6 +18,7 @@ vi.mock('@/services/DataService', () => ({
 
 vi.mock('@/hooks/useSystemHealthJobOverrides', () => ({
   mergeSystemHealthWithJobOverrides: (systemHealth: SystemHealth) => systemHealth,
+  renewPendingOverrides: () => undefined,
   useSystemHealthJobOverrides: () => ({ data: undefined })
 }));
 

@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/hooks/useDataQueries';
 import {
   mergeSystemHealthWithJobOverrides,
+  renewPendingOverrides,
   useSystemHealthJobOverrides
 } from '@/hooks/useSystemHealthJobOverrides';
 import { ApiError, type SystemStatusViewResponse } from '@/services/apiService';
@@ -108,6 +109,7 @@ export function useSystemStatusViewQuery(options: UseSystemStatusViewQueryOption
       return;
     }
     syncSystemStatusRelatedCaches(queryClient, query.data);
+    renewPendingOverrides(queryClient, query.data.systemHealth);
   }, [query.data, queryClient]);
 
   const refresh = useCallback(async (): Promise<SystemStatusViewResponse> => {

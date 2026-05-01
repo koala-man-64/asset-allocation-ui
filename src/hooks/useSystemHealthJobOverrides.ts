@@ -10,6 +10,8 @@ import type { JobTriggerResponse } from '@/services/backtestApi';
 import type { JobRun, ResourceHealth, SystemHealth } from '@/types/strategy';
 
 const SYSTEM_HEALTH_JOB_OVERRIDE_TTL_MS = 2 * 60 * 1000;
+const SYSTEM_HEALTH_JOB_OVERRIDE_MAX_LIFETIME_MS = 30 * 60 * 1000;
+const SERVER_STARTTIME_TOLERANCE_MS = 60 * 1000;
 const SYSTEM_HEALTH_JOB_OVERRIDE_STORAGE_KEY = 'asset-allocation.systemHealthJobOverrides';
 const RUNNING_JOB_STATUS: JobRun['status'] = 'running';
 const RUNNING_RESOURCE_STATE = 'Running';
@@ -31,6 +33,7 @@ export interface SystemHealthJobOverride {
   status: JobRun['status'];
   runningState: string;
   startTime: string;
+  firstSeenAt?: string;
   triggeredBy: string;
   executionId?: string | null;
   executionName?: string | null;
@@ -169,7 +172,30 @@ function jobReflectsServerState(
     .trim()
     .toLowerCase();
   if (!SERVER_CATCH_UP_STATUSES.has(status)) return false;
-  return runStartEpoch(job.startTime) >= runStartEpoch(override.startTime);
+
+  const jobExec = job as JobRun & {
+    executionId?: string | null;
+    executionName?: string | null;
+  };
+  if (
+    override.executionId &&
+    jobExec.executionId &&
+    String(override.executionId) === String(jobExec.executionId)
+  ) {
+    return true;
+  }
+  if (
+    override.executionName &&
+    jobExec.executionName &&
+    String(override.executionName) === String(jobExec.executionName)
+  ) {
+    return true;
+  }
+
+  return (
+    runStartEpoch(job.startTime) >=
+    runStartEpoch(override.startTime) - SERVER_STARTTIME_TOLERANCE_MS
+  );
 }
 
 function resourceReflectsServerState(
@@ -178,7 +204,10 @@ function resourceReflectsServerState(
 ): boolean {
   if (!resource) return false;
   if (hasRunningState(resource.runningState)) return true;
-  return runStartEpoch(resource.lastModifiedAt) >= runStartEpoch(override.startTime);
+  return (
+    runStartEpoch(resource.lastModifiedAt) >=
+    runStartEpoch(override.startTime) - SERVER_STARTTIME_TOLERANCE_MS
+  );
 }
 
 function optimisticJobRun(override: SystemHealthJobOverride, recentJobs: JobRun[]): JobRun {
@@ -267,6 +296,7 @@ export function upsertRunningJobOverride(
     status: RUNNING_JOB_STATUS,
     runningState: RUNNING_RESOURCE_STATE,
     startTime,
+    firstSeenAt: startTime,
     triggeredBy: payload.triggeredBy || MANUAL_TRIGGER_SOURCE,
     executionId: payload.response?.executionId ?? null,
     executionName: payload.response?.executionName ?? null,
@@ -286,6 +316,56 @@ export function upsertRunningJobOverride(
   );
 
   return override;
+}
+
+export function renewPendingOverrides(
+  queryClient: QueryClient,
+  systemHealth: SystemHealth | undefined
+): void {
+  const current = queryClient.getQueryData<SystemHealthJobOverrideMap>(
+    queryKeys.systemHealthJobOverrides()
+  );
+  const overrides = activeOverrideMap(current);
+  const keys = Object.keys(overrides);
+  if (keys.length === 0) return;
+
+  const nowMs = Date.now();
+  const renewedExpiresAt = new Date(nowMs + SYSTEM_HEALTH_JOB_OVERRIDE_TTL_MS).toISOString();
+  const next: SystemHealthJobOverrideMap = { ...overrides };
+  let changed = false;
+
+  for (const jobKey of keys) {
+    const override = overrides[jobKey];
+    const recentJob = systemHealth ? latestRecentJob(systemHealth.recentJobs, jobKey) : undefined;
+    const resource = systemHealth ? resourceForJob(systemHealth.resources, jobKey) : undefined;
+    if (
+      jobReflectsServerState(recentJob, override) ||
+      resourceReflectsServerState(resource, override)
+    ) {
+      continue;
+    }
+    const firstSeenMs = Date.parse(String(override.firstSeenAt || override.startTime || ''));
+    if (
+      Number.isFinite(firstSeenMs) &&
+      nowMs - firstSeenMs > SYSTEM_HEALTH_JOB_OVERRIDE_MAX_LIFETIME_MS
+    ) {
+      continue;
+    }
+    if (override.expiresAt !== renewedExpiresAt) {
+      next[jobKey] = { ...override, expiresAt: renewedExpiresAt };
+      changed = true;
+    }
+  }
+
+  if (!changed) return;
+
+  queryClient.setQueryData<SystemHealthJobOverrideMap>(
+    queryKeys.systemHealthJobOverrides(),
+    () => {
+      writeStoredJobOverrides(next);
+      return next;
+    }
+  );
 }
 
 export function clearJobOverride(queryClient: QueryClient, jobName: string): void {
