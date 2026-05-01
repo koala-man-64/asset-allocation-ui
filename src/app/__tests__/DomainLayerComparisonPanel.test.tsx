@@ -193,28 +193,31 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     });
   });
 
+  const panelElement = (
+    overrides: Partial<ComponentProps<typeof DomainLayerComparisonPanel>> = {}
+  ) => (
+    <DomainLayerComparisonPanel
+      overall="healthy"
+      dataLayers={makeLayers()}
+      recentJobs={makeJobs()}
+      metadataSnapshot={{
+        version: 1,
+        updatedAt: NOW,
+        entries: {},
+        warnings: []
+      }}
+      metadataUpdatedAt={NOW}
+      metadataSource="persisted-snapshot"
+      onRefresh={vi.fn().mockResolvedValue(undefined)}
+      isRefreshing={false}
+      isFetching={false}
+      {...overrides}
+    />
+  );
+
   const renderPanel = (
     overrides: Partial<ComponentProps<typeof DomainLayerComparisonPanel>> = {}
-  ) =>
-    renderWithProviders(
-      <DomainLayerComparisonPanel
-        overall="healthy"
-        dataLayers={makeLayers()}
-        recentJobs={makeJobs()}
-        metadataSnapshot={{
-          version: 1,
-          updatedAt: NOW,
-          entries: {},
-          warnings: []
-        }}
-        metadataUpdatedAt={NOW}
-        metadataSource="persisted-snapshot"
-        onRefresh={vi.fn().mockResolvedValue(undefined)}
-        isRefreshing={false}
-        isFetching={false}
-        {...overrides}
-      />
-    );
+  ) => renderWithProviders(panelElement(overrides));
 
   it('refreshes both status and metadata from the layer header action', async () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
@@ -395,6 +398,33 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
 
     expect(await screen.findByText('FAIL')).toBeInTheDocument();
     expect(screen.queryByText('RUN')).not.toBeInTheDocument();
+  });
+
+  it('keeps the last run status visible while a refresh has no run telemetry yet', async () => {
+    const view = renderPanel({
+      recentJobs: makeJobs('failed')
+    });
+
+    expect(await screen.findByText('FAIL')).toBeInTheDocument();
+
+    view.rerender(
+      panelElement({
+        recentJobs: [],
+        isFetching: true
+      })
+    );
+
+    expect(screen.getByText('FAIL')).toBeInTheDocument();
+    expect(screen.queryByText('NO RUN')).not.toBeInTheDocument();
+
+    view.rerender(
+      panelElement({
+        recentJobs: [],
+        isFetching: false
+      })
+    );
+
+    expect(await screen.findByText('NO RUN')).toBeInTheDocument();
   });
 
   it('shows live raw cpu and memory usage for running jobs when percent signals are unavailable', async () => {

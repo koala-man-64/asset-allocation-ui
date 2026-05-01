@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ElementType,
@@ -306,6 +307,30 @@ function buildJobDurationSummaryIndex(recentJobs: JobRun[] = []): Map<string, Jo
   }
 
   return summary;
+}
+
+function mergeRecentJobsForActiveRefresh(
+  current: JobRun[] = [],
+  previous: JobRun[] = []
+): JobRun[] {
+  if (current.length === 0) {
+    return previous;
+  }
+
+  const currentJobKeys = new Set(
+    current.map((job) => normalizeAzureJobName(job?.jobName)).filter(Boolean)
+  );
+  if (currentJobKeys.size === 0) {
+    return previous;
+  }
+
+  return [
+    ...current,
+    ...previous.filter((job) => {
+      const key = normalizeAzureJobName(job?.jobName);
+      return key && !currentJobKeys.has(key);
+    })
+  ];
 }
 
 function formatStorageBytes(value: number | null | undefined): string {
@@ -619,8 +644,10 @@ export function DomainLayerComparisonPanel({
   const queryClient = useQueryClient();
   const { triggeringJob, triggerJob } = useJobTrigger();
   const { jobControl, setJobSuspended, stopJob } = useJobSuspend();
-  const [localMetadataSnapshot, setLocalMetadataSnapshot] =
-    useState<DomainMetadataSnapshotResponse | undefined>(metadataSnapshot);
+  const lastSettledRecentJobsRef = useRef<JobRun[]>(recentJobs);
+  const [localMetadataSnapshot, setLocalMetadataSnapshot] = useState<
+    DomainMetadataSnapshotResponse | undefined
+  >(metadataSnapshot);
   const [refreshingCells, setRefreshingCells] = useState<Set<string>>(new Set());
   const [triggeringLayerKeys, setTriggeringLayerKeys] = useState<Set<LayerKey>>(new Set());
   const [isRefreshingPanelCounts, setIsRefreshingPanelCounts] = useState(false);
@@ -664,6 +691,18 @@ export function DomainLayerComparisonPanel({
   const resolvedMetadataSnapshot = onMetadataSnapshotChange
     ? metadataSnapshot
     : localMetadataSnapshot;
+  const isStatusRefreshActive = Boolean(isRefreshing) || Boolean(isFetching);
+  const displayRecentJobs = useMemo(
+    () =>
+      isStatusRefreshActive
+        ? mergeRecentJobsForActiveRefresh(recentJobs, lastSettledRecentJobsRef.current)
+        : recentJobs,
+    [isStatusRefreshActive, recentJobs]
+  );
+
+  useEffect(() => {
+    lastSettledRecentJobsRef.current = displayRecentJobs;
+  }, [displayRecentJobs]);
 
   const layersByKey = useMemo(() => {
     const index = new Map<LayerKey, DataLayer>();
@@ -691,11 +730,11 @@ export function DomainLayerComparisonPanel({
   }, [layersByKey]);
 
   const jobIndex = useMemo(() => {
-    return buildLatestJobRunIndex(recentJobs);
-  }, [recentJobs]);
+    return buildLatestJobRunIndex(displayRecentJobs);
+  }, [displayRecentJobs]);
   const jobDurationSummaryIndex = useMemo(() => {
-    return buildJobDurationSummaryIndex(recentJobs);
-  }, [recentJobs]);
+    return buildJobDurationSummaryIndex(displayRecentJobs);
+  }, [displayRecentJobs]);
 
   const managedJobIndex = useMemo(() => {
     const index = new Map<string, ManagedContainerJob>();
