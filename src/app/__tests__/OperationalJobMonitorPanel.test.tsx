@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { renderWithProviders } from '@/test/utils';
@@ -195,7 +195,9 @@ describe('OperationalJobMonitorPanel', () => {
       />
     );
 
-    expect(screen.getByText('FAILED')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('row', { name: /aca-job-backtest-runner/i })).getByText('FAILED')
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Run aca-job-backtest-runner' }));
 
