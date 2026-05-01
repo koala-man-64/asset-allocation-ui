@@ -798,4 +798,21 @@ describe('JobLogStreamPanel', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/Failed to load logs:/i)).not.toBeInTheDocument();
   });
+
+  it('shows a neutral notice when the current session lacks the logs-read role', async () => {
+    vi.mocked(DataService.getJobLogs).mockRejectedValueOnce(
+      new Error(
+        'API Error: 403 Forbidden [requestId=req-456] - {"detail":"Missing required roles: AssetAllocation.System.Logs.Read."}'
+      )
+    );
+
+    renderWithProviders(<JobLogStreamPanel jobs={[JOBS[0]]} />);
+
+    expect(
+      await screen.findByText(
+        'Your session is missing AssetAllocation.System.Logs.Read, so live job logs are hidden.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Failed to load logs:/i)).not.toBeInTheDocument();
+  });
 });
