@@ -121,9 +121,12 @@ describe('LeftNavigation', () => {
     expect(getRenderedLinks()).toEqual(
       navSnapshot(NAV_SECTIONS.flatMap((section) => section.items.map((item) => item.path)))
     );
-    expect(screen.getByRole('link', { name: 'System Status' })).toHaveAttribute(
-      'aria-current',
-      'page'
+    const systemStatusLink = screen.getByRole('link', { name: 'System Status' });
+    expect(systemStatusLink).toHaveAttribute('aria-current', 'page');
+    expect(systemStatusLink.className).not.toContain('({ isActive })');
+    expect(systemStatusLink.className).toContain('pr-[5.5rem]');
+    expect(screen.getByRole('button', { name: 'Pin System Status to top' }).parentElement).toHaveClass(
+      'w-20'
     );
     expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login');
     expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument();
