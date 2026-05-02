@@ -203,6 +203,14 @@ function makeLayersWithHiddenCoverageDomains(): DataLayer[] {
           lastUpdated: NOW,
           status: 'healthy',
           jobName: 'aca-job-regime-bronze'
+        },
+        {
+          name: 'government-signals',
+          type: 'blob',
+          path: 'government-signals/runs',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'bronze-government-signals-job'
         }
       ]
     },
@@ -909,7 +917,7 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     ]);
   });
 
-  it('omits backtests, ranking, and regime domains from coverage rows', async () => {
+  it('omits workflow and government signals domains from coverage rows', async () => {
     renderPanel({
       dataLayers: makeLayersWithHiddenCoverageDomains(),
       recentJobs: []
@@ -925,6 +933,9 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
       screen.queryByRole('button', { name: 'Expand ranking details' })
     ).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Expand regime details' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Expand government-signals details' })
+    ).not.toBeInTheDocument();
     expect(screen.queryByText('Gold')).not.toBeInTheDocument();
   });
 });

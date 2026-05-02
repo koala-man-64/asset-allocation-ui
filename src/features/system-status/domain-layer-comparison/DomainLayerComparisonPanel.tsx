@@ -930,6 +930,7 @@ export function DomainLayerComparisonPanel({
       const layer = layersByKey.get(layerColumn.key);
 
       for (const domain of layer?.domains || []) {
+        if (!isDomainLayerCoverageDomainVisible(domain?.name)) continue;
         const configuredJobName = resolveRunnableJobName({
           jobName: domain.jobName,
           jobUrl: domain.jobUrl

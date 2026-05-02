@@ -123,7 +123,7 @@ describe('operational job classification', () => {
     expect(domainJobKeys.has('aca-job-regime-bronze')).toBe(false);
   });
 
-  it('does not reserve inferred domain jobs without runnable metadata', () => {
+  it('does not reserve government signals jobs for domain coverage', () => {
     const domainJobKeys = buildDomainJobKeySet([
       {
         name: 'Bronze',
@@ -138,7 +138,7 @@ describe('operational job classification', () => {
             path: 'government-signals/runs',
             lastUpdated: '2026-04-18T14:30:00Z',
             status: 'healthy',
-            jobName: null,
+            jobName: 'bronze-government-signals-job',
             jobUrl: null
           }
         ]
