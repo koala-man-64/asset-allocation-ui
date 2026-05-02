@@ -3,7 +3,7 @@ import type {
   ExitRulePriceField,
   ExitRuleType,
   IntrabarConflictPolicy,
-  RegimePolicy,
+  RegimePolicyWithVersion,
   RegimePolicyMode,
   StrategyDetail
 } from '@/types/strategy';
@@ -37,12 +37,13 @@ export const REGIME_POLICY_MODES: Array<{ value: RegimePolicyMode; label: string
   { value: 'observe_only', label: 'Observe Only' }
 ];
 
-const DEFAULT_REGIME_POLICY: RegimePolicy = {
+const DEFAULT_REGIME_POLICY: RegimePolicyWithVersion = {
   modelName: 'default-regime',
+  modelVersion: 1,
   mode: 'observe_only'
 };
 
-export function buildDefaultRegimePolicy(): RegimePolicy {
+export function buildDefaultRegimePolicy(): RegimePolicyWithVersion {
   return { ...DEFAULT_REGIME_POLICY };
 }
 
@@ -53,6 +54,15 @@ export function buildEmptyStrategy(): StrategyDetail {
     description: '',
     config: {
       universeConfigName: undefined,
+      universeConfigVersion: undefined,
+      rankingSchemaName: undefined,
+      rankingSchemaVersion: undefined,
+      regimePolicyConfigName: undefined,
+      regimePolicyConfigVersion: undefined,
+      riskPolicyName: undefined,
+      riskPolicyVersion: undefined,
+      exitRuleSetName: undefined,
+      exitRuleSetVersion: undefined,
       rebalance: 'monthly',
       longOnly: true,
       topN: 20,
@@ -62,6 +72,7 @@ export function buildEmptyStrategy(): StrategyDetail {
       intrabarConflictPolicy: 'stop_first',
       regimePolicy: undefined,
       riskPolicy: undefined,
+      strategyRiskPolicy: undefined,
       exits: []
     }
   };
@@ -70,7 +81,7 @@ export function buildEmptyStrategy(): StrategyDetail {
 export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): StrategyDetail {
   const base = buildEmptyStrategy();
   const incomingPolicy = strategy.config.regimePolicy;
-  const incomingRiskPolicy = strategy.config.riskPolicy;
+  const incomingRiskPolicy = strategy.config.riskPolicy || strategy.config.strategyRiskPolicy;
 
   return {
     ...base,
@@ -85,6 +96,12 @@ export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): Str
           }
         : undefined,
       riskPolicy: incomingRiskPolicy
+        ? {
+            ...incomingRiskPolicy,
+            notes: incomingRiskPolicy.notes ?? ''
+          }
+        : undefined,
+      strategyRiskPolicy: incomingRiskPolicy
         ? {
             ...incomingRiskPolicy,
             notes: incomingRiskPolicy.notes ?? ''

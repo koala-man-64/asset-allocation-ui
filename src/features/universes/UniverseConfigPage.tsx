@@ -50,7 +50,11 @@ function formatTimestamp(value?: string): string {
   }).format(parsed);
 }
 
-export function UniverseConfigPage() {
+interface UniverseConfigPageProps {
+  embedded?: boolean;
+}
+
+export function UniverseConfigPage({ embedded = false }: UniverseConfigPageProps = {}) {
   const queryClient = useQueryClient();
   const [selectedUniverseName, setSelectedUniverseName] = useState<string | null>(null);
   const [draft, setDraft] = useState<UniverseConfigDetail>(buildEmptyUniverseConfig());
@@ -116,7 +120,7 @@ export function UniverseConfigPage() {
       ]);
       setSelectedUniverseName(null);
       setDraft(buildEmptyUniverseConfig());
-      toast.success(`Universe config ${name} deleted`);
+      toast.success(`Universe config ${name} archived`);
     },
     onError: (deleteError) => {
       toast.error(`Failed to delete universe config: ${formatSystemStatusText(deleteError)}`);
@@ -136,51 +140,53 @@ export function UniverseConfigPage() {
   const draftSummary = summarizeUniverse(draft.config);
 
   return (
-    <div className="page-shell space-y-6">
-      <PageHero
-        kicker="Universe Control Plane"
-        title="Universe Configurations"
-        subtitle="Define reusable symbol eligibility logic from Postgres gold data, validate the current matching set, and publish versioned definitions used by run configurations and ranking schemas."
-        actions={
-          <>
-            <Button variant="outline" onClick={handleCreateNew}>
-              <Plus className="h-4 w-4" />
-              New Universe Configuration
-            </Button>
-            <Button
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending || !draft.name.trim()}
-            >
-              {saveMutation.isPending ? 'Saving...' : 'Save Universe Configuration'}
-            </Button>
-          </>
-        }
-        metrics={[
-          {
-            label: 'Saved Definitions',
-            value: String(universes.length),
-            detail: 'Versioned universes available for reuse.'
-          },
-          {
-            label: 'Current Version',
-            value: `v${draft.version || 1}`,
-            detail: selectedUniverseName
-              ? 'Published revision loaded in the editor.'
-              : 'Draft version for a new universe.'
-          },
-          {
-            label: 'Conditions',
-            value: String(conditionCount),
-            detail: 'Individual eligibility checks in the active rule tree.'
-          },
-          {
-            label: 'Referenced Fields',
-            value: String(fieldCount),
-            detail: 'Public field ids currently used by the active definition.'
+    <div className={embedded ? 'space-y-6' : 'page-shell space-y-6'}>
+      {!embedded && (
+        <PageHero
+          kicker="Universe Control Plane"
+          title="Universe Configurations"
+          subtitle="Define reusable symbol eligibility logic from Postgres gold data, validate the current matching set, and publish versioned definitions used by run configurations and ranking schemas."
+          actions={
+            <>
+              <Button variant="outline" onClick={handleCreateNew}>
+                <Plus className="h-4 w-4" />
+                New Universe Configuration
+              </Button>
+              <Button
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending || !draft.name.trim()}
+              >
+                {saveMutation.isPending ? 'Saving...' : 'Save Universe Configuration'}
+              </Button>
+            </>
           }
-        ]}
-        metricsClassName="sm:grid-cols-2 xl:grid-cols-4"
-      />
+          metrics={[
+            {
+              label: 'Saved Definitions',
+              value: String(universes.length),
+              detail: 'Versioned universes available for reuse.'
+            },
+            {
+              label: 'Current Version',
+              value: `v${draft.version || 1}`,
+              detail: selectedUniverseName
+                ? 'Published revision loaded in the editor.'
+                : 'Draft version for a new universe.'
+            },
+            {
+              label: 'Conditions',
+              value: String(conditionCount),
+              detail: 'Individual eligibility checks in the active rule tree.'
+            },
+            {
+              label: 'Referenced Fields',
+              value: String(fieldCount),
+              detail: 'Public field ids currently used by the active definition.'
+            }
+          ]}
+          metricsClassName="sm:grid-cols-2 xl:grid-cols-4"
+        />
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
         <Card className="mcm-panel border border-border/60 bg-card shadow-sm">
@@ -370,7 +376,7 @@ export function UniverseConfigPage() {
                         disabled={deleteMutation.isPending}
                       >
                         <Trash2 className="h-4 w-4" />
-                        {deleteMutation.isPending ? 'Deleting...' : 'Delete Universe Configuration'}
+                        {deleteMutation.isPending ? 'Archiving...' : 'Archive Universe Configuration'}
                       </Button>
                     </div>
                   )}

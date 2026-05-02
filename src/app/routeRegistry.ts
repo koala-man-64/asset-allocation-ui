@@ -11,6 +11,7 @@ import {
   Globe,
   History,
   Landmark,
+  Library,
   LogIn,
   Orbit,
   ScanSearch,
@@ -250,6 +251,20 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     }
   },
   {
+    key: 'strategy-configurations',
+    path: '/strategy-configurations',
+    load: () =>
+      import('@/features/configurations/StrategyConfigurationHubPage').then((module) => ({
+        default: module.StrategyConfigurationHubPage
+      })),
+    nav: {
+      label: 'Configurations',
+      icon: Library,
+      sectionKey: 'live-operations',
+      subgroupKey: 'strategy-setup'
+    }
+  },
+  {
     key: 'strategies',
     path: '/strategies',
     load: () =>
@@ -337,16 +352,16 @@ export const APP_ROUTE_REGISTRY: AppRouteDefinition[] = [
     key: 'universes',
     path: '/universes',
     load: () =>
-      import('@/features/universes/UniverseConfigPage').then((module) => ({
-        default: module.UniverseConfigPage
+      import('@/features/configurations/ConfigurationRedirects').then((module) => ({
+        default: module.UniverseConfigurationRedirect
       }))
   },
   {
     key: 'rankings',
     path: '/rankings',
     load: () =>
-      import('@/features/rankings/RankingConfigPage').then((module) => ({
-        default: module.RankingConfigPage
+      import('@/features/configurations/ConfigurationRedirects').then((module) => ({
+        default: module.RankingConfigurationRedirect
       }))
   },
   {
