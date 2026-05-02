@@ -1,5 +1,5 @@
 import { Fragment, useState, type DragEvent } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
@@ -48,12 +48,16 @@ interface DragState {
   zoneKey: NavZoneKey;
 }
 
+const navActionButtonClass =
+  'inline-flex h-[1.125rem] w-[1.125rem] items-center justify-center rounded-sm text-sidebar-foreground/60 transition-colors hover:bg-sidebar hover:text-sidebar-foreground';
+
 export function LeftNavigation() {
   const { isMobile, setOpen, setOpenMobile, state } = useSidebar();
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
   const [isClearingAuthCookies, setIsClearingAuthCookies] = useState(false);
   const [authCookieStatus, setAuthCookieStatus] = useState('');
+  const location = useLocation();
   const queryClient = useQueryClient();
   const pinnedPaths = useUIStore((store) => store.pinnedNavPaths);
   const navOrderBySection = useUIStore((store) => store.navOrderBySection);
@@ -69,6 +73,14 @@ export function LeftNavigation() {
     pinnedPaths,
     navOrderBySection
   );
+  const currentPathname = location.pathname.toLowerCase();
+  const isNavItemActive = (path: string) => {
+    const targetPath = path.toLowerCase();
+    return (
+      currentPathname === targetPath ||
+      (targetPath !== '/' && currentPathname.startsWith(`${targetPath}/`))
+    );
+  };
 
   const clearDragState = () => {
     setDragState(null);
@@ -155,6 +167,7 @@ export function LeftNavigation() {
     const isDropTarget = dropTargetPath === item.path && dragState?.path !== item.path;
     const canMoveUp = index > 0;
     const canMoveDown = index < itemCount - 1;
+    const isActive = isNavItemActive(item.path);
 
     const moveItemUp = () => {
       if (!canMoveUp) {
@@ -201,23 +214,15 @@ export function LeftNavigation() {
                   setOpenMobile(false);
                 }
               }}
-              className={({ isActive }) =>
-                cn(
-                  'peer/menu-button flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-mcm-walnut outline-hidden ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-mcm-walnut focus-visible:ring-2',
-                  isActive && 'bg-sidebar-accent font-medium text-mcm-walnut',
-                  !collapsed && 'pr-16',
-                  collapsed && 'justify-center px-2'
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <item.icon
-                    className={cn('h-4 w-4 shrink-0', isActive && 'text-sidebar-primary')}
-                  />
-                  {!collapsed && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
-                </>
+              className={cn(
+                'peer/menu-button flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-mcm-walnut outline-hidden ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-mcm-walnut focus-visible:ring-2',
+                isActive && 'bg-sidebar-accent font-medium text-mcm-walnut',
+                !collapsed && (isMobile ? 'pr-10' : 'pr-[5.5rem]'),
+                collapsed && 'justify-center px-2'
               )}
+            >
+              <item.icon className={cn('h-4 w-4 shrink-0', isActive && 'text-sidebar-primary')} />
+              {!collapsed && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
             </NavLink>
           </TooltipTrigger>
           <TooltipContent side="right" hidden={!collapsed || isMobile}>
@@ -228,7 +233,8 @@ export function LeftNavigation() {
         {!collapsed && (
           <div
             className={cn(
-              'absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1',
+              'absolute right-2 top-1/2 flex -translate-y-1/2 items-center justify-end gap-0.5',
+              isMobile ? 'w-6' : 'w-20',
               isMobile
                 ? 'opacity-100'
                 : 'opacity-0 transition-opacity group-hover/nav-item:opacity-100 focus-within:opacity-100'
@@ -242,7 +248,7 @@ export function LeftNavigation() {
                 togglePinnedNavItem(item.path);
               }}
               className={cn(
-                'rounded-sm p-1 text-sidebar-foreground/60 transition-colors hover:bg-sidebar hover:text-sidebar-foreground',
+                navActionButtonClass,
                 isPinned && 'text-sidebar-primary'
               )}
               title={isPinned ? 'Unpin' : 'Pin to top'}
@@ -261,7 +267,7 @@ export function LeftNavigation() {
                     moveItemUp();
                   }}
                   disabled={!canMoveUp}
-                  className="rounded-sm p-1 text-sidebar-foreground/60 transition-colors hover:bg-sidebar hover:text-sidebar-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  className={cn(navActionButtonClass, 'disabled:cursor-not-allowed disabled:opacity-40')}
                   title={`Move ${item.label} up`}
                   aria-label={`Move ${item.label} up`}
                 >
@@ -275,7 +281,7 @@ export function LeftNavigation() {
                     moveItemDown();
                   }}
                   disabled={!canMoveDown}
-                  className="rounded-sm p-1 text-sidebar-foreground/60 transition-colors hover:bg-sidebar hover:text-sidebar-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  className={cn(navActionButtonClass, 'disabled:cursor-not-allowed disabled:opacity-40')}
                   title={`Move ${item.label} down`}
                   aria-label={`Move ${item.label} down`}
                 >
@@ -294,7 +300,7 @@ export function LeftNavigation() {
                     handleDragStart(item, zoneKey, index);
                   }}
                   onDragEnd={clearDragState}
-                  className="cursor-grab rounded-sm p-1 text-sidebar-foreground/60 transition-colors hover:bg-sidebar hover:text-sidebar-foreground active:cursor-grabbing"
+                  className={cn(navActionButtonClass, 'cursor-grab active:cursor-grabbing')}
                   title={`Drag to reorder ${item.label}`}
                   aria-label={`Reorder ${item.label}`}
                 >
