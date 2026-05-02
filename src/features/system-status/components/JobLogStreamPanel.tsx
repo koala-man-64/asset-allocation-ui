@@ -425,17 +425,24 @@ function orderedJobLogRunCandidates(response: JobLogsResponse): JobLogRunRespons
 }
 
 function extractJobLogSelection(response: JobLogsResponse): JobLogSelection {
+  let fallbackExecutionName: string | null = null;
+
   for (const run of orderedJobLogRunCandidates(response)) {
     const lines = extractRunLogLines(run);
+    const executionName = extractRunExecutionName(run, lines);
+    if (!fallbackExecutionName && executionName && effectiveJobStatus(run.status, null) === 'running') {
+      fallbackExecutionName = executionName;
+    }
+
     if (lines.length > 0) {
       return {
         lines,
-        executionName: extractRunExecutionName(run, lines)
+        executionName
       };
     }
   }
 
-  return { lines: [], executionName: null };
+  return { lines: [], executionName: fallbackExecutionName };
 }
 
 function formatConsoleTimestamp(timestamp?: string | null): string | null {
@@ -523,8 +530,12 @@ export function JobLogStreamPanel({
     [sortedJobs, selectedJobName]
   );
   const selectedJobStartTime = selectedJob?.startTime ?? null;
+  const selectedJobEffectiveStatus = effectiveJobStatus(
+    selectedJob?.recentStatus,
+    selectedJob?.runningState
+  );
   const selectedJobTopic =
-    selectedJobName && selectedExecutionName
+    selectedJobName && (selectedExecutionName || selectedJobEffectiveStatus === 'running')
       ? buildJobLogTopic(selectedJobName, selectedExecutionName)
       : null;
   const logFeedback = getLogStreamFeedback(logState.error, 'job');
@@ -726,7 +737,7 @@ export function JobLogStreamPanel({
 
   const executionUrl = getAzureJobExecutionsUrl(selectedJob?.jobUrl);
   const portalUrl = normalizeAzurePortalUrl(selectedJob?.jobUrl);
-  const status = effectiveJobStatus(selectedJob?.recentStatus, selectedJob?.runningState);
+  const status = selectedJobEffectiveStatus;
   const usageSignals = preferNewerSignals(selectedJob?.signals, liveSignals);
   const cpuSignal = findUsageSignal(usageSignals, CPU_SIGNAL_NAMES);
   const memorySignal = findUsageSignal(usageSignals, MEMORY_SIGNAL_NAMES);
@@ -871,7 +882,9 @@ export function JobLogStreamPanel({
             ) : null}
             {!logState.loading && logFeedback.tone === 'none' && logState.lines.length === 0 ? (
               <div className="text-muted-foreground">
-                No console log lines were returned for the last {JOB_LOG_SNAPSHOT_RUNS} executions.
+                {status === 'running'
+                  ? 'Waiting for live console output from the running execution.'
+                  : `No console log lines were returned for the last ${JOB_LOG_SNAPSHOT_RUNS} executions.`}
               </div>
             ) : null}
             {!logState.loading && logFeedback.tone === 'none' && logState.lines.length > 0 ? (
