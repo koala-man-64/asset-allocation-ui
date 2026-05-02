@@ -5,6 +5,7 @@ const OPERATIONAL_WORKFLOW_DOMAIN_KEYS = new Set([
   'backtests',
   'backtesting',
   'backtrests',
+  'government-signals',
   'ranking',
   'rankings',
   'regime',

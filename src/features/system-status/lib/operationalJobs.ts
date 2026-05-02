@@ -1,6 +1,6 @@
 import type { ManagedContainerJob } from '@/features/system-status/types';
 import type { JobStatusEntry } from '@/hooks/useJobStatuses';
-import { isOperationalWorkflowDomain } from '@/features/system-status/lib/coverageDomains';
+import { isDomainLayerCoverageDomainVisible } from '@/features/system-status/lib/coverageDomains';
 import {
   buildLatestJobRunIndex,
   effectiveJobStatus,
@@ -75,7 +75,7 @@ export function buildDomainJobKeySet(dataLayers: DataLayer[] = []): Set<string> 
 
   for (const layer of dataLayers) {
     for (const domain of layer.domains || []) {
-      if (isOperationalWorkflowDomain(domain?.name)) continue;
+      if (!isDomainLayerCoverageDomainVisible(domain?.name)) continue;
       const jobName = resolveRunnableJobName({
         jobName: domain.jobName,
         jobUrl: domain.jobUrl

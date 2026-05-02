@@ -475,6 +475,15 @@ describe('SystemStatusPage', () => {
                       lastUpdated: MOCK_RUN_TIMESTAMPS.latest,
                       status: 'healthy',
                       jobName: 'aca-job-regime-bronze'
+                    },
+                    {
+                      name: 'government-signals',
+                      description: 'Government signals product output',
+                      type: 'blob',
+                      path: 'government-signals/runs',
+                      lastUpdated: MOCK_RUN_TIMESTAMPS.latest,
+                      status: 'healthy',
+                      jobName: 'bronze-government-signals-job'
                     }
                   ]
                 }
@@ -589,7 +598,7 @@ describe('SystemStatusPage', () => {
       )
     );
     expect(coverageDomainNames).not.toEqual(
-      expect.arrayContaining(['backtests', 'ranking', 'regime'])
+      expect.arrayContaining(['backtests', 'ranking', 'regime', 'government-signals'])
     );
     expect(coverageProps.managedContainerJobs.map((job) => job.name)).toEqual([
       'aca-job-market',
