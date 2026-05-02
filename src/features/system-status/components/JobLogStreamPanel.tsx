@@ -49,6 +49,7 @@ import { getLogStreamFeedback } from '@/features/system-status/lib/logStreamFeed
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 const LOG_LINE_LIMIT = 200;
+const JOB_LOG_SNAPSHOT_RUNS = 3;
 const LOG_AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 16;
 const JOB_USAGE_REFRESH_INTERVAL_MS = 5_000;
 const CPU_SIGNAL_NAMES = ['usagenanocores', 'cpupercent', 'cpupercentage', 'cpuusage'];
@@ -96,6 +97,11 @@ type LogState = {
   lines: ConsoleTailLine[];
   loading: boolean;
   error: string | null;
+};
+
+type JobLogSelection = {
+  lines: ConsoleTailLine[];
+  executionName: string | null;
 };
 
 function isFiniteNumber(value: unknown): value is number {
@@ -351,17 +357,49 @@ function extractAnchoredJobLogRun(response: JobLogsResponse): JobLogRunResponse 
   return selectAnchoredJobRun(response?.runs ?? []);
 }
 
-function extractJobLogLines(response: JobLogsResponse): ConsoleTailLine[] {
-  const run = extractAnchoredJobLogRun(response);
+function extractRunExecutionName(
+  run: JobLogRunResponse | null,
+  lines: ConsoleTailLine[] = []
+): string | null {
+  const executionName = typeof run?.executionName === 'string' ? run.executionName.trim() : '';
+  if (executionName) {
+    return executionName;
+  }
+
+  for (const line of lines) {
+    const lineExecutionName =
+      typeof line.executionName === 'string' ? line.executionName.trim() : '';
+    if (lineExecutionName) {
+      return lineExecutionName;
+    }
+  }
+
+  if (Array.isArray(run?.consoleLogs)) {
+    for (const entry of run.consoleLogs) {
+      const lineExecutionName =
+        typeof entry?.executionName === 'string' ? entry.executionName.trim() : '';
+      if (lineExecutionName) {
+        return lineExecutionName;
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractRunLogLines(run: JobLogRunResponse | null): ConsoleTailLine[] {
   if (!run) {
     return [];
   }
 
   if (Array.isArray(run.consoleLogs) && run.consoleLogs.length > 0) {
-    return run.consoleLogs
+    const consoleLines = run.consoleLogs
       .map((line) => normalizeLogLine(line))
       .filter((line): line is ConsoleTailLine => line !== null)
       .slice(-LOG_LINE_LIMIT);
+    if (consoleLines.length > 0) {
+      return consoleLines;
+    }
   }
 
   return (run.tail ?? [])
@@ -376,24 +414,28 @@ function extractJobLogLines(response: JobLogsResponse): ConsoleTailLine[] {
     .slice(-LOG_LINE_LIMIT);
 }
 
-function extractAnchoredExecutionName(response: JobLogsResponse): string | null {
-  const run = extractAnchoredJobLogRun(response);
-  const executionName = typeof run?.executionName === 'string' ? run.executionName.trim() : '';
-  if (executionName) {
-    return executionName;
+function orderedJobLogRunCandidates(response: JobLogsResponse): JobLogRunResponse[] {
+  const runs = response?.runs ?? [];
+  const anchoredRun = extractAnchoredJobLogRun(response);
+  if (!anchoredRun) {
+    return runs;
   }
 
-  if (Array.isArray(run?.consoleLogs)) {
-    for (const entry of run.consoleLogs) {
-      const lineExecutionName =
-        typeof entry?.executionName === 'string' ? entry.executionName.trim() : '';
-      if (lineExecutionName) {
-        return lineExecutionName;
-      }
+  return [anchoredRun, ...runs.filter((run) => run !== anchoredRun)];
+}
+
+function extractJobLogSelection(response: JobLogsResponse): JobLogSelection {
+  for (const run of orderedJobLogRunCandidates(response)) {
+    const lines = extractRunLogLines(run);
+    if (lines.length > 0) {
+      return {
+        lines,
+        executionName: extractRunExecutionName(run, lines)
+      };
     }
   }
 
-  return null;
+  return { lines: [], executionName: null };
 }
 
 function formatConsoleTimestamp(timestamp?: string | null): string | null {
@@ -543,11 +585,12 @@ export function JobLogStreamPanel({
     requestControllerRef.current = controller;
 
     setLogState({ lines: [], loading: true, error: null });
-    DataService.getJobLogs(selectedJobName, { runs: 1 }, controller.signal)
+    DataService.getJobLogs(selectedJobName, { runs: JOB_LOG_SNAPSHOT_RUNS }, controller.signal)
       .then((response) => {
-        setSelectedExecutionName(extractAnchoredExecutionName(response));
+        const selection = extractJobLogSelection(response);
+        setSelectedExecutionName(selection.executionName);
         setLogState({
-          lines: extractJobLogLines(response),
+          lines: selection.lines,
           loading: false,
           error: null
         });
@@ -827,7 +870,9 @@ export function JobLogStreamPanel({
               <div className="text-muted-foreground">{logFeedback.message}</div>
             ) : null}
             {!logState.loading && logFeedback.tone === 'none' && logState.lines.length === 0 ? (
-              <div className="text-muted-foreground">No log output available.</div>
+              <div className="text-muted-foreground">
+                No console log lines were returned for the last {JOB_LOG_SNAPSHOT_RUNS} executions.
+              </div>
             ) : null}
             {!logState.loading && logFeedback.tone === 'none' && logState.lines.length > 0 ? (
               <Table className="min-w-full text-xs">
