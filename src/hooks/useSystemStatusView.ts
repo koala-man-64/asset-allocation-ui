@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type Query, type QueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/hooks/useDataQueries';
 import {
@@ -9,8 +9,14 @@ import {
 } from '@/hooks/useSystemHealthJobOverrides';
 import { ApiError, type SystemStatusViewResponse } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
+import {
+  applyJobRunMonotonicityGuard,
+  isMonotonicityGuardDisabled
+} from '@/features/system-status/lib/jobRunMonotonicity';
 
-const SYSTEM_STATUS_VIEW_REFETCH_INTERVAL_MS = 10_000;
+const SYSTEM_STATUS_VIEW_BASE_INTERVAL_MS = 10_000;
+const SYSTEM_STATUS_VIEW_DEGRADED_INTERVAL_MS = 15_000;
+const SYSTEM_STATUS_VIEW_HEALTHY_INTERVAL_MS = 30_000;
 const SYSTEM_STATUS_VIEW_STORAGE_KEY = 'asset-allocation.systemStatusView';
 
 function isTerminalSystemStatusAuthError(error: unknown): boolean {
@@ -70,13 +76,36 @@ function writeStoredSystemStatusView(data?: SystemStatusViewResponse): void {
   }
 }
 
-function syncSystemStatusRelatedCaches(
-  queryClient: ReturnType<typeof useQueryClient>,
-  data: SystemStatusViewResponse
-): void {
-  queryClient.setQueryData(queryKeys.systemHealth(), data.systemHealth);
-  queryClient.setQueryData(queryKeys.domainMetadataSnapshot('all', 'all'), data.metadataSnapshot);
-  writeStoredSystemStatusView(data);
+function systemStatusViewRefetchInterval(query: Query<SystemStatusViewResponse>): false | number {
+  if (isTerminalSystemStatusAuthError(query.state.error)) {
+    return false;
+  }
+  const overall = query.state.data?.systemHealth?.overall;
+  const baseMs =
+    overall === 'critical'
+      ? SYSTEM_STATUS_VIEW_BASE_INTERVAL_MS
+      : overall === 'degraded'
+        ? SYSTEM_STATUS_VIEW_DEGRADED_INTERVAL_MS
+        : SYSTEM_STATUS_VIEW_HEALTHY_INTERVAL_MS;
+  const jitter = Math.round(baseMs * 0.1 * Math.random());
+  return baseMs + jitter;
+}
+
+async function fetchSystemStatusView(
+  queryClient: QueryClient,
+  params: { refresh?: boolean } = {},
+  signal?: AbortSignal
+): Promise<SystemStatusViewResponse> {
+  const previous = queryClient.getQueryData<SystemStatusViewResponse>(queryKeys.systemStatusView());
+  const fresh = await DataService.getSystemStatusView(params, signal);
+  const reconciledHealth = applyJobRunMonotonicityGuard(
+    fresh.systemHealth,
+    previous?.systemHealth,
+    { disabled: isMonotonicityGuardDisabled() }
+  );
+  return reconciledHealth === fresh.systemHealth
+    ? fresh
+    : { ...fresh, systemHealth: reconciledHealth ?? fresh.systemHealth };
 }
 
 export interface UseSystemStatusViewQueryOptions {
@@ -93,22 +122,28 @@ export function useSystemStatusViewQuery(options: UseSystemStatusViewQueryOption
 
   const query = useQuery<SystemStatusViewResponse>({
     queryKey: queryKeys.systemStatusView(),
-    queryFn: async ({ signal }) => DataService.getSystemStatusView({}, signal),
+    queryFn: ({ signal }) => fetchSystemStatusView(queryClient, {}, signal),
     initialData: () =>
       queryClient.getQueryData<SystemStatusViewResponse>(queryKeys.systemStatusView()) ??
       initialViewRef.current,
     placeholderData: (previousData) => previousData ?? initialViewRef.current,
     retry: (failureCount, error) =>
       isTerminalSystemStatusAuthError(error) ? false : failureCount < 3,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false
+    refetchInterval: autoRefresh ? systemStatusViewRefetchInterval : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: autoRefresh,
+    refetchOnReconnect: autoRefresh
   });
 
   useEffect(() => {
     if (!query.data) {
       return;
     }
-    syncSystemStatusRelatedCaches(queryClient, query.data);
+    queryClient.setQueryData(
+      queryKeys.domainMetadataSnapshot('all', 'all'),
+      query.data.metadataSnapshot
+    );
+    writeStoredSystemStatusView(query.data);
     renewPendingOverrides(queryClient, query.data.systemHealth);
   }, [query.data, queryClient]);
 
@@ -118,34 +153,21 @@ export function useSystemStatusViewQuery(options: UseSystemStatusViewQueryOption
     }
 
     setIsForceRefreshing(true);
-    const request = DataService.getSystemStatusView({ refresh: true })
-      .then((fresh) => {
-        queryClient.setQueryData(queryKeys.systemStatusView(), fresh);
-        syncSystemStatusRelatedCaches(queryClient, fresh);
-        return fresh;
-      })
-      .finally(() => {
-        forceRefreshPromiseRef.current = null;
-        setIsForceRefreshing(false);
+    const request = (async () => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.systemStatusView() });
+      return queryClient.fetchQuery<SystemStatusViewResponse>({
+        queryKey: queryKeys.systemStatusView(),
+        queryFn: ({ signal }) => fetchSystemStatusView(queryClient, { refresh: true }, signal),
+        staleTime: 0
       });
+    })().finally(() => {
+      forceRefreshPromiseRef.current = null;
+      setIsForceRefreshing(false);
+    });
 
     forceRefreshPromiseRef.current = request;
     return request;
   }, [queryClient]);
-
-  useEffect(() => {
-    if (!autoRefresh) {
-      return undefined;
-    }
-
-    const handle = window.setInterval(() => {
-      void refresh();
-    }, SYSTEM_STATUS_VIEW_REFETCH_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(handle);
-    };
-  }, [autoRefresh, refresh]);
 
   const data = useMemo<SystemStatusViewResponse | undefined>(() => {
     if (!query.data) return query.data;

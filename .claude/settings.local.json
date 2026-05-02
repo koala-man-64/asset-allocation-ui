@@ -3,7 +3,10 @@
     "allow": [
       "Bash(findstr /N \"triggerJob\\\\|suspendJob\\\\|export const\" src/services/backtestApi.ts)",
       "Bash(npx vitest *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(findstr /i \"system\\\\|status\")",
+      "Bash(dir src\\\\app\\\\components\\\\pages)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

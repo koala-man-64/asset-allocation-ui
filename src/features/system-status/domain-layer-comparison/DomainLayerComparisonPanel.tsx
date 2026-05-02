@@ -77,6 +77,7 @@ import {
   type DomainListViewerTarget
 } from '@/features/system-status/components/DomainListViewerSheet';
 import type { ManagedContainerJob } from '@/features/system-status/types';
+import { useJobStatuses } from '@/hooks/useJobStatuses';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
 import { useJobTrigger } from '@/hooks/useJobTrigger';
 import {
@@ -646,6 +647,8 @@ export function DomainLayerComparisonPanel({
   const queryClient = useQueryClient();
   const { triggeringJob, triggerJob } = useJobTrigger();
   const { jobControl, setJobSuspended, stopJob } = useJobSuspend();
+  const jobStatuses = useJobStatuses({ autoRefresh: false });
+  const jobStatusesByKey = jobStatuses.byKey;
   const lastSettledRecentJobsRef = useRef<JobRun[]>(recentJobs);
   const [localMetadataSnapshot, setLocalMetadataSnapshot] = useState<
     DomainMetadataSnapshotResponse | undefined
@@ -804,10 +807,7 @@ export function DomainLayerComparisonPanel({
     return index;
   }, [queryPairs]);
 
-  const statusInvalidationKeys = useMemo(
-    () => [queryKeys.systemStatusView(), queryKeys.systemHealth()] as const,
-    []
-  );
+  const statusInvalidationKeys = useMemo(() => [queryKeys.systemStatusView()] as const, []);
 
   const updateMetadataSnapshot = useCallback(
     (
@@ -830,10 +830,7 @@ export function DomainLayerComparisonPanel({
       await onRefresh();
       return;
     }
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.systemHealth() })
-    ]);
+    await queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() });
   }, [onRefresh, queryClient]);
 
   const { metadataByCell, errorByCell, pendingByCell } = useMemo(() => {
@@ -934,14 +931,16 @@ export function DomainLayerComparisonPanel({
           domainName: row.key
         });
         const jobKey = normalizeAzureJobName(jobName);
-        const run = jobKey ? jobIndex.get(jobKey) : null;
-        const runningState = jobKey ? jobStates?.[jobKey] : undefined;
+        const statusEntry = jobKey ? jobStatusesByKey.get(jobKey) : null;
+        const run = statusEntry?.latestRun ?? (jobKey ? jobIndex.get(jobKey) : null);
+        const runningState =
+          statusEntry?.runningState ?? (jobKey ? jobStates?.[jobKey] : undefined);
         const hasLiveJobState =
           hasActiveJobRunningState(runningState) || isSuspendedJobRunningState(runningState);
         const jobStatusKey =
           !jobName || (!run && !hasLiveJobState)
             ? 'pending'
-            : effectiveJobStatus(run?.status, runningState);
+            : (statusEntry?.status ?? effectiveJobStatus(run?.status, runningState));
 
         const isCritical =
           ['error', 'failed', 'critical'].includes(dataStatusKey) ||
@@ -960,7 +959,15 @@ export function DomainLayerComparisonPanel({
     }
 
     return byLayer;
-  }, [domainConfigByLayer, domainsByLayer, filteredDomainRows, jobIndex, jobStates, layerColumns]);
+  }, [
+    domainConfigByLayer,
+    domainsByLayer,
+    filteredDomainRows,
+    jobIndex,
+    jobStates,
+    jobStatusesByKey,
+    layerColumns
+  ]);
 
   const handleCellRefresh = useCallback(
     async (layerKey: LayerKey, domainKey: string) => {
@@ -1939,7 +1946,8 @@ export function DomainLayerComparisonPanel({
                         domainName: row.key
                       });
                       const jobKey = normalizeAzureJobName(jobName);
-                      const run = jobKey ? jobIndex.get(jobKey) : null;
+                      const statusEntry = jobKey ? jobStatusesByKey.get(jobKey) : null;
+                      const run = statusEntry?.latestRun ?? (jobKey ? jobIndex.get(jobKey) : null);
                       const durationSummary = jobKey ? jobDurationSummaryIndex.get(jobKey) : null;
                       const managedJob = jobKey ? managedJobIndex.get(jobKey) : null;
                       const liveUsageDisplay = buildRunningUsageDisplay(managedJob?.signals);
@@ -1974,14 +1982,15 @@ export function DomainLayerComparisonPanel({
                       const dataConfig = getStatusConfig(dataStatusKey);
                       const dataLabel = toDataStatusLabel(dataStatusKey);
 
-                      const runningState = jobKey ? jobStates?.[jobKey] : undefined;
+                      const runningState =
+                        statusEntry?.runningState ?? (jobKey ? jobStates?.[jobKey] : undefined);
                       const hasLiveJobState =
                         hasActiveJobRunningState(runningState) ||
                         isSuspendedJobRunningState(runningState);
                       const jobStatusKey =
                         !jobName || (!run && !hasLiveJobState)
                           ? 'pending'
-                          : effectiveJobStatus(run?.status, runningState);
+                          : (statusEntry?.status ?? effectiveJobStatus(run?.status, runningState));
                       const jobConfig = getStatusConfig(jobStatusKey);
                       const jobLabel = !jobName
                         ? 'N/A'
@@ -1993,7 +2002,7 @@ export function DomainLayerComparisonPanel({
 
                       const actionJobName = String(run?.jobName || jobName).trim();
                       const isSuspended = isSuspendedJobRunningState(runningState);
-                      const isRunning = effectiveJobStatus(run?.status, runningState) === 'running';
+                      const isRunning = jobStatusKey === 'running';
                       const isControlling =
                         Boolean(actionJobName) && jobControl?.jobName === actionJobName;
                       const isTriggeringThisJob =

@@ -5,7 +5,7 @@ import type {
   StrategyConfig,
   UniverseConditionOperator as ContractUniverseConditionOperator,
   UniverseSource,
-  UniverseValue,
+  UniverseValue
 } from '@asset-allocation/contracts';
 import type { StrategyRiskPolicy } from '@/types/strategyAnalytics';
 
@@ -371,6 +371,8 @@ export interface JobRun {
   errors?: string[];
   warnings?: string[];
   metadata?: JobRunMetadata;
+  executionId?: string | null;
+  executionName?: string | null;
 }
 
 export interface SystemAlert {

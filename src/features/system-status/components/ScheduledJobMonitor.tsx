@@ -21,9 +21,11 @@ import { cn } from '@/app/components/ui/utils';
 
 import { useJobTrigger } from '@/hooks/useJobTrigger';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
+import { useJobStatuses } from '@/hooks/useJobStatuses';
 import type { DataLayer, JobRun } from '@/types/strategy';
 import {
   buildLatestJobRunIndex,
+  effectiveJobStatus,
   formatDuration,
   formatRecordCount,
   formatSchedule,
@@ -32,7 +34,6 @@ import {
   getAzureJobExecutionsUrl,
   getStatusBadge,
   getStatusIcon,
-  normalizeJobStatus,
   normalizeAzureJobName,
   normalizeAzurePortalUrl,
   resolveManagedJobName,
@@ -95,6 +96,8 @@ type ScheduledJobRow = {
   domainOrderKey: string;
   schedule: string;
   jobRun: JobRun | null;
+  effectiveStatus: string | null;
+  runningState: string | null;
 };
 
 interface ScheduledJobMonitorProps {
@@ -141,6 +144,7 @@ export function ScheduledJobMonitor({
 }: ScheduledJobMonitorProps) {
   const { triggeringJob, triggerJob } = useJobTrigger();
   const { jobControl, setJobSuspended } = useJobSuspend();
+  const jobStatuses = useJobStatuses({ autoRefresh: false });
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [logStateByJob, setLogStateByJob] = useState<Record<string, LogState>>({});
   const logControllers = useRef<Record<string, AbortController>>({});
@@ -227,6 +231,9 @@ export function ScheduledJobMonitor({
         const scheduleRaw = domain.cron || domain.frequency || layer.refreshFrequency || '';
         const schedule = String(scheduleRaw || '').trim() || '-';
         const domainOrderKey = normalizeDomainKey(domainName);
+        const statusEntry = jobKey ? jobStatuses.byKey.get(jobKey) : undefined;
+        const jobRun = statusEntry?.latestRun ?? (jobKey ? jobIndex.get(jobKey) : null) ?? null;
+        const runningState = statusEntry?.runningState ?? null;
 
         rows.push({
           jobName,
@@ -234,7 +241,11 @@ export function ScheduledJobMonitor({
           domainName,
           domainOrderKey,
           schedule,
-          jobRun: (jobKey ? jobIndex.get(jobKey) : null) ?? null
+          jobRun,
+          effectiveStatus:
+            statusEntry?.status ??
+            (jobRun ? effectiveJobStatus(jobRun.status, runningState) : null),
+          runningState
         });
       }
     }
@@ -259,7 +270,7 @@ export function ScheduledJobMonitor({
     });
 
     return rows;
-  }, [dataLayers, jobIndex, domainOrderIndex]);
+  }, [dataLayers, jobIndex, domainOrderIndex, jobStatuses.byKey]);
 
   const groupedJobs = useMemo(() => {
     const groups: Array<{
@@ -523,8 +534,8 @@ export function ScheduledJobMonitor({
                                     const portalLink = getJobPortalLink(job.jobName);
                                     if (!portalLink) return null;
 
-                                    const runStatus = job.jobRun?.status
-                                      ? String(job.jobRun.status).toUpperCase()
+                                    const runStatus = job.effectiveStatus
+                                      ? String(job.effectiveStatus).toUpperCase()
                                       : 'UNKNOWN';
                                     const runTimeAgo = job.jobRun?.startTime
                                       ? `${formatTimeAgo(job.jobRun.startTime)} ago`
@@ -559,8 +570,8 @@ export function ScheduledJobMonitor({
                             </TableCell>
                             <TableCell className="py-2">
                               <div className="flex items-center gap-2">
-                                {getStatusIcon(job.jobRun?.status || 'unknown')}
-                                {getStatusBadge(job.jobRun?.status || 'unknown')}
+                                {getStatusIcon(job.effectiveStatus || 'unknown')}
+                                {getStatusBadge(job.effectiveStatus || 'unknown')}
                               </div>
                             </TableCell>
                             <TableCell className="py-2 font-mono text-sm">
@@ -645,19 +656,19 @@ export function ScheduledJobMonitor({
                                       className="h-7 w-7"
                                       disabled={Boolean(triggeringJob) || Boolean(jobControl)}
                                       onClick={() =>
-                                        normalizeJobStatus(job.jobRun?.status) === 'running'
+                                        job.effectiveStatus === 'running'
                                           ? void setJobSuspended(job.jobName, true)
                                           : void triggerJob(job.jobName)
                                       }
                                       aria-label={
-                                        normalizeJobStatus(job.jobRun?.status) === 'running'
+                                        job.effectiveStatus === 'running'
                                           ? `Stop ${job.jobName}`
                                           : `Run ${job.jobName}`
                                       }
                                     >
                                       {triggeringJob === job.jobName ? (
                                         <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : normalizeJobStatus(job.jobRun?.status) === 'running' ? (
+                                      ) : job.effectiveStatus === 'running' ? (
                                         <Square className="h-4 w-4" />
                                       ) : (
                                         <Play className="h-4 w-4" />
@@ -665,9 +676,7 @@ export function ScheduledJobMonitor({
                                     </Button>
                                   </TooltipTrigger>
                                   <TooltipContent side="left">
-                                    {normalizeJobStatus(job.jobRun?.status) === 'running'
-                                      ? 'Stop job'
-                                      : 'Trigger job'}
+                                    {job.effectiveStatus === 'running' ? 'Stop job' : 'Trigger job'}
                                   </TooltipContent>
                                 </Tooltip>
                               </div>
@@ -701,8 +710,8 @@ export function ScheduledJobMonitor({
                                         Status
                                       </div>
                                       <div className="mt-2 flex items-center gap-2 text-sm">
-                                        {getStatusIcon(job.jobRun?.status || 'unknown')}
-                                        {getStatusBadge(job.jobRun?.status || 'unknown')}
+                                        {getStatusIcon(job.effectiveStatus || 'unknown')}
+                                        {getStatusBadge(job.effectiveStatus || 'unknown')}
                                       </div>
                                     </div>
                                     <div className="rounded-md border bg-muted/20 p-3">

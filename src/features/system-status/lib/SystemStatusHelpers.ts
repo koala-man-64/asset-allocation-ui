@@ -391,24 +391,6 @@ export const selectLatestJobRun = <T extends AnchoredJobRunLike>(runs: T[] = [])
   return selected;
 };
 
-export const buildAnchoredJobRunIndex = (recentJobs: JobRun[] = []): Map<string, JobRun> => {
-  const index = new Map<string, JobRun>();
-
-  for (const job of recentJobs) {
-    const key = normalizeAzureJobName(job?.jobName);
-    if (!key) continue;
-
-    const existing = index.get(key);
-    const selected = selectAnchoredJobRun(existing ? [existing, job] : [job]);
-    if (selected) {
-      index.set(key, selected);
-    }
-  }
-
-  return index;
-};
-
-// Backward-compatible name for status consumers that need the newest execution result.
 export const buildLatestJobRunIndex = (recentJobs: JobRun[] = []): Map<string, JobRun> => {
   const index = new Map<string, JobRun>();
 
@@ -479,11 +461,14 @@ export const effectiveJobStatus = (
   runStatus?: string | null,
   runningState?: string | null
 ): NormalizedJobStatus => {
-  if (normalizeJobStateToken(runStatus)) {
-    return normalizeJobStatus(runStatus);
+  if (hasActiveJobRunningState(runningState)) {
+    return 'running';
   }
   if (isSuspendedJobRunningState(runningState)) {
     return 'pending';
+  }
+  if (normalizeJobStateToken(runStatus)) {
+    return normalizeJobStatus(runStatus);
   }
   return normalizeJobStatus(runningState);
 };

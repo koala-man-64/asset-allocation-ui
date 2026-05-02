@@ -59,11 +59,13 @@ function createRealtimeRequestId(): string {
 
 function readCookie(name: string): string {
   const target = `${name}=`;
-  return document.cookie
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(target))
-    ?.slice(target.length) ?? '';
+  return (
+    document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(target))
+      ?.slice(target.length) ?? ''
+  );
 }
 
 function readCsrfToken(): string {
@@ -251,7 +253,9 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
       }
 
       if (!response.ok) {
-        throw new Error((await response.text()) || `Realtime ticket request failed (${response.status})`);
+        throw new Error(
+          (await response.text()) || `Realtime ticket request failed (${response.status})`
+        );
       }
 
       const payload = (await response.json()) as RealtimeTicketResponse;
@@ -427,7 +431,6 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
 
       if (shouldRefreshSystem) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.systemHealth() });
         void queryClient.invalidateQueries({ queryKey: CONTAINER_APPS_QUERY_KEY });
       }
 

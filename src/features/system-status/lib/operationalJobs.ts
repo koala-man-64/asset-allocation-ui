@@ -1,4 +1,5 @@
 import type { ManagedContainerJob } from '@/features/system-status/types';
+import type { JobStatusEntry } from '@/hooks/useJobStatuses';
 import { isOperationalWorkflowDomain } from '@/features/system-status/lib/coverageDomains';
 import {
   buildLatestJobRunIndex,
@@ -179,15 +180,28 @@ export function buildOperationalJobTargets({
   dataLayers = [],
   recentJobs = [],
   managedContainerJobs = [],
-  jobStates = {}
+  jobStates = {},
+  jobStatusesByKey
 }: {
   dataLayers?: DataLayer[];
   recentJobs?: JobRun[];
   managedContainerJobs?: ManagedContainerJob[];
   jobStates?: Record<string, string>;
+  jobStatusesByKey?: Map<string, JobStatusEntry>;
 }): OperationalJobTarget[] {
   const domainJobKeys = buildDomainJobKeySet(dataLayers);
-  const runByKey = buildLatestJobRunIndex(recentJobs);
+  const runByKey =
+    jobStatusesByKey ??
+    new Map(
+      Array.from(buildLatestJobRunIndex(recentJobs)).map(([key, run]) => [
+        key,
+        {
+          latestRun: run,
+          runningState: jobStates[key] || null,
+          status: effectiveJobStatus(run.status, jobStates[key])
+        } as JobStatusEntry
+      ])
+    );
   const targets = new Map<string, OperationalJobTarget>();
 
   for (const resource of managedContainerJobs) {
@@ -195,7 +209,8 @@ export function buildOperationalJobTargets({
     const key = toJobKey(name);
     if (!name || !key) continue;
 
-    const run = runByKey.get(key) ?? null;
+    const statusEntry = runByKey.get(key) ?? null;
+    const run = statusEntry?.latestRun ?? null;
     const category = classifyJobCategory({
       jobName: name,
       jobType: run?.jobType,
@@ -209,8 +224,8 @@ export function buildOperationalJobTargets({
       category,
       categoryLabel: OPERATIONAL_JOB_CATEGORY_LABELS[category],
       jobType: run?.jobType ?? null,
-      runningState: jobStates[key] || resource.runningState || null,
-      recentStatus: run?.status ?? null,
+      runningState: statusEntry?.runningState || jobStates[key] || resource.runningState || null,
+      recentStatus: statusEntry?.status ?? run?.status ?? null,
       startTime: run?.startTime || resource.lastModifiedAt || null,
       duration: run?.duration ?? null,
       recordsProcessed: run?.recordsProcessed ?? null,
@@ -220,7 +235,9 @@ export function buildOperationalJobTargets({
     });
   }
 
-  for (const [key, run] of runByKey.entries()) {
+  for (const [key, statusEntry] of runByKey.entries()) {
+    const run = statusEntry.latestRun;
+    if (!run) continue;
     const name = String(run.jobName || '').trim();
     if (!name || !key) continue;
 
@@ -238,7 +255,8 @@ export function buildOperationalJobTargets({
         label: buildLabel(existing.name, category, run),
         category,
         categoryLabel: OPERATIONAL_JOB_CATEGORY_LABELS[category],
-        runningState: jobStates[key] || existing.runningState || null
+        runningState: statusEntry.runningState || jobStates[key] || existing.runningState || null,
+        recentStatus: statusEntry.status ?? run.status ?? existing.recentStatus ?? null
       });
       continue;
     }
@@ -249,8 +267,8 @@ export function buildOperationalJobTargets({
       category,
       categoryLabel: OPERATIONAL_JOB_CATEGORY_LABELS[category],
       jobType: run.jobType || null,
-      runningState: jobStates[key] || null,
-      recentStatus: run.status || null,
+      runningState: statusEntry.runningState || jobStates[key] || null,
+      recentStatus: statusEntry.status ?? run.status ?? null,
       startTime: run.startTime || null,
       duration: run.duration ?? null,
       recordsProcessed: run.recordsProcessed ?? null,

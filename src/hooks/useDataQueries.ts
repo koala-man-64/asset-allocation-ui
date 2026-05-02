@@ -3,20 +3,22 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { DataService } from '@/services/DataService';
 import type { DomainMetadata, SystemHealth } from '@/types/strategy';
 import type { RequestMeta } from '@/services/apiService';
+import {
+  useSystemStatusViewQuery,
+  type UseSystemStatusViewQueryOptions
+} from '@/hooks/useSystemStatusView';
 
 function isApiNotFoundError(error: unknown): boolean {
   return error instanceof Error && error.message.includes('API Error: 404');
 }
 
-let lastSystemHealthMeta: RequestMeta | null = null;
+let lastDataQualityHealthMeta: RequestMeta | null = null;
 
-export function getLastSystemHealthMeta(): RequestMeta | null {
-  return lastSystemHealthMeta;
+export function getLastDataQualityHealthMeta(): RequestMeta | null {
+  return lastDataQualityHealthMeta;
 }
 
-export interface UseSystemHealthQueryOptions {
-  autoRefresh?: boolean;
-}
+export type UseSystemHealthQueryOptions = UseSystemStatusViewQueryOptions;
 
 function systemHealthRefetchInterval(query: {
   state: { error: unknown; data: unknown };
@@ -36,6 +38,7 @@ export const queryKeys = {
   // System & Data Health
   systemHealth: () => ['systemHealth'] as const,
   systemStatusView: () => ['systemStatusView'] as const,
+  dataQualityHealth: () => ['dataQualityHealth'] as const,
   systemHealthJobOverrides: () => ['systemHealth', 'jobOverrides'] as const,
   lineage: () => ['lineage'] as const,
   debugSymbols: () => ['debugSymbols'] as const,
@@ -53,17 +56,27 @@ export const queryKeys = {
 export function useSystemHealthQuery(
   options: UseSystemHealthQueryOptions = {}
 ): UseQueryResult<SystemHealth> {
+  const view = useSystemStatusViewQuery(options);
+  return {
+    ...view,
+    data: view.data?.systemHealth
+  } as unknown as UseQueryResult<SystemHealth>;
+}
+
+export function useDataQualityHealthQuery(
+  options: UseSystemHealthQueryOptions = {}
+): UseQueryResult<SystemHealth> {
   const autoRefresh = options.autoRefresh ?? false;
   const query = useQuery<SystemHealth>({
-    queryKey: queryKeys.systemHealth(),
+    queryKey: queryKeys.dataQualityHealth(),
     queryFn: async ({ signal }) => {
       try {
         const response = await DataService.getSystemHealthWithMeta({}, signal);
-        lastSystemHealthMeta = response.meta;
+        lastDataQualityHealthMeta = response.meta;
         return response.data;
       } catch (error) {
-        lastSystemHealthMeta = null;
-        console.error('[useSystemHealthQuery] fetch error', error);
+        lastDataQualityHealthMeta = null;
+        console.error('[useDataQualityHealthQuery] fetch error', error);
         throw error;
       }
     },
@@ -73,7 +86,7 @@ export function useSystemHealthQuery(
 
   useEffect(() => {
     if (query.error) {
-      console.error('[Query] systemHealth error', {
+      console.error('[Query] dataQualityHealth error', {
         error: query.error instanceof Error ? query.error.message : String(query.error)
       });
     }

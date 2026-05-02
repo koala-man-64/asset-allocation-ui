@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState, lazy, Suspense } from 'react';
 import { Activity, Layers3, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/hooks/useDataQueries';
+import { useJobStatuses } from '@/hooks/useJobStatuses';
 import { useSystemStatusViewQuery } from '@/hooks/useSystemStatusView';
 import type {
   DomainMetadataSnapshotResponse,
@@ -18,6 +19,7 @@ import type {
   JobCategory,
   JobMetadataSource,
   JobMetadataStatus,
+  JobRun,
   ResourceSignal
 } from '@/types/strategy';
 
@@ -46,7 +48,6 @@ const OperationalJobMonitorPanel = lazy(() =>
 );
 
 import {
-  buildLatestJobRunIndex,
   effectiveJobStatus,
   formatTimeAgo,
   getStatusConfig,
@@ -59,6 +60,7 @@ import {
 } from '@/features/system-status/lib/operationalJobs';
 import { isDomainLayerCoverageDomainVisible } from '@/features/system-status/lib/coverageDomains';
 import { normalizeDomainKey } from '@/features/system-status/components/SystemPurgeControls';
+import { JobStatusDebugOverlay } from '@/features/system-status/components/JobStatusDebugOverlay';
 
 type JobResourceSummary = {
   name: string;
@@ -182,6 +184,8 @@ export function SystemStatusPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const systemStatusView = data;
   const systemHealth = systemStatusView?.systemHealth;
+  const jobStatuses = useJobStatuses({ autoRefresh: false });
+  const jobStatusesByKey = jobStatuses.byKey;
   const errorMessage = error instanceof Error ? error.message : 'No telemetry available';
 
   const displayDataLayers = useMemo(() => {
@@ -262,10 +266,15 @@ export function SystemStatusPage() {
     });
   }, [displayDataLayers, managedContainerJobs]);
 
-  const latestJobRuns = useMemo(
-    () => buildLatestJobRunIndex(systemHealth?.recentJobs || []),
-    [systemHealth?.recentJobs]
-  );
+  const latestJobRuns = useMemo(() => {
+    const index = new Map<string, JobRun>();
+    for (const entry of jobStatusesByKey.values()) {
+      if (entry.latestRun) {
+        index.set(entry.jobKey, entry.latestRun);
+      }
+    }
+    return index;
+  }, [jobStatusesByKey]);
 
   const domainJobLogStreamJobs = useMemo<JobLogStreamTarget[]>(() => {
     type MutableJobTarget = Omit<
@@ -395,9 +404,10 @@ export function SystemStatusPage() {
         dataLayers: displayDataLayers,
         recentJobs: systemHealth?.recentJobs || [],
         managedContainerJobs,
-        jobStates
+        jobStates,
+        jobStatusesByKey
       }),
-    [displayDataLayers, jobStates, managedContainerJobs, systemHealth?.recentJobs]
+    [displayDataLayers, jobStates, jobStatusesByKey, managedContainerJobs, systemHealth?.recentJobs]
   );
 
   const handleMetadataSnapshotChange = useCallback(
@@ -638,6 +648,7 @@ export function SystemStatusPage() {
           </Suspense>
         </ErrorBoundary>
       </div>
+      <JobStatusDebugOverlay />
     </div>
   );
 }
