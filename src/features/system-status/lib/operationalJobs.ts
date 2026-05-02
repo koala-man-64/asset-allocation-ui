@@ -5,7 +5,7 @@ import {
   buildLatestJobRunIndex,
   effectiveJobStatus,
   normalizeAzureJobName,
-  resolveManagedJobName
+  resolveRunnableJobName
 } from '@/features/system-status/lib/SystemStatusHelpers';
 import type { DataLayer, JobRun, ResourceSignal } from '@/types/strategy';
 
@@ -76,11 +76,9 @@ export function buildDomainJobKeySet(dataLayers: DataLayer[] = []): Set<string> 
   for (const layer of dataLayers) {
     for (const domain of layer.domains || []) {
       if (isOperationalWorkflowDomain(domain?.name)) continue;
-      const jobName = resolveManagedJobName({
+      const jobName = resolveRunnableJobName({
         jobName: domain.jobName,
-        jobUrl: domain.jobUrl,
-        layerName: layer.name,
-        domainName: domain.name
+        jobUrl: domain.jobUrl
       });
       const key = toJobKey(jobName);
       if (key) {

@@ -83,6 +83,32 @@ describe('operational job classification', () => {
     expect(domainJobKeys.has('aca-job-regime-bronze')).toBe(false);
   });
 
+  it('does not reserve inferred domain jobs without runnable metadata', () => {
+    const domainJobKeys = buildDomainJobKeySet([
+      {
+        name: 'Bronze',
+        description: 'Raw ingestion',
+        status: 'healthy',
+        lastUpdated: '2026-04-18T14:30:00Z',
+        refreshFrequency: 'Daily',
+        domains: [
+          {
+            name: 'government-signals',
+            type: 'blob',
+            path: 'government-signals/runs',
+            lastUpdated: '2026-04-18T14:30:00Z',
+            status: 'healthy',
+            jobName: null,
+            jobUrl: null
+          }
+        ]
+      }
+    ]);
+
+    expect(domainJobKeys.has('bronze-government-signals-job')).toBe(false);
+    expect(domainJobKeys.size).toBe(0);
+  });
+
   it('classifies backtest, ranking, regime, and unknown non-domain jobs', () => {
     const domainJobKeys = buildDomainJobKeySet(DATA_LAYERS);
 

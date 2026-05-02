@@ -859,6 +859,56 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     ]);
   });
 
+  it('does not trigger inferred layer jobs when runnable metadata is absent', async () => {
+    const user = userEvent.setup();
+
+    renderPanel({
+      dataLayers: [
+        {
+          name: 'Bronze',
+          description: 'Raw ingestion',
+          status: 'healthy',
+          lastUpdated: NOW,
+          refreshFrequency: 'daily',
+          domains: [
+            {
+              name: 'market',
+              type: 'delta',
+              path: 'market-data',
+              lastUpdated: NOW,
+              status: 'healthy',
+              jobName: 'aca-job-market-bronze'
+            },
+            {
+              name: 'government-signals',
+              type: 'blob',
+              path: 'government-signals/runs',
+              lastUpdated: NOW,
+              status: 'healthy',
+              jobName: null,
+              jobUrl: null
+            }
+          ]
+        }
+      ]
+    });
+
+    const layerTriggerButton = await screen.findByRole('button', {
+      name: 'Trigger Bronze layer jobs'
+    });
+    await user.click(layerTriggerButton);
+
+    await waitFor(() => {
+      expect(triggerJobMock).toHaveBeenCalledTimes(1);
+    });
+    expect(triggerJobMock).toHaveBeenCalledWith('aca-job-market-bronze', [
+      ['systemStatusView']
+    ]);
+    expect(triggerJobMock).not.toHaveBeenCalledWith('bronze-government-signals-job', [
+      ['systemStatusView']
+    ]);
+  });
+
   it('omits backtests, ranking, and regime domains from coverage rows', async () => {
     renderPanel({
       dataLayers: makeLayersWithHiddenCoverageDomains(),

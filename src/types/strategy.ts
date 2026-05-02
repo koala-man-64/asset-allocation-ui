@@ -284,9 +284,9 @@ export interface DataDomain {
   version?: number | null;
   description?: string;
   portalUrl?: string;
-  jobUrl?: string;
-  jobName?: string;
-  triggerUrl?: string;
+  jobUrl?: string | null;
+  jobName?: string | null;
+  triggerUrl?: string | null;
   frequency?: string;
   cron?: string;
   maxAgeSeconds?: number;

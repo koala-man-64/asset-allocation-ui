@@ -352,6 +352,21 @@ export const resolveManagedJobName = ({
   return deriveManagedJobName(layerName, domainName);
 };
 
+export const resolveRunnableJobName = ({
+  jobName,
+  jobUrl
+}: {
+  jobName?: string | null;
+  jobUrl?: string | null;
+}) => {
+  const explicitJobName = String(jobName || '').trim();
+  if (explicitJobName) {
+    return explicitJobName;
+  }
+
+  return extractAzureJobName(jobUrl);
+};
+
 export const selectAnchoredJobRun = <T extends AnchoredJobRunLike>(runs: T[] = []): T | null => {
   let selected: T | null = null;
 

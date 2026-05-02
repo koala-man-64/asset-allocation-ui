@@ -34,9 +34,10 @@ import {
   getAzureJobExecutionsUrl,
   getStatusBadge,
   getStatusIcon,
+  deriveManagedJobName,
   normalizeAzureJobName,
   normalizeAzurePortalUrl,
-  resolveManagedJobName,
+  resolveRunnableJobName,
   selectAnchoredJobRun
 } from '@/features/system-status/lib/SystemStatusHelpers';
 import { getDomainOrderIndex } from '@/features/system-status/lib/domainOrdering';
@@ -90,7 +91,8 @@ function mergeLogLines(
 }
 
 type ScheduledJobRow = {
-  jobName: string;
+  jobName: string | null;
+  displayName: string;
   layerName: string;
   domainName: string;
   domainOrderKey: string;
@@ -219,13 +221,11 @@ export function ScheduledJobMonitor({
       for (const domain of layer.domains || []) {
         const domainName = String(domain.name || '').trim();
         if (!domainName) continue;
-        const jobName = resolveManagedJobName({
+        const jobName = resolveRunnableJobName({
           jobName: domain.jobName,
-          jobUrl: domain.jobUrl,
-          layerName: layer.name,
-          domainName
+          jobUrl: domain.jobUrl
         });
-        if (!jobName) continue;
+        const displayName = jobName || deriveManagedJobName(layer.name, domainName) || domainName;
 
         const jobKey = normalizeAzureJobName(jobName);
         const scheduleRaw = domain.cron || domain.frequency || layer.refreshFrequency || '';
@@ -236,7 +236,8 @@ export function ScheduledJobMonitor({
         const runningState = statusEntry?.runningState ?? null;
 
         rows.push({
-          jobName,
+          jobName: jobName || null,
+          displayName,
           layerName: layer.name,
           domainName,
           domainOrderKey,
@@ -266,7 +267,7 @@ export function ScheduledJobMonitor({
 
       const domainCmp = a.domainName.localeCompare(b.domainName);
       if (domainCmp !== 0) return domainCmp;
-      return a.jobName.localeCompare(b.jobName);
+      return a.displayName.localeCompare(b.displayName);
     });
 
     return rows;
@@ -301,7 +302,7 @@ export function ScheduledJobMonitor({
   const expandedJobName = useMemo(() => {
     if (!expandedRow) return null;
     const expanded = scheduledJobs.find(
-      (job) => `${job.layerName}:${job.domainName}:${job.jobName}` === expandedRow
+      (job) => `${job.layerName}:${job.domainName}:${job.displayName}` === expandedRow
     );
     return expanded?.jobName ?? null;
   }, [expandedRow, scheduledJobs]);
@@ -508,13 +509,14 @@ export function ScheduledJobMonitor({
                       );
                     })()}
                     {group.items.map((job) => {
-                      const rowKey = `${job.layerName}:${job.domainName}:${job.jobName}`;
+                      const rowKey = `${job.layerName}:${job.domainName}:${job.displayName}`;
                       const isExpanded = expandedRow === rowKey;
                       const runStart = job.jobRun?.startTime ?? null;
-                      const logState = logStateByJob[job.jobName];
+                      const logState = job.jobName ? logStateByJob[job.jobName] : undefined;
                       const logFeedback = getLogStreamFeedback(logState?.error, 'job');
 
                       const handleToggle = () => {
+                        if (!job.jobName) return;
                         if (!isExpanded) {
                           if (!logState || logState.runStart !== runStart) {
                             fetchLogs(job.jobName, runStart);
@@ -529,9 +531,9 @@ export function ScheduledJobMonitor({
                             <TableCell className="py-2">
                               <div className="flex flex-col gap-1">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-medium text-sm">{job.jobName}</span>
+                                  <span className="font-medium text-sm">{job.displayName}</span>
                                   {(() => {
-                                    const portalLink = getJobPortalLink(job.jobName);
+                                    const portalLink = job.jobName ? getJobPortalLink(job.jobName) : '';
                                     if (!portalLink) return null;
 
                                     const runStatus = job.effectiveStatus
@@ -549,7 +551,7 @@ export function ScheduledJobMonitor({
                                             target="_blank"
                                             rel="noreferrer"
                                             className="text-muted-foreground hover:text-primary transition-colors"
-                                            aria-label={`Open ${job.jobName} in Azure`}
+                                            aria-label={`Open ${job.displayName} in Azure`}
                                           >
                                             <ExternalLink className="h-4 w-4" />
                                           </a>
@@ -590,8 +592,9 @@ export function ScheduledJobMonitor({
                                       variant="ghost"
                                       size="icon"
                                       className="h-7 w-7"
+                                      disabled={!job.jobName}
                                       onClick={handleToggle}
-                                      aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${job.jobName} details`}
+                                      aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${job.displayName} details`}
                                       aria-expanded={isExpanded}
                                     >
                                       <ChevronDown
@@ -600,14 +603,18 @@ export function ScheduledJobMonitor({
                                     </Button>
                                   </TooltipTrigger>
                                   <TooltipContent side="left">
-                                    {isExpanded ? 'Hide details' : 'View details'}
+                                    {!job.jobName
+                                      ? 'Job resource unavailable'
+                                      : isExpanded
+                                        ? 'Hide details'
+                                        : 'View details'}
                                   </TooltipContent>
                                 </Tooltip>
 
                                 {(() => {
-                                  const executionsUrl = getAzureJobExecutionsUrl(
-                                    getJobPortalLink(job.jobName)
-                                  );
+                                  const executionsUrl = job.jobName
+                                    ? getAzureJobExecutionsUrl(getJobPortalLink(job.jobName))
+                                    : '';
                                   return (
                                     <Tooltip>
                                       <TooltipTrigger asChild>
@@ -617,7 +624,7 @@ export function ScheduledJobMonitor({
                                             variant="ghost"
                                             size="icon"
                                             className="h-7 w-7"
-                                            aria-label={`Open ${job.jobName} executions in Azure`}
+                                            aria-label={`Open ${job.displayName} executions in Azure`}
                                           >
                                             <a
                                               href={executionsUrl}
@@ -633,16 +640,18 @@ export function ScheduledJobMonitor({
                                             size="icon"
                                             className="h-7 w-7"
                                             disabled
-                                            aria-label={`No Azure portal link for ${job.jobName}`}
+                                            aria-label={`No Azure portal link for ${job.displayName}`}
                                           >
                                             <ScrollText className="h-4 w-4" />
                                           </Button>
                                         )}
                                       </TooltipTrigger>
                                       <TooltipContent side="left">
-                                        {executionsUrl
-                                          ? 'Open execution history'
-                                          : 'Azure link not configured'}
+                                        {!job.jobName
+                                          ? 'Job resource unavailable'
+                                          : executionsUrl
+                                            ? 'Open execution history'
+                                            : 'Azure link not configured'}
                                       </TooltipContent>
                                     </Tooltip>
                                   );
@@ -654,19 +663,24 @@ export function ScheduledJobMonitor({
                                       variant="ghost"
                                       size="icon"
                                       className="h-7 w-7"
-                                      disabled={Boolean(triggeringJob) || Boolean(jobControl)}
-                                      onClick={() =>
-                                        job.effectiveStatus === 'running'
-                                          ? void setJobSuspended(job.jobName, true)
-                                          : void triggerJob(job.jobName)
+                                      disabled={
+                                        !job.jobName || Boolean(triggeringJob) || Boolean(jobControl)
                                       }
+                                      onClick={() => {
+                                        if (!job.jobName) return;
+                                        return job.effectiveStatus === 'running'
+                                          ? void setJobSuspended(job.jobName, true)
+                                          : void triggerJob(job.jobName);
+                                      }}
                                       aria-label={
-                                        job.effectiveStatus === 'running'
-                                          ? `Stop ${job.jobName}`
-                                          : `Run ${job.jobName}`
+                                        !job.jobName
+                                          ? `Job resource unavailable for ${job.displayName}`
+                                          : job.effectiveStatus === 'running'
+                                            ? `Stop ${job.displayName}`
+                                            : `Run ${job.displayName}`
                                       }
                                     >
-                                      {triggeringJob === job.jobName ? (
+                                      {job.jobName && triggeringJob === job.jobName ? (
                                         <Loader2 className="h-4 w-4 animate-spin" />
                                       ) : job.effectiveStatus === 'running' ? (
                                         <Square className="h-4 w-4" />
@@ -676,7 +690,11 @@ export function ScheduledJobMonitor({
                                     </Button>
                                   </TooltipTrigger>
                                   <TooltipContent side="left">
-                                    {job.effectiveStatus === 'running' ? 'Stop job' : 'Trigger job'}
+                                    {!job.jobName
+                                      ? 'Job resource unavailable'
+                                      : job.effectiveStatus === 'running'
+                                        ? 'Stop job'
+                                        : 'Trigger job'}
                                   </TooltipContent>
                                 </Tooltip>
                               </div>
@@ -804,7 +822,7 @@ export function ScheduledJobMonitor({
                                               .slice(-LIVE_LOG_LINE_LIMIT)
                                               .map((line, index) => (
                                                 <div
-                                                  key={`${job.jobName}-log-${index}`}
+                                                  key={`${job.displayName}-log-${index}`}
                                                   className={`whitespace-pre-wrap break-words text-foreground/90 px-2 py-1 max-w-full ${
                                                     index % 2 === 0
                                                       ? 'bg-muted/30'
