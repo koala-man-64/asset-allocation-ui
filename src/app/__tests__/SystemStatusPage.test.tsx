@@ -438,6 +438,103 @@ describe('SystemStatusPage', () => {
   });
 
   it('routes non-domain jobs to the operational monitor without leaking domain jobs', async () => {
+    const payload = buildSystemStatusView();
+    vi.mocked(DataService.getSystemStatusView).mockResolvedValue(
+      buildSystemStatusView({
+        systemHealth: {
+          ...payload.systemHealth,
+          dataLayers: payload.systemHealth.dataLayers.map((layer) =>
+            layer.name === 'Bronze'
+              ? {
+                  ...layer,
+                  domains: [
+                    ...(layer.domains || []),
+                    {
+                      name: 'backtests',
+                      description: 'Backtest workflow output',
+                      type: 'delta',
+                      path: 'bronze/backtests',
+                      lastUpdated: MOCK_RUN_TIMESTAMPS.latest,
+                      status: 'healthy',
+                      jobName: 'aca-job-backtests-bronze'
+                    },
+                    {
+                      name: 'ranking',
+                      description: 'Ranking workflow output',
+                      type: 'delta',
+                      path: 'bronze/ranking',
+                      lastUpdated: MOCK_RUN_TIMESTAMPS.latest,
+                      status: 'healthy',
+                      jobName: 'aca-job-ranking-bronze'
+                    },
+                    {
+                      name: 'regime',
+                      description: 'Regime workflow output',
+                      type: 'delta',
+                      path: 'bronze/regime',
+                      lastUpdated: MOCK_RUN_TIMESTAMPS.latest,
+                      status: 'healthy',
+                      jobName: 'aca-job-regime-bronze'
+                    }
+                  ]
+                }
+              : layer
+          ),
+          recentJobs: [
+            ...payload.systemHealth.recentJobs,
+            {
+              jobName: 'aca-job-backtests-bronze',
+              jobType: 'data-ingest',
+              status: 'success',
+              startTime: MOCK_RUN_TIMESTAMPS.latest,
+              triggeredBy: 'schedule'
+            },
+            {
+              jobName: 'aca-job-ranking-bronze',
+              jobType: 'data-ingest',
+              status: 'success',
+              startTime: MOCK_RUN_TIMESTAMPS.latest,
+              triggeredBy: 'schedule'
+            },
+            {
+              jobName: 'aca-job-regime-bronze',
+              jobType: 'data-ingest',
+              status: 'success',
+              startTime: MOCK_RUN_TIMESTAMPS.latest,
+              triggeredBy: 'schedule'
+            }
+          ],
+          resources: [
+            ...(payload.systemHealth.resources || []),
+            {
+              name: 'aca-job-backtests-bronze',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'healthy',
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            },
+            {
+              name: 'aca-job-ranking-bronze',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'healthy',
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            },
+            {
+              name: 'aca-job-regime-bronze',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'healthy',
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            }
+          ]
+        }
+      })
+    );
+
     renderWithProviders(<SystemStatusPage />);
 
     await waitFor(() => {
@@ -462,6 +559,18 @@ describe('SystemStatusPage', () => {
         expect.objectContaining({
           name: 'aca-job-regime-refresh',
           category: 'regime'
+        }),
+        expect.objectContaining({
+          name: 'aca-job-backtests-bronze',
+          category: 'backtest'
+        }),
+        expect.objectContaining({
+          name: 'aca-job-ranking-bronze',
+          category: 'ranking'
+        }),
+        expect.objectContaining({
+          name: 'aca-job-regime-bronze',
+          category: 'regime'
         })
       ])
     );
@@ -469,8 +578,19 @@ describe('SystemStatusPage', () => {
     expect(operationalNames).not.toContain('aca-job-zeta');
 
     const coverageProps = domainLayerCoverageSpy.mock.calls.at(-1)?.[0] as {
+      dataLayers: DataLayer[];
       managedContainerJobs: Array<{ name: string }>;
     };
+    const coverageDomainNames = coverageProps.dataLayers.flatMap((layer) =>
+      (layer.domains || []).map((domain) =>
+        String(domain.name || '')
+          .trim()
+          .toLowerCase()
+      )
+    );
+    expect(coverageDomainNames).not.toEqual(
+      expect.arrayContaining(['backtests', 'ranking', 'regime'])
+    );
     expect(coverageProps.managedContainerJobs.map((job) => job.name)).toEqual([
       'aca-job-market',
       'aca-job-zeta'

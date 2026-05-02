@@ -57,6 +57,7 @@ import {
   buildDomainJobKeySet,
   buildOperationalJobTargets
 } from '@/features/system-status/lib/operationalJobs';
+import { isDomainLayerCoverageDomainVisible } from '@/features/system-status/lib/coverageDomains';
 import { normalizeDomainKey } from '@/features/system-status/components/SystemPurgeControls';
 
 type JobResourceSummary = {
@@ -188,7 +189,7 @@ export function SystemStatusPage() {
       ...layer,
       domains: (layer.domains || []).filter((domain) => {
         const domainKey = normalizeDomainKey(String(domain?.name || ''));
-        return domainKey !== 'platinum';
+        return domainKey !== 'platinum' && isDomainLayerCoverageDomainVisible(domainKey);
       })
     }));
   }, [systemHealth]);
@@ -300,11 +301,11 @@ export function SystemStatusPage() {
     for (const resource of jobResourcesByKey.values()) {
       const hasStructuredMetadata = Boolean(
         resource.jobCategory ||
-          resource.jobKey ||
-          resource.jobRole ||
-          resource.metadataSource ||
-          resource.metadataStatus ||
-          resource.metadataErrors?.length
+        resource.jobKey ||
+        resource.jobRole ||
+        resource.metadataSource ||
+        resource.metadataStatus ||
+        resource.metadataErrors?.length
       );
       if (!hasStructuredMetadata) continue;
       const rawJobName = String(resource.name || '').trim();
@@ -331,11 +332,11 @@ export function SystemStatusPage() {
     for (const run of latestJobRuns.values()) {
       const hasStructuredMetadata = Boolean(
         run.jobCategory ||
-          run.jobKey ||
-          run.jobRole ||
-          run.metadataSource ||
-          run.metadataStatus ||
-          run.metadataErrors?.length
+        run.jobKey ||
+        run.jobRole ||
+        run.metadataSource ||
+        run.metadataStatus ||
+        run.metadataErrors?.length
       );
       if (!hasStructuredMetadata) continue;
       const rawJobName = String(run.jobName || '').trim();
