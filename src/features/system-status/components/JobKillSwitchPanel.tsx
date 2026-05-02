@@ -182,10 +182,7 @@ function KillSwitchControl({
         `Failed to ${action === 'stop' ? 'stop running jobs' : action === 'suspend' ? 'suspend jobs' : 'resume jobs'}: ${formatSystemStatusText(error)}`
       );
     } finally {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.systemHealth() })
-      ]);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() });
       setIsApplyingAction(null);
     }
   };

@@ -1,26 +1,72 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React from 'react';
-import { renderWithProviders } from '@/test/utils';
-import { DataService } from '@/services/DataService';
-import { useSystemHealthQuery } from '@/hooks/useDataQueries';
 import { waitFor } from '@testing-library/react';
 
-function Probe() {
+import { renderWithProviders } from '@/test/utils';
+import { DataService } from '@/services/DataService';
+import { useDataQualityHealthQuery, useSystemHealthQuery } from '@/hooks/useDataQueries';
+import type { SystemHealth } from '@/types/strategy';
+
+const healthPayload: SystemHealth = {
+  overall: 'healthy',
+  dataLayers: [],
+  recentJobs: [],
+  alerts: [],
+  resources: []
+};
+
+function SystemHealthProbe() {
   useSystemHealthQuery();
   return null;
 }
 
-function ProbeAutoRefresh() {
-  useSystemHealthQuery({ autoRefresh: true });
+function DataQualityProbeAutoRefresh() {
+  useDataQualityHealthQuery({ autoRefresh: true });
   return null;
 }
 
-function ProbeNoAutoRefresh() {
-  useSystemHealthQuery({ autoRefresh: false });
+function DataQualityProbeNoAutoRefresh() {
+  useDataQualityHealthQuery({ autoRefresh: false });
+  return null;
+}
+
+function DataQualityProbeDefault() {
+  useDataQualityHealthQuery();
   return null;
 }
 
 describe('useSystemHealthQuery', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('reads system health from the unified system status view', async () => {
+    const getSystemStatusViewSpy = vi.spyOn(DataService, 'getSystemStatusView').mockResolvedValue({
+      version: 1,
+      generatedAt: '2026-05-01T12:00:00Z',
+      systemHealth: healthPayload,
+      metadataSnapshot: {
+        version: 1,
+        updatedAt: null,
+        entries: {},
+        warnings: []
+      },
+      sources: {
+        systemHealth: 'cache',
+        metadataSnapshot: 'persisted-snapshot'
+      }
+    });
+
+    renderWithProviders(<SystemHealthProbe />);
+
+    await waitFor(() => {
+      expect(getSystemStatusViewSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+describe('useDataQualityHealthQuery', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -35,7 +81,7 @@ describe('useSystemHealthQuery', () => {
       .spyOn(DataService, 'getSystemHealthWithMeta')
       .mockRejectedValue(new Error('API Error: 404 Not Found - {"detail":"Not Found"}'));
 
-    renderWithProviders(<ProbeAutoRefresh />);
+    renderWithProviders(<DataQualityProbeAutoRefresh />);
 
     await Promise.all([
       waitFor(() => {
@@ -55,13 +101,7 @@ describe('useSystemHealthQuery', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const getSystemHealthSpy = vi.spyOn(DataService, 'getSystemHealthWithMeta').mockResolvedValue({
-      data: {
-        overall: 'healthy',
-        dataLayers: [],
-        recentJobs: [],
-        alerts: [],
-        resources: []
-      },
+      data: healthPayload,
       meta: {
         status: 200,
         durationMs: 10,
@@ -71,7 +111,7 @@ describe('useSystemHealthQuery', () => {
       }
     });
 
-    renderWithProviders(<ProbeNoAutoRefresh />);
+    renderWithProviders(<DataQualityProbeNoAutoRefresh />);
 
     await Promise.all([
       waitFor(() => {
@@ -91,13 +131,7 @@ describe('useSystemHealthQuery', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const getSystemHealthSpy = vi.spyOn(DataService, 'getSystemHealthWithMeta').mockResolvedValue({
-      data: {
-        overall: 'healthy',
-        dataLayers: [],
-        recentJobs: [],
-        alerts: [],
-        resources: []
-      },
+      data: healthPayload,
       meta: {
         status: 200,
         durationMs: 10,
@@ -107,7 +141,7 @@ describe('useSystemHealthQuery', () => {
       }
     });
 
-    renderWithProviders(<Probe />);
+    renderWithProviders(<DataQualityProbeDefault />);
 
     await Promise.all([
       waitFor(() => {

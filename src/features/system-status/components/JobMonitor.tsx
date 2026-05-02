@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/too
 import { ExternalLink, Loader2, Play, PlayCircle, ScrollText, Square } from 'lucide-react';
 import {
   buildLatestJobRunIndex,
+  effectiveJobStatus,
   formatDuration,
   formatRecordCount,
   formatTimeAgo,
@@ -26,28 +27,51 @@ import {
   getAzureJobExecutionsUrl,
   getStatusBadge,
   getStatusIcon,
-  normalizeJobStatus,
   normalizeAzureJobName,
   normalizeAzurePortalUrl
 } from '@/features/system-status/lib/SystemStatusHelpers';
 import { useJobTrigger } from '@/hooks/useJobTrigger';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
-import { JobRun } from '@/types/strategy';
+import { useJobStatuses } from '@/hooks/useJobStatuses';
+import { JobRun, ResourceHealth } from '@/types/strategy';
 
 interface JobMonitorProps {
   recentJobs: JobRun[];
   jobLinks?: Record<string, string>;
+  resources?: ResourceHealth[];
 }
 
-export function JobMonitor({ recentJobs, jobLinks = {} }: JobMonitorProps) {
+export function JobMonitor({ recentJobs, jobLinks = {}, resources = [] }: JobMonitorProps) {
   const { triggeringJob, triggerJob } = useJobTrigger();
   const { jobControl, setJobSuspended } = useJobSuspend();
-  const successJobs = recentJobs.filter((j) => normalizeJobStatus(j.status) === 'success').length;
-  const warningJobs = recentJobs.filter((j) => normalizeJobStatus(j.status) === 'warning').length;
-  const runningJobs = recentJobs.filter((j) => normalizeJobStatus(j.status) === 'running').length;
-  const failedJobs = recentJobs.filter((j) => normalizeJobStatus(j.status) === 'failed').length;
+  const jobStatuses = useJobStatuses({ autoRefresh: false });
+
+  const resourceByJobKey = useMemo(() => {
+    const map = new Map<string, ResourceHealth>();
+    for (const resource of resources) {
+      const key = normalizeAzureJobName(resource?.name);
+      if (key) map.set(key, resource);
+    }
+    return map;
+  }, [resources]);
 
   const latestRunByJob = useMemo(() => buildLatestJobRunIndex(recentJobs), [recentJobs]);
+
+  const computeStatus = (job: JobRun) => {
+    const key = normalizeAzureJobName(job.jobName);
+    const statusEntry = key ? jobStatuses.byKey.get(key) : undefined;
+    const latest = statusEntry?.latestRun ?? (key ? latestRunByJob.get(key) : undefined);
+    const resource = statusEntry?.resource ?? (key ? resourceByJobKey.get(key) : undefined);
+    return (
+      statusEntry?.status ??
+      effectiveJobStatus(latest?.status ?? job.status, resource?.runningState)
+    );
+  };
+
+  const successJobs = recentJobs.filter((j) => computeStatus(j) === 'success').length;
+  const warningJobs = recentJobs.filter((j) => computeStatus(j) === 'warning').length;
+  const runningJobs = recentJobs.filter((j) => computeStatus(j) === 'running').length;
+  const failedJobs = recentJobs.filter((j) => computeStatus(j) === 'failed').length;
 
   const getJobPortalLink = (jobName: string) => {
     const normalizedName = normalizeAzureJobName(jobName);
@@ -102,14 +126,21 @@ export function JobMonitor({ recentJobs, jobLinks = {} }: JobMonitorProps) {
                 const portalLink = getJobPortalLink(job.jobName);
                 const executionsUrl = getAzureJobExecutionsUrl(portalLink);
                 const jobKey = normalizeAzureJobName(job.jobName);
-                const latestRun = jobKey ? latestRunByJob.get(jobKey) : undefined;
-                const runStatus = latestRun?.status
-                  ? String(latestRun.status).toUpperCase()
-                  : 'UNKNOWN';
+                const statusEntry = jobKey ? jobStatuses.byKey.get(jobKey) : undefined;
+                const latestRun =
+                  statusEntry?.latestRun ?? (jobKey ? latestRunByJob.get(jobKey) : undefined);
+                const displayStatus =
+                  statusEntry?.status ??
+                  effectiveJobStatus(
+                    latestRun?.status ?? job.status,
+                    statusEntry?.runningState ??
+                      (jobKey ? resourceByJobKey.get(jobKey)?.runningState : undefined)
+                  );
+                const runStatus = displayStatus.toUpperCase();
                 const runTimeAgo = latestRun?.startTime
                   ? `${formatTimeAgo(latestRun.startTime)} ago`
                   : 'UNKNOWN';
-                const isRunning = normalizeJobStatus(latestRun?.status) === 'running';
+                const isRunning = displayStatus === 'running';
                 const isTriggering = Boolean(job.jobName) && triggeringJob === job.jobName;
                 const isStopping =
                   Boolean(job.jobName) &&
@@ -162,8 +193,8 @@ export function JobMonitor({ recentJobs, jobLinks = {} }: JobMonitorProps) {
                     </TableCell>
                     <TableCell className="py-2">
                       <div className="flex items-center gap-2">
-                        {getStatusIcon(job.status)}
-                        {getStatusBadge(job.status)}
+                        {getStatusIcon(displayStatus)}
+                        {getStatusBadge(displayStatus)}
                       </div>
                     </TableCell>
                     <TableCell className="py-2 font-mono text-sm">

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import type { JobRun } from '@/types/strategy';
 import {
-  buildAnchoredJobRunIndex,
   buildLatestJobRunIndex,
   effectiveJobStatus,
   hasActiveJobRunningState,
@@ -13,14 +12,27 @@ import {
 } from '@/features/system-status/lib/SystemStatusHelpers';
 
 describe('SystemStatusHelpers', () => {
-  it('prefers execution status over live resource running state', () => {
-    expect(effectiveJobStatus('success', 'Running')).toBe('success');
-    expect(effectiveJobStatus('failed', 'Running')).toBe('failed');
+  it('prefers active live resource running state over stale terminal execution status', () => {
+    expect(effectiveJobStatus('success', 'Running')).toBe('running');
+    expect(effectiveJobStatus('failed', 'Running')).toBe('running');
+    expect(effectiveJobStatus('success', 'Queued')).toBe('running');
+  });
+
+  it('reports execution status when live resource state is terminal or absent', () => {
+    expect(effectiveJobStatus('success', 'Succeeded')).toBe('success');
+    expect(effectiveJobStatus('failed', 'Failed')).toBe('failed');
+    expect(effectiveJobStatus('failed', null)).toBe('failed');
+    expect(effectiveJobStatus('success', undefined)).toBe('success');
   });
 
   it('uses live resource state only when no execution status is available', () => {
     expect(effectiveJobStatus(null, 'Running')).toBe('running');
     expect(effectiveJobStatus(undefined, 'Suspended')).toBe('pending');
+  });
+
+  it('reports pending when live state is suspended even if a prior run was terminal', () => {
+    expect(effectiveJobStatus('success', 'Suspended')).toBe('pending');
+    expect(effectiveJobStatus('failed', 'Suspended')).toBe('pending');
   });
 
   it('uses terminal live resource state when no recent run is available', () => {
@@ -73,28 +85,6 @@ describe('SystemStatusHelpers', () => {
       status: 'failed',
       startTime: '2026-03-21T12:00:00Z'
     });
-  });
-
-  it('indexes each job by its anchored run rather than the newest completed run', () => {
-    const anchored = buildAnchoredJobRunIndex([
-      {
-        jobName: 'bronze-market-job',
-        status: 'success',
-        startTime: '2026-03-21T12:00:00Z'
-      },
-      {
-        jobName: 'bronze-market-job',
-        status: 'running',
-        startTime: '2026-03-20T12:00:00Z'
-      }
-    ] as JobRun[]);
-
-    expect(anchored.get('bronze-market-job')).toEqual(
-      expect.objectContaining({
-        status: 'running',
-        startTime: '2026-03-20T12:00:00Z'
-      })
-    );
   });
 
   it('indexes each job by its latest execution for status display', () => {

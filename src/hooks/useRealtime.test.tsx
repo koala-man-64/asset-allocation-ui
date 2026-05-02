@@ -4,11 +4,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/services/apiService';
 
-const { mockToastError, mockRedirectToLogin, mockGetAuthSessionStatusWithMeta } = vi.hoisted(() => ({
-  mockToastError: vi.fn(),
-  mockRedirectToLogin: vi.fn(),
-  mockGetAuthSessionStatusWithMeta: vi.fn()
-}));
+const { mockToastError, mockRedirectToLogin, mockGetAuthSessionStatusWithMeta } = vi.hoisted(
+  () => ({
+    mockToastError: vi.fn(),
+    mockRedirectToLogin: vi.fn(),
+    mockGetAuthSessionStatusWithMeta: vi.fn()
+  })
+);
 
 vi.mock('sonner', () => ({
   toast: {
@@ -285,7 +287,6 @@ describe('useRealtime', () => {
       expect(invalidatedKeys).toEqual(
         expect.arrayContaining([
           JSON.stringify(queryKeys.systemStatusView()),
-          JSON.stringify(queryKeys.systemHealth()),
           JSON.stringify(queryKeys.domainMetadataSnapshot('all', 'all'))
         ])
       );
