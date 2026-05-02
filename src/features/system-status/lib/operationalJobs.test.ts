@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDomainJobKeySet,
   buildOperationalJobTargets,
-  classifyJobCategory
+  classifyJobCategory,
+  EXPECTED_OPERATIONAL_JOBS,
+  isExpectedOperationalJobName
 } from '@/features/system-status/lib/operationalJobs';
 import type { ManagedContainerJob } from '@/features/system-status/types';
 import type { DataLayer, JobRun } from '@/types/strategy';
@@ -62,6 +64,44 @@ const DATA_LAYERS_WITH_OPERATIONAL_WORKFLOWS: DataLayer[] = [
 ];
 
 describe('operational job classification', () => {
+  it('seeds the expected operational job catalog without live telemetry', () => {
+    const targets = buildOperationalJobTargets({});
+
+    expect(targets.map((job) => job.name)).toEqual(
+      expect.arrayContaining(EXPECTED_OPERATIONAL_JOBS.map((job) => job.name))
+    );
+    expect(targets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'gold-regime-job',
+          category: 'regime',
+          recentStatus: null
+        }),
+        expect.objectContaining({
+          name: 'intraday-monitor-job',
+          category: 'intraday-monitoring',
+          runningState: null
+        }),
+        expect.objectContaining({
+          name: 'intraday-market-refresh-job',
+          category: 'intraday-monitoring'
+        }),
+        expect.objectContaining({
+          name: 'platinum-rankings-job',
+          category: 'ranking'
+        }),
+        expect.objectContaining({
+          name: 'results-reconcile-job',
+          category: 'results-reconciliation'
+        }),
+        expect.objectContaining({
+          name: 'symbol-cleanup-job',
+          category: 'symbol-cleanup'
+        })
+      ])
+    );
+  });
+
   it('marks jobs mapped from data layers as domain data', () => {
     const domainJobKeys = buildDomainJobKeySet(DATA_LAYERS);
 
@@ -125,8 +165,116 @@ describe('operational job classification', () => {
     expect(classifyJobCategory({ jobName: 'aca-job-regime-refresh', domainJobKeys })).toBe(
       'regime'
     );
+    expect(classifyJobCategory({ jobName: 'intraday-monitor-job', domainJobKeys })).toBe(
+      'intraday-monitoring'
+    );
+    expect(classifyJobCategory({ jobName: 'aca-job-results-reconciliation', domainJobKeys })).toBe(
+      'results-reconciliation'
+    );
+    expect(classifyJobCategory({ jobName: 'aca-job-symbol-cleanup', domainJobKeys })).toBe(
+      'symbol-cleanup'
+    );
     expect(classifyJobCategory({ jobName: 'aca-job-cache-maintenance', domainJobKeys })).toBe(
       'other-operational'
+    );
+  });
+
+  it('does not suppress exact expected jobs when they also appear in domain metadata', () => {
+    const domainJobKeys = buildDomainJobKeySet([
+      {
+        name: 'Gold',
+        description: 'Curated data',
+        status: 'healthy',
+        lastUpdated: '2026-04-18T14:30:00Z',
+        refreshFrequency: 'Daily',
+        domains: [
+          {
+            name: 'intraday',
+            type: 'delta',
+            path: 'gold/intraday',
+            lastUpdated: '2026-04-18T14:30:00Z',
+            status: 'healthy',
+            jobName: 'intraday-market-refresh-job'
+          },
+          {
+            name: 'symbol',
+            type: 'delta',
+            path: 'gold/symbol',
+            lastUpdated: '2026-04-18T14:30:00Z',
+            status: 'healthy',
+            jobName: 'custom-symbol-domain-job'
+          }
+        ]
+      }
+    ]);
+
+    expect(isExpectedOperationalJobName('intraday-market-refresh-job')).toBe(true);
+    expect(domainJobKeys.has('intraday-market-refresh-job')).toBe(false);
+    expect(domainJobKeys.has('custom-symbol-domain-job')).toBe(true);
+    expect(
+      classifyJobCategory({
+        jobName: 'intraday-market-refresh-job',
+        domainJobKeys
+      })
+    ).toBe('intraday-monitoring');
+    expect(
+      classifyJobCategory({
+        jobName: 'custom-symbol-domain-job',
+        domainJobKeys
+      })
+    ).toBe('domain-data');
+  });
+
+  it('merges live telemetry over seeded expected job rows', () => {
+    const targets = buildOperationalJobTargets({
+      recentJobs: [
+        {
+          jobName: 'Gold_Regime_Job',
+          jobType: 'data-ingest',
+          status: 'failed',
+          startTime: '2026-04-18T14:31:00Z',
+          duration: 97,
+          recordsProcessed: 42,
+          triggeredBy: 'schedule'
+        }
+      ],
+      managedContainerJobs: [
+        {
+          name: 'gold-regime-job',
+          runningState: 'Succeeded',
+          lastModifiedAt: '2026-04-18T14:32:00Z',
+          signals: [
+            {
+              name: 'CpuUsage',
+              value: 52,
+              unit: 'Percent',
+              timestamp: '2026-04-18T14:32:00Z',
+              status: 'healthy',
+              source: 'metrics'
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(targets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'gold-regime-job',
+          category: 'regime',
+          recentStatus: 'failed',
+          startTime: '2026-04-18T14:31:00Z',
+          duration: 97,
+          recordsProcessed: 42,
+          triggeredBy: 'schedule',
+          signals: expect.arrayContaining([
+            expect.objectContaining({
+              name: 'CpuUsage',
+              value: 52
+            })
+          ])
+        })
+      ])
     );
   });
 
@@ -287,13 +435,15 @@ describe('operational job classification', () => {
       }
     });
 
-    expect(targets).toEqual([
-      expect.objectContaining({
-        name: 'aca-job-ranking-materialize',
-        recentStatus: 'running',
-        runningState: 'Running',
-        startTime: '2026-04-18T14:25:00Z'
-      })
-    ]);
+    expect(targets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'aca-job-ranking-materialize',
+          recentStatus: 'running',
+          runningState: 'Running',
+          startTime: '2026-04-18T14:25:00Z'
+        })
+      ])
+    );
   });
 });

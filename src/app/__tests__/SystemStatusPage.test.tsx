@@ -549,6 +549,30 @@ describe('SystemStatusPage', () => {
     expect(operationalProps.jobs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          name: 'gold-regime-job',
+          category: 'regime'
+        }),
+        expect.objectContaining({
+          name: 'intraday-monitor-job',
+          category: 'intraday-monitoring'
+        }),
+        expect.objectContaining({
+          name: 'intraday-market-refresh-job',
+          category: 'intraday-monitoring'
+        }),
+        expect.objectContaining({
+          name: 'platinum-rankings-job',
+          category: 'ranking'
+        }),
+        expect.objectContaining({
+          name: 'results-reconcile-job',
+          category: 'results-reconciliation'
+        }),
+        expect.objectContaining({
+          name: 'symbol-cleanup-job',
+          category: 'symbol-cleanup'
+        }),
+        expect.objectContaining({
           name: 'aca-job-backtest-runner',
           category: 'backtest'
         }),
@@ -613,7 +637,18 @@ describe('SystemStatusPage', () => {
       }>;
     };
 
-    expect(jobStreamProps.jobs.map((job) => job.name)).not.toContain('aca-job-backtest-runner');
+    const jobStreamNames = jobStreamProps.jobs.map((job) => job.name);
+    expect(jobStreamNames).not.toContain('aca-job-backtest-runner');
+    for (const expectedOperationalJobName of [
+      'gold-regime-job',
+      'intraday-monitor-job',
+      'intraday-market-refresh-job',
+      'platinum-rankings-job',
+      'results-reconcile-job',
+      'symbol-cleanup-job'
+    ]) {
+      expect(jobStreamNames).not.toContain(expectedOperationalJobName);
+    }
     expect(jobStreamProps.jobs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -680,7 +715,7 @@ describe('SystemStatusPage', () => {
     );
   });
 
-  it('keeps metadata-only ACA jobs in the log stream without rendering taxonomy groups', async () => {
+  it('routes metadata-only expected jobs to the operational panel without rendering taxonomy groups', async () => {
     const payload = buildSystemStatusView();
     vi.mocked(DataService.getSystemStatusView).mockResolvedValue(
       buildSystemStatusView({
@@ -758,23 +793,38 @@ describe('SystemStatusPage', () => {
     expect(screen.queryByText('tag values do not match legacy catalog')).not.toBeInTheDocument();
 
     await waitFor(() => {
+      expect(operationalJobSpy).toHaveBeenCalled();
       expect(jobLogStreamSpy).toHaveBeenCalled();
     });
-    const jobStreamProps = jobLogStreamSpy.mock.calls.at(-1)?.[0] as {
-      jobs: Array<{ label: string; name: string }>;
+    const operationalProps = operationalJobSpy.mock.calls.at(-1)?.[0] as {
+      jobs: Array<{ category: string; name: string; recentStatus?: string | null }>;
     };
-    expect(jobStreamProps.jobs).toEqual(
+    expect(operationalProps.jobs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: 'results-reconcile-job',
-          label: 'results-reconcile-job - Strategy Compute / results-reconcile / execute'
+          name: 'gold-regime-job',
+          category: 'regime',
+          recentStatus: 'success'
         }),
         expect.objectContaining({
-          name: 'gold-regime-job',
-          label: 'gold-regime-job - Strategy Compute / regime / publish'
+          name: 'platinum-rankings-job',
+          category: 'ranking'
+        }),
+        expect.objectContaining({
+          name: 'results-reconcile-job',
+          category: 'results-reconciliation',
+          recentStatus: 'success'
         })
       ])
     );
+
+    const jobStreamProps = jobLogStreamSpy.mock.calls.at(-1)?.[0] as {
+      jobs: Array<{ label: string; name: string }>;
+    };
+    const jobStreamNames = jobStreamProps.jobs.map((job) => job.name);
+    expect(jobStreamNames).not.toContain('gold-regime-job');
+    expect(jobStreamNames).not.toContain('platinum-rankings-job');
+    expect(jobStreamNames).not.toContain('results-reconcile-job');
   });
 
   it('merges optimistic running overrides into the system status props', async () => {

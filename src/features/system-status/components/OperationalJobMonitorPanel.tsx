@@ -54,6 +54,9 @@ const CATEGORY_ICON: Record<OperationalJobCategory, typeof Activity> = {
   backtest: TestTubeDiagonal,
   ranking: Layers3,
   regime: Orbit,
+  'intraday-monitoring': Activity,
+  'results-reconciliation': RefreshCw,
+  'symbol-cleanup': Workflow,
   'other-operational': Workflow
 };
 
@@ -61,6 +64,9 @@ const CATEGORY_TONE: Record<OperationalJobCategory, string> = {
   backtest: 'border-mcm-teal/55 bg-mcm-teal/10 text-mcm-walnut',
   ranking: 'border-mcm-mustard/55 bg-mcm-mustard/14 text-mcm-walnut',
   regime: 'border-mcm-olive/45 bg-mcm-olive/10 text-mcm-olive',
+  'intraday-monitoring': 'border-mcm-teal/45 bg-mcm-teal/10 text-mcm-teal',
+  'results-reconciliation': 'border-mcm-mustard/55 bg-mcm-mustard/12 text-mcm-walnut',
+  'symbol-cleanup': 'border-destructive/35 bg-destructive/10 text-destructive',
   'other-operational': 'border-mcm-walnut/25 bg-mcm-paper text-mcm-walnut'
 };
 
@@ -254,11 +260,11 @@ export function OperationalJobMonitorPanel({
               Operational Jobs
             </p>
             <h2 id="operational-jobs-heading" className="font-display text-xl text-foreground">
-              Backtests, Rankings, and Regime Workflows
+              Operational Workflows and Control Jobs
             </h2>
             <p className="max-w-3xl text-sm text-muted-foreground">
-              Non-domain compute is isolated here so ingestion health stays readable in the
-              medallion matrix.
+              Backtest, ranking, regime, intraday, reconciliation, and cleanup jobs stay isolated
+              here so ingestion health remains readable in the medallion matrix.
             </p>
           </div>
           <Button
@@ -304,7 +310,7 @@ export function OperationalJobMonitorPanel({
         <SummaryTile
           label="Classifier"
           value="Local v1"
-          detail="Derived from domain mappings, job type, and job naming."
+          detail="Derived from the expected catalog, domain mappings, job type, and job naming."
         />
       </div>
 

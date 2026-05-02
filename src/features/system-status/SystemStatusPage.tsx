@@ -56,7 +56,8 @@ import {
 } from '@/features/system-status/lib/SystemStatusHelpers';
 import {
   buildDomainJobKeySet,
-  buildOperationalJobTargets
+  buildOperationalJobTargets,
+  isExpectedOperationalJobName
 } from '@/features/system-status/lib/operationalJobs';
 import { isDomainLayerCoverageDomainVisible } from '@/features/system-status/lib/coverageDomains';
 import { normalizeDomainKey } from '@/features/system-status/components/SystemPurgeControls';
@@ -292,6 +293,7 @@ export function SystemStatusPage() {
           jobUrl: domain.jobUrl
         });
         if (!rawJobName) continue;
+        if (isExpectedOperationalJobName(rawJobName)) continue;
         const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();
         if (items.has(key)) continue;
         items.set(key, {
@@ -317,6 +319,7 @@ export function SystemStatusPage() {
       if (!hasStructuredMetadata) continue;
       const rawJobName = String(resource.name || '').trim();
       if (!rawJobName) continue;
+      if (isExpectedOperationalJobName(rawJobName)) continue;
       const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();
       if (items.has(key)) continue;
       const metadataLabel = [
@@ -348,6 +351,7 @@ export function SystemStatusPage() {
       if (!hasStructuredMetadata) continue;
       const rawJobName = String(run.jobName || '').trim();
       if (!rawJobName) continue;
+      if (isExpectedOperationalJobName(rawJobName)) continue;
       const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();
       if (items.has(key)) continue;
       items.set(key, {

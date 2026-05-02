@@ -82,6 +82,37 @@ const JOBS: OperationalJobTarget[] = [
     recentStatus: 'failed',
     startTime: '2026-04-18T14:10:00Z',
     triggeredBy: 'schedule'
+  },
+  {
+    name: 'intraday-monitor-job',
+    label: 'intraday-monitor-job',
+    category: 'intraday-monitoring',
+    categoryLabel: 'Intraday Monitoring',
+    recentStatus: null,
+    runningState: null
+  },
+  {
+    name: 'intraday-market-refresh-job',
+    label: 'intraday-market-refresh-job',
+    category: 'intraday-monitoring',
+    categoryLabel: 'Intraday Monitoring',
+    recentStatus: 'success',
+    startTime: '2026-04-18T14:05:00Z',
+    triggeredBy: 'schedule'
+  },
+  {
+    name: 'results-reconcile-job',
+    label: 'results-reconcile-job',
+    category: 'results-reconciliation',
+    categoryLabel: 'Results Reconciliation',
+    recentStatus: null
+  },
+  {
+    name: 'symbol-cleanup-job',
+    label: 'symbol-cleanup-job',
+    category: 'symbol-cleanup',
+    categoryLabel: 'Symbol Cleanup',
+    recentStatus: null
   }
 ];
 
@@ -120,11 +151,14 @@ describe('OperationalJobMonitorPanel', () => {
     renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
 
     expect(
-      screen.getByRole('heading', { name: /Backtests, Rankings, and Regime/i })
+      screen.getByRole('heading', { name: /Operational Workflows and Control Jobs/i })
     ).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /aca-job-backtest-runner/i })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /aca-job-ranking-materialize/i })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /aca-job-regime-refresh/i })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /intraday-monitor-job/i })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /results-reconcile-job/i })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /symbol-cleanup-job/i })).toBeInTheDocument();
     expect(screen.getByText('queued backtest')).toBeInTheDocument();
     expect(screen.getByText('insufficient bars')).toBeInTheDocument();
 
@@ -159,6 +193,35 @@ describe('OperationalJobMonitorPanel', () => {
           jobs: [
             expect.objectContaining({
               name: 'aca-job-ranking-materialize'
+            })
+          ]
+        })
+      );
+    });
+  });
+
+  it('filters seeded intraday jobs as a dedicated operational category', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
+
+    await user.click(screen.getByRole('button', { name: /Intraday Monitoring/i }));
+
+    expect(screen.queryByRole('row', { name: /aca-job-backtest-runner/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /intraday-monitor-job/i })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /intraday-market-refresh-job/i })).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(jobLogStreamSpy.mock.calls.at(-1)?.[0]).toEqual(
+        expect.objectContaining({
+          selectedJobName: 'intraday-monitor-job',
+          jobs: [
+            expect.objectContaining({
+              name: 'intraday-monitor-job',
+              domainName: 'Intraday Monitoring'
+            }),
+            expect.objectContaining({
+              name: 'intraday-market-refresh-job',
+              domainName: 'Intraday Monitoring'
             })
           ]
         })

@@ -13,6 +13,9 @@ export const OPERATIONAL_JOB_CATEGORIES = [
   'backtest',
   'ranking',
   'regime',
+  'intraday-monitoring',
+  'results-reconciliation',
+  'symbol-cleanup',
   'other-operational'
 ] as const;
 
@@ -39,6 +42,9 @@ export const OPERATIONAL_JOB_CATEGORY_LABELS: Record<OperationalJobCategory, str
   backtest: 'Backtests',
   ranking: 'Rankings',
   regime: 'Regime',
+  'intraday-monitoring': 'Intraday Monitoring',
+  'results-reconciliation': 'Results Reconciliation',
+  'symbol-cleanup': 'Symbol Cleanup',
   'other-operational': 'Other Ops'
 };
 
@@ -46,8 +52,43 @@ const CATEGORY_ORDER: Record<OperationalJobCategory, number> = {
   backtest: 0,
   ranking: 1,
   regime: 2,
-  'other-operational': 3
+  'intraday-monitoring': 3,
+  'results-reconciliation': 4,
+  'symbol-cleanup': 5,
+  'other-operational': 6
 };
+
+export interface ExpectedOperationalJob {
+  name: string;
+  category: OperationalJobCategory;
+}
+
+export const EXPECTED_OPERATIONAL_JOBS = [
+  {
+    name: 'gold-regime-job',
+    category: 'regime'
+  },
+  {
+    name: 'intraday-monitor-job',
+    category: 'intraday-monitoring'
+  },
+  {
+    name: 'intraday-market-refresh-job',
+    category: 'intraday-monitoring'
+  },
+  {
+    name: 'platinum-rankings-job',
+    category: 'ranking'
+  },
+  {
+    name: 'results-reconcile-job',
+    category: 'results-reconciliation'
+  },
+  {
+    name: 'symbol-cleanup-job',
+    category: 'symbol-cleanup'
+  }
+] as const satisfies readonly ExpectedOperationalJob[];
 
 function toJobKey(value?: string | null): string {
   return (
@@ -56,6 +97,21 @@ function toJobKey(value?: string | null): string {
       .trim()
       .toLowerCase()
   );
+}
+
+const EXPECTED_OPERATIONAL_JOB_CATEGORIES_BY_KEY = new Map(
+  EXPECTED_OPERATIONAL_JOBS.map((job) => [toJobKey(job.name), job.category])
+);
+
+export function getExpectedOperationalJobCategory(
+  jobName?: string | null
+): OperationalJobCategory | null {
+  const key = toJobKey(jobName);
+  return key ? (EXPECTED_OPERATIONAL_JOB_CATEGORIES_BY_KEY.get(key) ?? null) : null;
+}
+
+export function isExpectedOperationalJobName(jobName?: string | null): boolean {
+  return getExpectedOperationalJobCategory(jobName) !== null;
 }
 
 function normalizeClassifierText(value?: string | null): string {
@@ -81,6 +137,7 @@ export function buildDomainJobKeySet(dataLayers: DataLayer[] = []): Set<string> 
         jobUrl: domain.jobUrl
       });
       const key = toJobKey(jobName);
+      if (EXPECTED_OPERATIONAL_JOB_CATEGORIES_BY_KEY.has(key)) continue;
       if (key) {
         keys.add(key);
       }
@@ -96,6 +153,11 @@ export function classifyJobCategory(input: {
   domainJobKeys?: Set<string>;
 }): JobCategory {
   const key = toJobKey(input.jobName);
+  const expectedCategory = EXPECTED_OPERATIONAL_JOB_CATEGORIES_BY_KEY.get(key);
+  if (expectedCategory) {
+    return expectedCategory;
+  }
+
   if (key && input.domainJobKeys?.has(key)) {
     return 'domain-data';
   }
@@ -116,6 +178,18 @@ export function classifyJobCategory(input: {
 
   if (/(^|-)regimes?(-|$)/.test(text) || text.includes('regime-model')) {
     return 'regime';
+  }
+
+  if (/(^|-)intraday(-|$)/.test(text) || text.includes('market-refresh')) {
+    return 'intraday-monitoring';
+  }
+
+  if (text.includes('results-reconcile') || text.includes('reconciliation')) {
+    return 'results-reconciliation';
+  }
+
+  if (text.includes('symbol-cleanup') || (text.includes('symbol') && text.includes('cleanup'))) {
+    return 'symbol-cleanup';
   }
 
   return 'other-operational';
@@ -154,6 +228,24 @@ function statusRank(job: OperationalJobTarget): number {
 function timestampRank(value?: string | null): number {
   const parsed = value ? Date.parse(value) : NaN;
   return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+function buildConfiguredJobTarget(job: ExpectedOperationalJob): OperationalJobTarget {
+  return {
+    name: job.name,
+    label: job.name,
+    category: job.category,
+    categoryLabel: OPERATIONAL_JOB_CATEGORY_LABELS[job.category],
+    jobType: null,
+    runningState: null,
+    recentStatus: null,
+    startTime: null,
+    duration: null,
+    recordsProcessed: null,
+    triggeredBy: null,
+    jobUrl: null,
+    signals: null
+  };
 }
 
 export function sortOperationalJobs(jobs: OperationalJobTarget[]): OperationalJobTarget[] {
@@ -201,6 +293,13 @@ export function buildOperationalJobTargets({
       ])
     );
   const targets = new Map<string, OperationalJobTarget>();
+
+  for (const job of EXPECTED_OPERATIONAL_JOBS) {
+    const key = toJobKey(job.name);
+    if (key) {
+      targets.set(key, buildConfiguredJobTarget(job));
+    }
+  }
 
   for (const resource of managedContainerJobs) {
     const name = String(resource.name || '').trim();
