@@ -163,6 +163,62 @@ function makeLayerTriggerLayers(): DataLayer[] {
   ];
 }
 
+function makeQuiverDataLayers(): DataLayer[] {
+  return [
+    {
+      name: 'Bronze',
+      description: 'Raw ingestion',
+      status: 'healthy',
+      lastUpdated: NOW,
+      refreshFrequency: 'hourly',
+      domains: [
+        {
+          name: 'quiver-data',
+          type: 'blob',
+          path: 'quiver-data/runs',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'bronze-quiver-data-job'
+        }
+      ]
+    },
+    {
+      name: 'Silver',
+      description: 'Standardized data',
+      status: 'healthy',
+      lastUpdated: NOW,
+      refreshFrequency: 'manual',
+      domains: [
+        {
+          name: 'quiver-data',
+          type: 'blob',
+          path: 'quiver-data',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'silver-quiver-data-job'
+        }
+      ]
+    },
+    {
+      name: 'Gold',
+      description: 'Feature store',
+      status: 'healthy',
+      lastUpdated: NOW,
+      refreshFrequency: 'manual',
+      domains: [
+        {
+          name: 'quiver-data',
+          type: 'blob',
+          path: 'quiver',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'gold-quiver-data-job'
+        }
+      ]
+    }
+  ];
+}
+
 function makeLayersWithHiddenCoverageDomains(): DataLayer[] {
   return [
     {
@@ -865,6 +921,36 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     expect(triggerJobMock).toHaveBeenNthCalledWith(2, 'aca-job-earnings-bronze', [
       ['systemStatusView']
     ]);
+  });
+
+  it('triggers exactly one quiver data job per medallion layer', async () => {
+    const user = userEvent.setup();
+
+    renderPanel({
+      dataLayers: makeQuiverDataLayers()
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Trigger Bronze layer jobs' }));
+    await user.click(await screen.findByRole('button', { name: 'Trigger Silver layer jobs' }));
+    await user.click(await screen.findByRole('button', { name: 'Trigger Gold layer jobs' }));
+
+    await waitFor(() => {
+      expect(triggerJobMock).toHaveBeenCalledTimes(3);
+    });
+    expect(triggerJobMock).toHaveBeenNthCalledWith(1, 'bronze-quiver-data-job', [
+      ['systemStatusView']
+    ]);
+    expect(triggerJobMock).toHaveBeenNthCalledWith(2, 'silver-quiver-data-job', [
+      ['systemStatusView']
+    ]);
+    expect(triggerJobMock).toHaveBeenNthCalledWith(3, 'gold-quiver-data-job', [
+      ['systemStatusView']
+    ]);
+    expect(triggerJobMock).not.toHaveBeenCalledWith('bronze-quiver-backfill-job', [
+      ['systemStatusView']
+    ]);
+    expect(await screen.findByRole('button', { name: 'Expand quiver-data details' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Expand quiver details' })).not.toBeInTheDocument();
   });
 
   it('does not trigger inferred layer jobs when runnable metadata is absent', async () => {

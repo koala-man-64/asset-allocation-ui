@@ -63,6 +63,84 @@ const DATA_LAYERS_WITH_OPERATIONAL_WORKFLOWS: DataLayer[] = [
   }
 ];
 
+const DATA_LAYERS_WITH_CATALYST_AND_QUIVER: DataLayer[] = [
+  {
+    name: 'Bronze',
+    description: 'Raw ingestion',
+    status: 'healthy',
+    lastUpdated: '2026-04-18T14:30:00Z',
+    refreshFrequency: 'Multiple schedules',
+    domains: [
+      {
+        name: 'economic-catalyst',
+        type: 'blob',
+        path: 'economic-catalyst/runs',
+        lastUpdated: '2026-04-18T14:30:00Z',
+        status: 'healthy',
+        jobName: 'bronze-economic-catalyst-job'
+      },
+      {
+        name: 'quiver-data',
+        type: 'blob',
+        path: 'quiver-data/runs',
+        lastUpdated: '2026-04-18T14:30:00Z',
+        status: 'healthy',
+        jobName: 'bronze-quiver-data-job'
+      }
+    ]
+  },
+  {
+    name: 'Silver',
+    description: 'Standardized data',
+    status: 'healthy',
+    lastUpdated: '2026-04-18T14:30:00Z',
+    refreshFrequency: 'Manual trigger',
+    domains: [
+      {
+        name: 'economic-catalyst',
+        type: 'blob',
+        path: 'economic-catalyst',
+        lastUpdated: '2026-04-18T14:30:00Z',
+        status: 'healthy',
+        jobName: 'silver-economic-catalyst-job'
+      },
+      {
+        name: 'quiver-data',
+        type: 'blob',
+        path: 'quiver-data',
+        lastUpdated: '2026-04-18T14:30:00Z',
+        status: 'healthy',
+        jobName: 'silver-quiver-data-job'
+      }
+    ]
+  },
+  {
+    name: 'Gold',
+    description: 'Feature store',
+    status: 'healthy',
+    lastUpdated: '2026-04-18T14:30:00Z',
+    refreshFrequency: 'Manual trigger',
+    domains: [
+      {
+        name: 'economic-catalyst',
+        type: 'blob',
+        path: 'economic-catalyst',
+        lastUpdated: '2026-04-18T14:30:00Z',
+        status: 'healthy',
+        jobName: 'gold-economic-catalyst-job'
+      },
+      {
+        name: 'quiver-data',
+        type: 'blob',
+        path: 'quiver',
+        lastUpdated: '2026-04-18T14:30:00Z',
+        status: 'healthy',
+        jobName: 'gold-quiver-data-job'
+      }
+    ]
+  }
+];
+
 describe('operational job classification', () => {
   it('seeds the expected operational job catalog without live telemetry', () => {
     const targets = buildOperationalJobTargets({});
@@ -147,6 +225,22 @@ describe('operational job classification', () => {
 
     expect(domainJobKeys.has('bronze-government-signals-job')).toBe(false);
     expect(domainJobKeys.size).toBe(0);
+  });
+
+  it('reserves economic catalyst and one quiver data job per layer for domain coverage', () => {
+    const domainJobKeys = buildDomainJobKeySet(DATA_LAYERS_WITH_CATALYST_AND_QUIVER);
+
+    expect(domainJobKeys).toEqual(
+      new Set([
+        'bronze-economic-catalyst-job',
+        'bronze-quiver-data-job',
+        'silver-economic-catalyst-job',
+        'silver-quiver-data-job',
+        'gold-economic-catalyst-job',
+        'gold-quiver-data-job'
+      ])
+    );
+    expect(domainJobKeys.has('bronze-quiver-backfill-job')).toBe(false);
   });
 
   it('classifies backtest, ranking, regime, and unknown non-domain jobs', () => {
