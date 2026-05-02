@@ -52,7 +52,7 @@ import {
   formatTimeAgo,
   getStatusConfig,
   normalizeAzureJobName,
-  resolveManagedJobName
+  resolveRunnableJobName
 } from '@/features/system-status/lib/SystemStatusHelpers';
 import {
   buildDomainJobKeySet,
@@ -287,11 +287,9 @@ export function SystemStatusPage() {
 
     for (const layer of displayDataLayers || []) {
       for (const domain of layer.domains || []) {
-        const rawJobName = resolveManagedJobName({
+        const rawJobName = resolveRunnableJobName({
           jobName: domain.jobName,
-          jobUrl: domain.jobUrl,
-          layerName: layer.name,
-          domainName: domain.name
+          jobUrl: domain.jobUrl
         });
         if (!rawJobName) continue;
         const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();

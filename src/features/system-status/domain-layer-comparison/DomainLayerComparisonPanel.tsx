@@ -91,7 +91,7 @@ import {
   hasActiveJobRunningState,
   normalizeAzureJobName,
   normalizeAzurePortalUrl,
-  resolveManagedJobName,
+  resolveRunnableJobName,
   isSuspendedJobRunningState,
   toJobStatusLabel
 } from '@/features/system-status/lib/SystemStatusHelpers';
@@ -930,11 +930,9 @@ export function DomainLayerComparisonPanel({
       const layer = layersByKey.get(layerColumn.key);
 
       for (const domain of layer?.domains || []) {
-        const configuredJobName = resolveManagedJobName({
+        const configuredJobName = resolveRunnableJobName({
           jobName: domain.jobName,
-          jobUrl: domain.jobUrl,
-          layerName: layer?.name,
-          domainName: domain?.name
+          jobUrl: domain.jobUrl
         });
         const normalizedJobName = normalizeAzureJobName(configuredJobName);
         if (normalizedJobName) {
@@ -976,11 +974,9 @@ export function DomainLayerComparisonPanel({
             .trim()
             .toLowerCase() || 'pending';
 
-        const jobName = resolveManagedJobName({
+        const jobName = resolveRunnableJobName({
           jobName: domainConfig?.jobName,
-          jobUrl: domainConfig?.jobUrl,
-          layerName: layerColumn.label,
-          domainName: row.key
+          jobUrl: domainConfig?.jobUrl
         });
         const jobKey = normalizeAzureJobName(jobName);
         const statusEntry = jobKey ? jobStatusesByKey.get(jobKey) : null;
@@ -2033,11 +2029,9 @@ export function DomainLayerComparisonPanel({
                         ? domainConfigByLayer.get(layerColumn.key)?.get(row.key)
                         : undefined;
                       const baseFolderUrl = normalizeAzurePortalUrl(domainConfig?.portalUrl) || '';
-                      const jobName = resolveManagedJobName({
+                      const jobName = resolveRunnableJobName({
                         jobName: domainConfig?.jobName,
-                        jobUrl: domainConfig?.jobUrl,
-                        layerName: layerColumn.label,
-                        domainName: row.key
+                        jobUrl: domainConfig?.jobUrl
                       });
                       const jobKey = normalizeAzureJobName(jobName);
                       const statusEntry = jobKey ? jobStatusesByKey.get(jobKey) : null;

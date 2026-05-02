@@ -7,6 +7,7 @@ import {
   hasActiveJobRunningState,
   isSuspendedJobRunningState,
   normalizeJobStatus,
+  resolveRunnableJobName,
   selectAnchoredJobRun,
   selectLatestJobRun
 } from '@/features/system-status/lib/SystemStatusHelpers';
@@ -107,5 +108,19 @@ describe('SystemStatusHelpers', () => {
         startTime: '2026-03-21T12:00:00Z'
       })
     );
+  });
+
+  it('only resolves runnable jobs from explicit metadata', () => {
+    expect(
+      resolveRunnableJobName({
+        jobName: null,
+        jobUrl:
+          'https://portal.azure.com/#resource/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/jobs/bronze-market-job/overview'
+      })
+    ).toBe('bronze-market-job');
+    expect(resolveRunnableJobName({ jobName: 'bronze-finance-job' })).toBe(
+      'bronze-finance-job'
+    );
+    expect(resolveRunnableJobName({ jobName: null, jobUrl: null })).toBe('');
   });
 });
