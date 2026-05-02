@@ -264,7 +264,7 @@ describe('JobLogStreamPanel', () => {
     expect(screen.queryByText('No log output available.')).not.toBeInTheDocument();
   });
 
-  it('shows the latest execution status instead of the live resource state', async () => {
+  it('shows the live running resource state over a stale terminal execution status', async () => {
     const job: JobLogStreamTarget = {
       ...JOBS[1],
       recentStatus: 'failed'
@@ -285,8 +285,8 @@ describe('JobLogStreamPanel', () => {
     renderWithProviders(<JobLogStreamPanel jobs={[job]} />);
 
     expect(await screen.findByText('beta snapshot')).toBeInTheDocument();
-    expect(screen.getByText('FAILED')).toBeInTheDocument();
-    expect(screen.queryByText('RUNNING')).not.toBeInTheDocument();
+    expect(screen.getByText('RUNNING')).toBeInTheDocument();
+    expect(screen.queryByText('FAILED')).not.toBeInTheDocument();
   });
 
   it('anchors the console tail to an older active execution when one is still running', async () => {

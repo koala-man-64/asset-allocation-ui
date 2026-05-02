@@ -975,9 +975,10 @@ describe('SystemStatusPage', () => {
       await coverageProps.onRefresh?.();
     });
 
-    expect(vi.mocked(DataService.getSystemStatusView).mock.calls.at(-1)).toEqual([
-      { refresh: true }
-    ]);
+    expect(vi.mocked(DataService.getSystemStatusView)).toHaveBeenLastCalledWith(
+      { refresh: true },
+      expect.any(AbortSignal)
+    );
 
     await waitFor(() => {
       const latestProps = domainLayerCoverageSpy.mock.calls.at(-1)?.[0] as { overall: string };
@@ -985,8 +986,9 @@ describe('SystemStatusPage', () => {
     });
   });
 
-  it('loads the unified status view from cache and forces a refresh every 10 seconds', async () => {
+  it('loads the unified status view from cache and refetches on the adaptive interval', async () => {
     vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const now = new Date().toISOString();
 
     vi.mocked(DataService.getSystemStatusView)
@@ -1070,16 +1072,17 @@ describe('SystemStatusPage', () => {
     expect(initialCallCount).toBeGreaterThan(0);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(30_000);
       await Promise.resolve();
     });
 
     expect(vi.mocked(DataService.getSystemStatusView).mock.calls.length).toBeGreaterThan(
       initialCallCount
     );
-    expect(vi.mocked(DataService.getSystemStatusView).mock.calls.at(-1)?.[0]).toEqual({
-      refresh: true
-    });
+    expect(vi.mocked(DataService.getSystemStatusView)).toHaveBeenLastCalledWith(
+      {},
+      expect.any(AbortSignal)
+    );
 
     const coverageProps = domainLayerCoverageSpy.mock.calls.at(-1)?.[0] as {
       overall: string;

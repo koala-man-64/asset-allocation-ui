@@ -629,10 +629,7 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     await user.click(screen.getByRole('button', { name: /Stop all running .* runs/i }));
 
     await waitFor(() => {
-      expect(stopJobMock).toHaveBeenCalledWith('aca-job-market', [
-        ['systemStatusView'],
-        ['systemHealth']
-      ]);
+      expect(stopJobMock).toHaveBeenCalledWith('aca-job-market', [['systemStatusView']]);
     });
   });
 
@@ -821,12 +818,10 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
       expect(triggerJobMock).toHaveBeenCalledTimes(2);
     });
     expect(triggerJobMock).toHaveBeenNthCalledWith(1, 'aca-job-market-bronze', [
-      ['systemStatusView'],
-      ['systemHealth']
+      ['systemStatusView']
     ]);
     expect(triggerJobMock).toHaveBeenNthCalledWith(2, 'aca-job-earnings-bronze', [
-      ['systemStatusView'],
-      ['systemHealth']
+      ['systemStatusView']
     ]);
   });
 

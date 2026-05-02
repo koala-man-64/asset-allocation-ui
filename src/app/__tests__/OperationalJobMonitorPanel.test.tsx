@@ -182,7 +182,7 @@ describe('OperationalJobMonitorPanel', () => {
     );
   });
 
-  it('runs a failed latest execution even when the managed resource still says running', () => {
+  it('stops a live running managed job even when the latest execution is failed', () => {
     renderWithProviders(
       <OperationalJobMonitorPanel
         jobs={[
@@ -196,13 +196,13 @@ describe('OperationalJobMonitorPanel', () => {
     );
 
     expect(
-      within(screen.getByRole('row', { name: /aca-job-backtest-runner/i })).getByText('FAILED')
+      within(screen.getByRole('row', { name: /aca-job-backtest-runner/i })).getByText('RUNNING')
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Run aca-job-backtest-runner' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop aca-job-backtest-runner' }));
 
-    expect(triggerJobSpy).toHaveBeenCalledWith('aca-job-backtest-runner');
-    expect(setJobSuspendedSpy).not.toHaveBeenCalled();
+    expect(setJobSuspendedSpy).toHaveBeenCalledWith('aca-job-backtest-runner', true);
+    expect(triggerJobSpy).not.toHaveBeenCalled();
   });
 
   it('selects a job for the focused log stream from the table action', async () => {

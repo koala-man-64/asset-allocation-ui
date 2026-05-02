@@ -227,7 +227,7 @@ describe('operational job classification', () => {
     );
   });
 
-  it('uses the latest execution status even when the job resource is still running', () => {
+  it('uses the live running resource state over a stale terminal execution status', () => {
     const recentJobs: JobRun[] = [
       {
         jobName: 'aca-job-ranking-materialize',
@@ -264,7 +264,7 @@ describe('operational job classification', () => {
     expect(targets).toEqual([
       expect.objectContaining({
         name: 'aca-job-ranking-materialize',
-        recentStatus: 'failed',
+        recentStatus: 'running',
         runningState: 'Running',
         startTime: '2026-04-18T14:25:00Z'
       })
