@@ -106,4 +106,31 @@ describe('config auth resolution', () => {
     expect(config.authProvider).toBe('disabled');
     expect(config.authRequired).toBe(false);
   });
+
+  it('lets Vite auth env drive local development when runtime config only supplies API routing', async () => {
+    vi.stubEnv('VITE_UI_AUTH_ENABLED', 'true');
+    vi.stubEnv('VITE_UI_AUTH_PROVIDER', 'oidc');
+    vi.stubEnv('VITE_OIDC_AUTHORITY', 'https://login.microsoftonline.com/example');
+    vi.stubEnv('VITE_OIDC_CLIENT_ID', 'spa-client-id');
+    vi.stubEnv('VITE_OIDC_SCOPES', 'api://asset-allocation-api/user_impersonation openid profile');
+    window.__API_UI_CONFIG__ = {
+      apiBaseUrl: '/api'
+    };
+
+    const { config } = await import('./config');
+
+    expect(config.uiAuthEnabled).toBe(true);
+    expect(config.authRequired).toBe(true);
+    expect(config.authProvider).toBe('oidc');
+    expect(config.authSessionMode).toBe('cookie');
+    expect(config.oidcEnabled).toBe(true);
+  });
+
+  it('defaults local test/dev auth off when neither runtime config nor Vite env opts in', async () => {
+    const { config } = await import('./config');
+
+    expect(config.uiAuthEnabled).toBe(false);
+    expect(config.authProvider).toBe('disabled');
+    expect(config.authRequired).toBe(false);
+  });
 });

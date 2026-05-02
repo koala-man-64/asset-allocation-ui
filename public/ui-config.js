@@ -4,10 +4,5 @@
 /* global window */
 
 window.__API_UI_CONFIG__ = {
-  apiBaseUrl: '/api',
-  uiAuthEnabled: 'false',
-  authRequired: 'false',
-  authProvider: 'disabled',
-  authSessionMode: 'bearer',
-  oidcEnabled: 'false'
+  apiBaseUrl: '/api'
 };
