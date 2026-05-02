@@ -125,9 +125,9 @@ describe('LeftNavigation', () => {
     expect(systemStatusLink).toHaveAttribute('aria-current', 'page');
     expect(systemStatusLink.className).not.toContain('({ isActive })');
     expect(systemStatusLink.className).toContain('pr-[5.5rem]');
-    expect(screen.getByRole('button', { name: 'Pin System Status to top' }).parentElement).toHaveClass(
-      'w-20'
-    );
+    expect(
+      screen.getByRole('button', { name: 'Pin System Status to top' }).parentElement
+    ).toHaveClass('w-20');
     expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login');
     expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument();
     expect(screen.getByText('UPTIME CLOCK')).toBeInTheDocument();
@@ -137,6 +137,30 @@ describe('LeftNavigation', () => {
     expect(screen.getByText('STRATEGY SETUP')).toBeInTheDocument();
     expect(screen.getByText('PORTFOLIO & TRADING')).toBeInTheDocument();
     expect(screen.getByText('OPS TOOLS')).toBeInTheDocument();
+  });
+
+  it('resizes the desktop navigation from the separator handle', async () => {
+    renderNavigation();
+
+    const sidebarWrapper = document.querySelector('[data-slot="sidebar-wrapper"]') as HTMLElement;
+    const resizeHandle = screen.getByRole('separator', { name: 'Resize navigation' });
+
+    expect(sidebarWrapper.style.getPropertyValue('--sidebar-width')).toBe('256px');
+    expect(resizeHandle).toHaveAttribute('aria-valuenow', '256');
+
+    fireEvent.pointerDown(resizeHandle, { clientX: 256 });
+
+    await waitFor(() => {
+      expect(document.body.style.cursor).toBe('ew-resize');
+    });
+
+    fireEvent.pointerMove(window, { clientX: 340 });
+    fireEvent.pointerUp(window);
+
+    await waitFor(() => {
+      expect(sidebarWrapper.style.getPropertyValue('--sidebar-width')).toBe('340px');
+    });
+    expect(window.localStorage.getItem('sidebar_width_px')).toBe('340');
   });
 
   it('navigates through the shell when a nav link is clicked', async () => {
