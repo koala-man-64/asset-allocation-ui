@@ -1,24 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { renderWithProviders } from '@/test/utils';
 import { OperationalJobMonitorPanel } from '@/features/system-status/components/OperationalJobMonitorPanel';
 import type { OperationalJobTarget } from '@/features/system-status/lib/operationalJobs';
-import type { RunRecordResponse } from '@/services/backtestApi';
 
-const { triggerJobSpy, setJobSuspendedSpy, refreshRunsSpy, jobLogStreamSpy, runListState } =
-  vi.hoisted(() => ({
-    triggerJobSpy: vi.fn(),
-    setJobSuspendedSpy: vi.fn(),
-    refreshRunsSpy: vi.fn(),
-    jobLogStreamSpy: vi.fn(),
-    runListState: {
-      runs: [] as RunRecordResponse[],
-      loading: false,
-      error: undefined as string | undefined
-    }
-  }));
+const { triggerJobSpy, setJobSuspendedSpy } = vi.hoisted(() => ({
+  triggerJobSpy: vi.fn(),
+  setJobSuspendedSpy: vi.fn()
+}));
 
 vi.mock('@/hooks/useJobTrigger', () => ({
   useJobTrigger: () => ({
@@ -32,21 +23,6 @@ vi.mock('@/hooks/useJobSuspend', () => ({
     jobControl: null,
     setJobSuspended: setJobSuspendedSpy
   })
-}));
-
-vi.mock('@/services/backtestHooks', () => ({
-  useRunList: () => ({
-    ...runListState,
-    refresh: refreshRunsSpy
-  })
-}));
-
-vi.mock('@/features/system-status/components/JobLogStreamPanel', () => ({
-  JobLogStreamPanel: (props: unknown) => {
-    jobLogStreamSpy(props);
-    const selectedJobName = (props as { selectedJobName?: string }).selectedJobName || '';
-    return <div data-testid="mock-operational-log-stream">{selectedJobName}</div>;
-  }
 }));
 
 const JOBS: OperationalJobTarget[] = [
@@ -120,34 +96,13 @@ describe('OperationalJobMonitorPanel', () => {
   beforeEach(() => {
     triggerJobSpy.mockReset();
     setJobSuspendedSpy.mockReset();
-    refreshRunsSpy.mockReset();
-    jobLogStreamSpy.mockClear();
-    runListState.runs = [
-      {
-        run_id: 'run-queued',
-        run_name: 'queued backtest',
-        status: 'queued',
-        submitted_at: '2026-04-18T14:35:00Z',
-        start_date: '2026-01-01',
-        end_date: '2026-04-01'
-      },
-      {
-        run_id: 'run-failed',
-        status: 'failed',
-        submitted_at: '2026-04-18T13:35:00Z',
-        completed_at: '2026-04-18T13:40:00Z',
-        error: 'insufficient bars'
-      }
-    ];
-    runListState.loading = false;
-    runListState.error = undefined;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('renders operational job categories and the backtest application queue', async () => {
+  it('renders operational job categories without the run queue or embedded console stream', () => {
     renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
 
     expect(
@@ -159,25 +114,12 @@ describe('OperationalJobMonitorPanel', () => {
     expect(screen.getByRole('row', { name: /intraday-monitor-job/i })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /results-reconcile-job/i })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /symbol-cleanup-job/i })).toBeInTheDocument();
-    expect(screen.getByText('queued backtest')).toBeInTheDocument();
-    expect(screen.getByText('insufficient bars')).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(jobLogStreamSpy).toHaveBeenCalled();
-    });
-    expect(jobLogStreamSpy.mock.calls.at(-1)?.[0]).toEqual(
-      expect.objectContaining({
-        selectedJobName: 'aca-job-backtest-runner',
-        jobs: expect.arrayContaining([
-          expect.objectContaining({
-            name: 'aca-job-ranking-materialize'
-          })
-        ])
-      })
-    );
+    expect(screen.queryByText('Backtest Run Queue')).not.toBeInTheDocument();
+    expect(screen.queryByText('Operational Console Stream')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /View logs for/i })).not.toBeInTheDocument();
   });
 
-  it('filters by category and keeps the console selection aligned', async () => {
+  it('filters by category', async () => {
     const user = userEvent.setup();
     renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
 
@@ -186,18 +128,7 @@ describe('OperationalJobMonitorPanel', () => {
     expect(screen.queryByRole('row', { name: /aca-job-backtest-runner/i })).not.toBeInTheDocument();
     expect(screen.getByRole('row', { name: /aca-job-ranking-materialize/i })).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(jobLogStreamSpy.mock.calls.at(-1)?.[0]).toEqual(
-        expect.objectContaining({
-          selectedJobName: 'aca-job-ranking-materialize',
-          jobs: [
-            expect.objectContaining({
-              name: 'aca-job-ranking-materialize'
-            })
-          ]
-        })
-      );
-    });
+    expect(screen.queryByRole('row', { name: /aca-job-regime-refresh/i })).not.toBeInTheDocument();
   });
 
   it('filters seeded intraday jobs as a dedicated operational category', async () => {
@@ -210,23 +141,7 @@ describe('OperationalJobMonitorPanel', () => {
     expect(screen.getByRole('row', { name: /intraday-monitor-job/i })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /intraday-market-refresh-job/i })).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(jobLogStreamSpy.mock.calls.at(-1)?.[0]).toEqual(
-        expect.objectContaining({
-          selectedJobName: 'intraday-monitor-job',
-          jobs: [
-            expect.objectContaining({
-              name: 'intraday-monitor-job',
-              domainName: 'Intraday Monitoring'
-            }),
-            expect.objectContaining({
-              name: 'intraday-market-refresh-job',
-              domainName: 'Intraday Monitoring'
-            })
-          ]
-        })
-      );
-    });
+    expect(screen.queryByRole('row', { name: /results-reconcile-job/i })).not.toBeInTheDocument();
   });
 
   it('runs stopped jobs and stops running managed jobs', () => {
@@ -234,15 +149,9 @@ describe('OperationalJobMonitorPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Run aca-job-ranking-materialize' }));
     expect(triggerJobSpy).toHaveBeenCalledWith('aca-job-ranking-materialize');
-    expect(screen.getByTestId('mock-operational-log-stream')).toHaveTextContent(
-      'aca-job-ranking-materialize'
-    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop aca-job-backtest-runner' }));
     expect(setJobSuspendedSpy).toHaveBeenCalledWith('aca-job-backtest-runner', true);
-    expect(screen.getByTestId('mock-operational-log-stream')).toHaveTextContent(
-      'aca-job-backtest-runner'
-    );
   });
 
   it('stops a live running managed job even when the latest execution is failed', () => {
@@ -268,21 +177,7 @@ describe('OperationalJobMonitorPanel', () => {
     expect(triggerJobSpy).not.toHaveBeenCalled();
   });
 
-  it('selects a job for the focused log stream from the table action', async () => {
-    renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'View logs for aca-job-regime-refresh' }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-operational-log-stream')).toHaveTextContent(
-        'aca-job-regime-refresh'
-      );
-    });
-  });
-
   it('renders a precise empty state when no operational telemetry is visible', () => {
-    runListState.runs = [];
-
     renderWithProviders(<OperationalJobMonitorPanel jobs={[]} />);
 
     expect(screen.getByText(/No operational jobs are currently visible/i)).toBeInTheDocument();

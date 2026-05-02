@@ -818,7 +818,7 @@ describe('SystemStatusPage', () => {
     expect(operationalNames).not.toContain('bronze-quiver-backfill-job');
   });
 
-  it('passes the latest execution status and start time to the job console stream panel', async () => {
+  it('passes domain and operational jobs to the job console stream panel', async () => {
     renderWithProviders(<SystemStatusPage />);
 
     await waitFor(() => {
@@ -835,17 +835,19 @@ describe('SystemStatusPage', () => {
     };
 
     const jobStreamNames = jobStreamProps.jobs.map((job) => job.name);
-    expect(jobStreamNames).not.toContain('aca-job-backtest-runner');
-    for (const expectedOperationalJobName of [
-      'gold-regime-job',
-      'intraday-monitor-job',
-      'intraday-market-refresh-job',
-      'platinum-rankings-job',
-      'results-reconcile-job',
-      'symbol-cleanup-job'
-    ]) {
-      expect(jobStreamNames).not.toContain(expectedOperationalJobName);
-    }
+    expect(jobStreamNames).toEqual(
+      expect.arrayContaining([
+        'aca-job-market',
+        'aca-job-backtest-runner',
+        'aca-job-regime-refresh',
+        'gold-regime-job',
+        'intraday-monitor-job',
+        'intraday-market-refresh-job',
+        'platinum-rankings-job',
+        'results-reconcile-job',
+        'symbol-cleanup-job'
+      ])
+    );
     expect(jobStreamProps.jobs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -865,6 +867,12 @@ describe('SystemStatusPage', () => {
               unit: 'Bytes'
             })
           ])
+        }),
+        expect.objectContaining({
+          name: 'aca-job-backtest-runner',
+          runningState: 'Running',
+          recentStatus: 'running',
+          startTime: MOCK_RUN_TIMESTAMPS.latest
         })
       ])
     );
@@ -1019,9 +1027,9 @@ describe('SystemStatusPage', () => {
       jobs: Array<{ label: string; name: string }>;
     };
     const jobStreamNames = jobStreamProps.jobs.map((job) => job.name);
-    expect(jobStreamNames).not.toContain('gold-regime-job');
-    expect(jobStreamNames).not.toContain('platinum-rankings-job');
-    expect(jobStreamNames).not.toContain('results-reconcile-job');
+    expect(jobStreamNames).toEqual(
+      expect.arrayContaining(['gold-regime-job', 'platinum-rankings-job', 'results-reconcile-job'])
+    );
   });
 
   it('merges optimistic running overrides into the system status props', async () => {

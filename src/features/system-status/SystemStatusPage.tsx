@@ -57,7 +57,8 @@ import {
 import {
   buildDomainJobKeySet,
   buildOperationalJobTargets,
-  isExpectedOperationalJobName
+  isExpectedOperationalJobName,
+  type OperationalJobTarget
 } from '@/features/system-status/lib/operationalJobs';
 import { isDomainLayerCoverageDomainVisible } from '@/features/system-status/lib/coverageDomains';
 import { normalizeDomainKey } from '@/features/system-status/components/SystemPurgeControls';
@@ -169,6 +170,22 @@ function SummaryCard({
       <div className="mt-3 text-sm leading-5 text-muted-foreground">{detail}</div>
     </div>
   );
+}
+
+function buildOperationalJobConsoleTargets(
+  operationalJobs: OperationalJobTarget[]
+): JobLogStreamTarget[] {
+  return operationalJobs.map((job) => ({
+    name: job.name,
+    label: job.label,
+    layerName: null,
+    domainName: job.categoryLabel,
+    jobUrl: job.jobUrl || null,
+    runningState: job.runningState || null,
+    recentStatus: job.recentStatus || null,
+    startTime: job.startTime || null,
+    signals: job.signals || null
+  }));
 }
 
 export function SystemStatusPage() {
@@ -412,6 +429,11 @@ export function SystemStatusPage() {
     [displayDataLayers, jobStates, jobStatusesByKey, managedContainerJobs, systemHealth?.recentJobs]
   );
 
+  const jobConsoleStreamJobs = useMemo(
+    () => [...domainJobLogStreamJobs, ...buildOperationalJobConsoleTargets(operationalJobs)],
+    [domainJobLogStreamJobs, operationalJobs]
+  );
+
   const handleMetadataSnapshotChange = useCallback(
     (
       updater: (
@@ -647,7 +669,7 @@ export function SystemStatusPage() {
 
         <ErrorBoundary>
           <Suspense fallback={<Skeleton className="h-[260px] w-full rounded-xl bg-muted/20" />}>
-            <JobLogStreamPanel jobs={domainJobLogStreamJobs} />
+            <JobLogStreamPanel jobs={jobConsoleStreamJobs} />
           </Suspense>
         </ErrorBoundary>
       </div>

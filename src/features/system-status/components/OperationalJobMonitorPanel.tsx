@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Activity,
   ExternalLink,
-  History,
   Layers3,
   Loader2,
   Orbit,
   Play,
   RefreshCw,
-  ScrollText,
   Square,
   TestTubeDiagonal,
   Workflow
@@ -26,12 +24,10 @@ import {
 } from '@/app/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { cn } from '@/app/components/ui/utils';
-import { JobLogStreamPanel } from '@/features/system-status/components/JobLogStreamPanel';
 import {
   effectiveJobStatus,
   formatDuration,
   formatRecordCount,
-  formatTimeAgo,
   formatTimestamp,
   getAzureJobExecutionsUrl,
   getStatusBadge,
@@ -45,8 +41,6 @@ import {
 } from '@/features/system-status/lib/operationalJobs';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
 import { useJobTrigger } from '@/hooks/useJobTrigger';
-import { useRunList } from '@/services/backtestHooks';
-import type { RunRecordResponse, RunStatus } from '@/services/backtestApi';
 
 type CategoryFilter = 'all' | OperationalJobCategory;
 
@@ -77,53 +71,6 @@ function pluralize(count: number, singular: string, plural = `${singular}s`) {
 function formatOptionalTimestamp(value?: string | null): string {
   if (!value) return '-';
   return `${formatTimestamp(value)} ago`;
-}
-
-function runStatusToJobStatus(status: RunStatus): string {
-  if (status === 'completed') return 'success';
-  if (status === 'failed') return 'failed';
-  if (status === 'running') return 'running';
-  return 'pending';
-}
-
-function formatRunName(run: RunRecordResponse): string {
-  return String(run.run_name || run.run_id || 'Backtest run');
-}
-
-function formatRunWindow(run: RunRecordResponse): string {
-  const start = run.start_date || '';
-  const end = run.end_date || '';
-  if (start && end) return `${start} to ${end}`;
-  if (start) return `From ${start}`;
-  if (end) return `Through ${end}`;
-  return 'Window not provided';
-}
-
-function formatRunTiming(run: RunRecordResponse): string {
-  if (run.status === 'queued') {
-    return run.submitted_at ? `Queued ${formatTimeAgo(run.submitted_at)} ago` : 'Queued';
-  }
-  if (run.status === 'running') {
-    return run.started_at ? `Started ${formatTimeAgo(run.started_at)} ago` : 'Running';
-  }
-  if (run.completed_at) {
-    return `Completed ${formatTimeAgo(run.completed_at)} ago`;
-  }
-  return run.submitted_at ? `Submitted ${formatTimeAgo(run.submitted_at)} ago` : '-';
-}
-
-function buildLogTargets(jobs: OperationalJobTarget[]) {
-  return jobs.map((job) => ({
-    name: job.name,
-    label: job.label,
-    layerName: null,
-    domainName: job.categoryLabel,
-    jobUrl: job.jobUrl || null,
-    runningState: job.runningState || null,
-    recentStatus: job.recentStatus || null,
-    startTime: job.startTime || null,
-    signals: job.signals || null
-  }));
 }
 
 function CategoryBadge({ category }: { category: OperationalJobCategory }) {
@@ -184,15 +131,8 @@ export function OperationalJobMonitorPanel({
   isFetching?: boolean;
 }) {
   const [activeCategory, setActiveCategory] = useState<CategoryFilter>('all');
-  const [selectedJobName, setSelectedJobName] = useState('');
   const { triggeringJob, triggerJob } = useJobTrigger();
   const { jobControl, setJobSuspended } = useJobSuspend();
-  const {
-    runs: backtestRuns,
-    loading: backtestRunsLoading,
-    error: backtestRunsError,
-    refresh: refreshBacktestRuns
-  } = useRunList({ limit: 8 });
 
   const categoryCounts = useMemo(() => {
     const counts = new Map<OperationalJobCategory, number>();
@@ -210,46 +150,24 @@ export function OperationalJobMonitorPanel({
     return jobs.filter((job) => job.category === activeCategory);
   }, [activeCategory, jobs]);
 
-  const logTargets = useMemo(() => buildLogTargets(filteredJobs), [filteredJobs]);
-
-  useEffect(() => {
-    if (!filteredJobs.length) {
-      setSelectedJobName('');
-      return;
-    }
-    if (filteredJobs.some((job) => job.name === selectedJobName)) {
-      return;
-    }
-    setSelectedJobName(filteredJobs[0].name);
-  }, [filteredJobs, selectedJobName]);
-
   const runningJobs = jobs.filter(
     (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'running'
   ).length;
   const failedJobs = jobs.filter(
     (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'failed'
   ).length;
-  const queuedBacktests = backtestRuns.filter((run) => run.status === 'queued').length;
-  const activeBacktests = backtestRuns.filter((run) =>
-    ['queued', 'running'].includes(run.status)
-  ).length;
 
   const handleRefresh = () => {
-    void refreshBacktestRuns();
     void onRefresh?.();
   };
 
   const handleJobControlAction = (job: OperationalJobTarget, isRunning: boolean) => {
-    setSelectedJobName(job.name);
     if (isRunning) {
       void setJobSuspended(job.name, true);
       return;
     }
     void triggerJob(job.name);
   };
-
-  const hasOperationalVisibility =
-    jobs.length > 0 || backtestRuns.length > 0 || backtestRunsLoading || Boolean(backtestRunsError);
 
   return (
     <section className="mcm-panel overflow-hidden" aria-labelledby="operational-jobs-heading">
@@ -271,20 +189,17 @@ export function OperationalJobMonitorPanel({
             variant="outline"
             size="sm"
             onClick={handleRefresh}
-            disabled={isRefreshing || isFetching || backtestRunsLoading}
+            disabled={isRefreshing || isFetching}
           >
             <RefreshCw
-              className={cn(
-                'h-4 w-4',
-                isRefreshing || isFetching || backtestRunsLoading ? 'animate-spin' : ''
-              )}
+              className={cn('h-4 w-4', isRefreshing || isFetching ? 'animate-spin' : '')}
             />
             Refresh Ops
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 p-6 md:grid-cols-3">
         <SummaryTile
           label="Tracked Jobs"
           value={String(jobs.length)}
@@ -300,12 +215,6 @@ export function OperationalJobMonitorPanel({
               : 'No failed operational job telemetry is visible.'
           }
           tone={failedJobs > 0 ? 'risk' : 'good'}
-        />
-        <SummaryTile
-          label="Backtest Queue"
-          value={String(activeBacktests)}
-          detail={`${pluralize(queuedBacktests, 'run')} queued in the application backtest list.`}
-          tone={activeBacktests > 0 ? 'watch' : 'neutral'}
         />
         <SummaryTile
           label="Classifier"
@@ -348,7 +257,7 @@ export function OperationalJobMonitorPanel({
         })}
       </div>
 
-      {!hasOperationalVisibility ? (
+      {jobs.length === 0 ? (
         <div className="p-6">
           <div className="rounded-[1.2rem] border border-dashed border-mcm-walnut/30 bg-mcm-paper/70 p-6 text-sm text-muted-foreground">
             No operational jobs are currently visible. Domain ingestion jobs remain available in the
@@ -356,220 +265,138 @@ export function OperationalJobMonitorPanel({
           </div>
         </div>
       ) : (
-        <div className="space-y-6 p-6">
-          <div className="min-w-0 space-y-5">
-            <div className="overflow-x-auto rounded-[1.2rem] border border-mcm-walnut/18 bg-mcm-paper/72">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Job / Workflow</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Start</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Trigger / Source</TableHead>
-                    <TableHead>Records / Output</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredJobs.map((job) => {
-                    const status = effectiveJobStatus(job.recentStatus, job.runningState);
-                    const isRunning = status === 'running';
-                    const isBusy =
-                      triggeringJob === job.name ||
-                      (jobControl?.jobName === job.name &&
-                        (jobControl.action === 'stop' || jobControl.action === 'suspend'));
-                    const controlsDisabled = Boolean(triggeringJob) || Boolean(jobControl);
-                    const executionUrl = getAzureJobExecutionsUrl(job.jobUrl);
+        <div className="p-6">
+          <div className="overflow-x-auto rounded-[1.2rem] border border-mcm-walnut/18 bg-mcm-paper/72">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Job / Workflow</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Last Start</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Trigger / Source</TableHead>
+                  <TableHead>Records / Output</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredJobs.map((job) => {
+                  const status = effectiveJobStatus(job.recentStatus, job.runningState);
+                  const isRunning = status === 'running';
+                  const isBusy =
+                    triggeringJob === job.name ||
+                    (jobControl?.jobName === job.name &&
+                      (jobControl.action === 'stop' || jobControl.action === 'suspend'));
+                  const controlsDisabled = Boolean(triggeringJob) || Boolean(jobControl);
+                  const executionUrl = getAzureJobExecutionsUrl(job.jobUrl);
 
-                    return (
-                      <TableRow
-                        key={job.name}
-                        className={selectedJobName === job.name ? 'bg-mcm-mustard/10' : undefined}
-                      >
-                        <TableCell>
-                          <div className="min-w-0">
-                            <div className="font-medium text-foreground">{job.name}</div>
-                            <div className="mt-1 text-xs capitalize text-muted-foreground">
-                              {job.jobType ? job.jobType.replaceAll('-', ' ') : 'Managed job'}
-                            </div>
+                  return (
+                    <TableRow key={job.name}>
+                      <TableCell>
+                        <div className="min-w-0">
+                          <div className="font-medium text-foreground">{job.name}</div>
+                          <div className="mt-1 text-xs capitalize text-muted-foreground">
+                            {job.jobType ? job.jobType.replaceAll('-', ' ') : 'Managed job'}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <CategoryBadge category={job.category} />
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {getStatusIcon(status)}
-                            {getStatusBadge(status)}
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {formatOptionalTimestamp(job.startTime)}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {formatDuration(job.duration)}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {job.triggeredBy || job.runningState || '-'}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {formatRecordCount(job.recordsProcessed)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <CategoryBadge category={job.category} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(status)}
+                          {getStatusBadge(status)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {formatOptionalTimestamp(job.startTime)}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {formatDuration(job.duration)}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {job.triggeredBy || job.runningState || '-'}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {formatRecordCount(job.recordsProcessed)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              {executionUrl ? (
                                 <Button
+                                  asChild
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8"
-                                  onClick={() => setSelectedJobName(job.name)}
-                                  aria-label={`View logs for ${job.name}`}
+                                  aria-label={`Open ${job.name} executions in Azure`}
                                 >
-                                  <ScrollText className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">View logs</TooltipContent>
-                            </Tooltip>
-
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                {executionUrl ? (
-                                  <Button
-                                    asChild
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    aria-label={`Open ${job.name} executions in Azure`}
-                                  >
-                                    <a href={executionUrl} target="_blank" rel="noreferrer">
-                                      <ExternalLink className="h-4 w-4" />
-                                    </a>
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    disabled
-                                    aria-label={`No Azure execution link for ${job.name}`}
-                                  >
+                                  <a href={executionUrl} target="_blank" rel="noreferrer">
                                     <ExternalLink className="h-4 w-4" />
-                                  </Button>
-                                )}
-                              </TooltipTrigger>
-                              <TooltipContent side="left">
-                                {executionUrl ? 'Open Azure executions' : 'Azure link unavailable'}
-                              </TooltipContent>
-                            </Tooltip>
-
-                            <Tooltip>
-                              <TooltipTrigger asChild>
+                                  </a>
+                                </Button>
+                              ) : (
                                 <Button
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8"
-                                  disabled={controlsDisabled}
-                                  onClick={() => handleJobControlAction(job, isRunning)}
-                                  aria-label={isRunning ? `Stop ${job.name}` : `Run ${job.name}`}
+                                  disabled
+                                  aria-label={`No Azure execution link for ${job.name}`}
                                 >
-                                  {isBusy ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : isRunning ? (
-                                    <Square className="h-4 w-4" />
-                                  ) : (
-                                    <Play className="h-4 w-4" />
-                                  )}
+                                  <ExternalLink className="h-4 w-4" />
                                 </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">
-                                {isRunning ? 'Stop job' : 'Run job'}
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                              )}
+                            </TooltipTrigger>
+                            <TooltipContent side="left">
+                              {executionUrl ? 'Open Azure executions' : 'Azure link unavailable'}
+                            </TooltipContent>
+                          </Tooltip>
 
-                  {filteredJobs.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={8}
-                        className="py-6 text-center text-sm text-muted-foreground"
-                      >
-                        No operational jobs match this category filter.
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                disabled={controlsDisabled}
+                                onClick={() => handleJobControlAction(job, isRunning)}
+                                aria-label={isRunning ? `Stop ${job.name}` : `Run ${job.name}`}
+                              >
+                                {isBusy ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : isRunning ? (
+                                  <Square className="h-4 w-4" />
+                                ) : (
+                                  <Play className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">
+                              {isRunning ? 'Stop job' : 'Run job'}
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
                       </TableCell>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                  );
+                })}
 
-            <div className="rounded-[1.2rem] border border-mcm-walnut/18 bg-mcm-paper/72 p-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2 font-display text-lg text-foreground">
-                    <History className="h-5 w-5 text-mcm-teal" />
-                    Backtest Run Queue
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Application run records from the backtest service.
-                  </p>
-                </div>
-                {backtestRunsError ? <Badge variant="destructive">Queue unavailable</Badge> : null}
-              </div>
-
-              {backtestRunsLoading ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">
-                  Loading backtest runs...
-                </div>
-              ) : backtestRuns.length ? (
-                <div className="space-y-2">
-                  {backtestRuns.map((run) => (
-                    <div
-                      key={run.run_id}
-                      className="grid gap-3 rounded-xl border border-mcm-walnut/12 bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto]"
+                {filteredJobs.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={8}
+                      className="py-6 text-center text-sm text-muted-foreground"
                     >
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-foreground">
-                          {formatRunName(run)}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {formatRunWindow(run)}
-                        </div>
-                        {run.error ? (
-                          <div className="mt-1 text-xs text-destructive">{run.error}</div>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                        {getStatusBadge(runStatusToJobStatus(run.status))}
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {formatRunTiming(run)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-mcm-walnut/24 bg-background/60 p-4 text-sm text-muted-foreground">
-                  No backtest application runs are currently visible.
-                </div>
-              )}
-            </div>
+                      No operational jobs match this category filter.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
-
-          <JobLogStreamPanel
-            jobs={logTargets}
-            selectedJobName={selectedJobName}
-            onSelectedJobNameChange={setSelectedJobName}
-            kicker="Operational Tails"
-            title="Operational Console Stream"
-            description="Tail one operational job at a time while keeping domain ingestion logs out of this feed."
-            emptyDescription="No operational jobs are available to stream."
-          />
         </div>
       )}
     </section>
