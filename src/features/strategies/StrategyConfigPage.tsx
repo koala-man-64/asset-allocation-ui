@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { strategyApi } from '@/services/strategyApi';
 import { backtestApi } from '@/services/backtestApi';
@@ -97,7 +98,10 @@ export function StrategyConfigPage() {
       return;
     }
 
-    if (!selectedStrategyName || !strategies.some((strategy) => strategy.name === selectedStrategyName)) {
+    if (
+      !selectedStrategyName ||
+      !strategies.some((strategy) => strategy.name === selectedStrategyName)
+    ) {
       const fallbackStrategy = sortStrategies(strategies, 'updated-desc')[0];
       setSelectedStrategyName(fallbackStrategy?.name || strategies[0].name);
     }
@@ -200,12 +204,16 @@ export function StrategyConfigPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => openEditor('create')}>Create Strategy</Button>
+          <Button onClick={() => openEditor('create')}>
+            <Plus className="h-4 w-4" />
+            Create Strategy
+          </Button>
         </div>
       </div>
 
-      <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1fr)_minmax(420px,1fr)]">
+      <div className="flex flex-col gap-6">
         <StrategyLibraryRail
+          layout="stacked"
           strategies={filteredStrategies}
           selectedStrategyName={selectedStrategyName}
           searchText={librarySearchText}

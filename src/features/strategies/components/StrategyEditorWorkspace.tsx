@@ -84,7 +84,10 @@ function getEditorTitle(mode: StrategyEditorMode): string {
   return 'Edit Strategy';
 }
 
-function getEditorDescription(mode: StrategyEditorMode, sourceStrategyName?: string | null): string {
+function getEditorDescription(
+  mode: StrategyEditorMode,
+  sourceStrategyName?: string | null
+): string {
   if (mode === 'create') {
     return 'Author a new strategy record without leaving the desk workspace.';
   }
@@ -250,820 +253,880 @@ export function StrategyEditorWorkspace({
 
   return (
     <>
-      <aside className="mcm-panel flex min-h-[680px] flex-col overflow-hidden">
-      <div className="border-b border-border/40 px-5 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{headerBadge}</Badge>
-              {isDirty ? <Badge variant="outline">Unsaved changes</Badge> : null}
-              {mode === 'duplicate' && sourceStrategyName ? (
-                <Badge variant="outline">
-                  <CopyPlus className="h-3.5 w-3.5" />
-                  From {sourceStrategyName}
-                </Badge>
-              ) : null}
-            </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-                Editor Workspace
-              </p>
-              <h2 className="font-display text-xl text-foreground">{getEditorTitle(mode)}</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {getEditorDescription(mode, sourceStrategyName)}
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/70 px-3 py-2 text-right">
-            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-              Draft focus
-            </div>
-            <div className="mt-1 text-sm font-semibold text-foreground">
-              {draftName?.trim() || 'Name required'}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          {SECTION_IDS.map((sectionId) => (
-            <Button
-              key={sectionId}
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => jumpToSection(sectionId)}
-            >
-              {SECTION_LABELS[sectionId]}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      {isHydrating ? (
-        <PageLoader text="Loading strategy draft..." className="h-80" />
-      ) : errorMessage ? (
-        <div className="p-5">
-          <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-            {errorMessage}
-          </div>
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-1 flex-col">
-          <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
-            <section id="metadata" className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
+      <section className="mcm-panel flex min-h-0 flex-col overflow-hidden">
+        <div className="border-b border-border/40 px-5 py-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{headerBadge}</Badge>
+                {isDirty ? <Badge variant="outline">Unsaved changes</Badge> : null}
+                {mode === 'duplicate' && sourceStrategyName ? (
+                  <Badge variant="outline">
+                    <CopyPlus className="h-3.5 w-3.5" />
+                    From {sourceStrategyName}
+                  </Badge>
+                ) : null}
+              </div>
               <div>
-                <h3 className="font-display text-lg text-foreground">Metadata</h3>
-                <p className="text-sm text-muted-foreground">
-                  Desk naming and strategy identity should be explicit before any parameter changes.
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
+                  Editor Workspace
+                </p>
+                <h2 className="font-display text-xl text-foreground">{getEditorTitle(mode)}</h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {getEditorDescription(mode, sourceStrategyName)}
                 </p>
               </div>
+            </div>
 
-              <div className="grid gap-4 xl:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="name">Strategy Name</Label>
-                  <Input
-                    id="name"
-                    readOnly={mode === 'edit'}
-                    {...register('name', { required: true })}
-                    placeholder="e.g. quality-trend-us"
-                  />
-                  {errors.name ? (
-                    <span className="text-xs text-destructive">Strategy name is required.</span>
-                  ) : mode === 'duplicate' ? (
-                    <span className="text-xs text-muted-foreground">
-                      Duplication requires a new name before save.
-                    </span>
-                  ) : null}
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="type">Strategy Type</Label>
-                  <Select
-                    value={watchedType}
-                    onValueChange={(value) =>
-                      setValue('type', value, { shouldDirty: true, shouldTouch: true })
-                    }
-                  >
-                    <SelectTrigger id="type">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="configured">Configured</SelectItem>
-                      <SelectItem value="code-based">Code Based</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/70 px-3 py-2 text-right">
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                Draft focus
               </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="description">Desk Note</Label>
-                <Textarea
-                  id="description"
-                  {...register('description')}
-                  placeholder="Record the objective, market fit, or caveat that matters to the desk."
-                />
+              <div className="mt-1 text-sm font-semibold text-foreground">
+                {draftName?.trim() || 'Name required'}
               </div>
-            </section>
+            </div>
+          </div>
 
-            <section id="config" className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
-              <div>
-                <h3 className="font-display text-lg text-foreground">Core Configuration</h3>
-                <p className="text-sm text-muted-foreground">
-                  Universe, ranking attachment, cadence, and portfolio shape stay grouped here.
-                </p>
-              </div>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {SECTION_IDS.map((sectionId) => (
+              <Button
+                key={sectionId}
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => jumpToSection(sectionId)}
+              >
+                {SECTION_LABELS[sectionId]}
+              </Button>
+            ))}
+          </div>
+        </div>
 
-              {universeConfigsErrorMessage || rankingSchemasErrorMessage ? (
-                <div className="rounded-[1.5rem] border border-destructive/30 bg-destructive/10 p-4 text-sm">
-                  <p className="font-semibold text-destructive">Attachment catalogs unavailable</p>
-                  <div className="mt-2 space-y-1 text-muted-foreground">
-                    {universeConfigsErrorMessage ? (
-                      <p>Universe lookup failed: {universeConfigsErrorMessage}</p>
-                    ) : null}
-                    {rankingSchemasErrorMessage ? (
-                      <p>Ranking lookup failed: {rankingSchemasErrorMessage}</p>
-                    ) : null}
-                    <p>Existing attachments stay visible, but attachment changes are frozen until the catalogs reload.</p>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="grid gap-4 xl:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="strategy-universe-config">Universe Config</Label>
-                  {universeConfigsErrorMessage ? (
-                    <>
-                      <Input
-                        id="strategy-universe-config"
-                        readOnly
-                        value={fallbackUniverseAttachment || 'No universe config attached'}
-                      />
-                      <span className="text-xs text-destructive">
-                        Universe attachments are read-only until the catalog reloads.
-                      </span>
-                    </>
-                  ) : (
-                    <Select
-                      value={watchedUniverseConfig}
-                      disabled={universeConfigsQuery.isLoading}
-                      onValueChange={(value) =>
-                        setValue('config.universeConfigName', value === '__none__' ? undefined : value, {
-                          shouldDirty: true,
-                          shouldTouch: true
-                        })
-                      }
-                    >
-                      <SelectTrigger id="strategy-universe-config">
-                        <SelectValue
-                          placeholder={
-                            universeConfigsQuery.isLoading
-                              ? 'Loading universe configs...'
-                              : 'Select universe config'
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">No universe config</SelectItem>
-                        {(universeConfigsQuery.data || []).map((universe) => (
-                          <SelectItem key={universe.name} value={universe.name}>
-                            {universe.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="ranking-schema">Ranking Schema</Label>
-                  {rankingSchemasErrorMessage ? (
-                    <>
-                      <Input
-                        id="ranking-schema"
-                        readOnly
-                        value={fallbackRankingAttachment || 'No ranking schema attached'}
-                      />
-                      <span className="text-xs text-destructive">
-                        Ranking attachments are read-only until the catalog reloads.
-                      </span>
-                    </>
-                  ) : (
-                    <Select
-                      value={watchedRankingSchema}
-                      disabled={rankingSchemasQuery.isLoading}
-                      onValueChange={(value) =>
-                        setValue('config.rankingSchemaName', value === '__none__' ? undefined : value, {
-                          shouldDirty: true,
-                          shouldTouch: true
-                        })
-                      }
-                    >
-                      <SelectTrigger id="ranking-schema">
-                        <SelectValue
-                          placeholder={
-                            rankingSchemasQuery.isLoading
-                              ? 'Loading ranking schemas...'
-                              : 'Select ranking schema'
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">No ranking schema</SelectItem>
-                        {(rankingSchemasQuery.data || []).map((schema) => (
-                          <SelectItem key={schema.name} value={schema.name}>
-                            {schema.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="rebalance">Rebalance Frequency</Label>
-                  <Select
-                    value={watchedRebalance}
-                    onValueChange={(value) =>
-                      setValue('config.rebalance', value, { shouldDirty: true, shouldTouch: true })
-                    }
-                  >
-                    <SelectTrigger id="rebalance">
-                      <SelectValue placeholder="Select frequency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="daily">Daily</SelectItem>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                      <SelectItem value="quarterly">Quarterly</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="intrabar-policy">Intrabar Conflict Policy</Label>
-                  <Select
-                    value={watchedPolicy}
-                    onValueChange={(value) =>
-                      setValue('config.intrabarConflictPolicy', value as IntrabarConflictPolicy, {
-                        shouldDirty: true,
-                        shouldTouch: true
-                      })
-                    }
-                  >
-                    <SelectTrigger id="intrabar-policy">
-                      <SelectValue placeholder="Select policy" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {INTRABAR_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="top-n">Top N</Label>
-                  <Input
-                    id="top-n"
-                    type="number"
-                    {...register('config.topN', { valueAsNumber: true })}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="lookback">Lookback Bars</Label>
-                  <Input
-                    id="lookback"
-                    type="number"
-                    {...register('config.lookbackWindow', { valueAsNumber: true })}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="holding">Holding Bars</Label>
-                  <Input
-                    id="holding"
-                    type="number"
-                    {...register('config.holdingPeriod', { valueAsNumber: true })}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="cost-model">Cost Model</Label>
-                  <Input id="cost-model" {...register('config.costModel')} />
-                </div>
-              </div>
-
-              <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-foreground">Long Only</p>
-                    <p className="text-sm text-muted-foreground">
-                      Keep the basic execution stance explicit in the draft.
-                    </p>
-                  </div>
-                  <Switch
-                    aria-label="Toggle long only strategy"
-                    checked={Boolean(watchedLongOnly)}
-                    onCheckedChange={(checked) =>
-                      setValue('config.longOnly', Boolean(checked), {
-                        shouldDirty: true,
-                        shouldTouch: true
-                      })
-                    }
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section id="regime" className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
-              <div className="flex items-start justify-between gap-3">
+        {isHydrating ? (
+          <PageLoader text="Loading strategy draft..." className="h-80" />
+        ) : errorMessage ? (
+          <div className="p-5">
+            <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+              {errorMessage}
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col">
+            <div className="space-y-6 px-5 py-5">
+              <section
+                id="metadata"
+                className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5"
+              >
                 <div>
-                  <h3 className="font-display text-lg text-foreground">Regime Policy</h3>
+                  <h3 className="font-display text-lg text-foreground">Metadata</h3>
                   <p className="text-sm text-muted-foreground">
-                    Regime gating stays inspectable so the desk can see where new risk gets blocked.
+                    Desk naming and strategy identity should be explicit before any parameter
+                    changes.
                   </p>
                 </div>
 
-                {hasRegimePolicy ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      setValue('config.regimePolicy', undefined, {
-                        shouldDirty: true,
-                        shouldTouch: true
-                      })
-                    }
-                  >
-                    Remove Policy
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    onClick={() =>
-                      setValue('config.regimePolicy', buildDefaultRegimePolicy(), {
-                        shouldDirty: true,
-                        shouldTouch: true
-                      })
-                    }
-                  >
-                    Add Policy
-                  </Button>
-                )}
-              </div>
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="name">Strategy Name</Label>
+                    <Input
+                      id="name"
+                      readOnly={mode === 'edit'}
+                      {...register('name', { required: true })}
+                      placeholder="e.g. quality-trend-us"
+                    />
+                    {errors.name ? (
+                      <span className="text-xs text-destructive">Strategy name is required.</span>
+                    ) : mode === 'duplicate' ? (
+                      <span className="text-xs text-muted-foreground">
+                        Duplication requires a new name before save.
+                      </span>
+                    ) : null}
+                  </div>
 
-              {hasRegimePolicy ? (
-                <>
-                  <div className="grid gap-4 xl:grid-cols-3">
-                    <div className="grid gap-2 xl:col-span-2">
-                      <Label htmlFor="regime-model-name">Model Name</Label>
-                      <Input id="regime-model-name" {...register('config.regimePolicy.modelName')} />
+                  <div className="grid gap-2">
+                    <Label htmlFor="type">Strategy Type</Label>
+                    <Select
+                      value={watchedType}
+                      onValueChange={(value) =>
+                        setValue('type', value, { shouldDirty: true, shouldTouch: true })
+                      }
+                    >
+                      <SelectTrigger id="type">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="configured">Configured</SelectItem>
+                        <SelectItem value="code-based">Code Based</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="description">Desk Note</Label>
+                  <Textarea
+                    id="description"
+                    {...register('description')}
+                    placeholder="Record the objective, market fit, or caveat that matters to the desk."
+                  />
+                </div>
+              </section>
+
+              <section
+                id="config"
+                className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5"
+              >
+                <div>
+                  <h3 className="font-display text-lg text-foreground">Core Configuration</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Universe, ranking attachment, cadence, and portfolio shape stay grouped here.
+                  </p>
+                </div>
+
+                {universeConfigsErrorMessage || rankingSchemasErrorMessage ? (
+                  <div className="rounded-[1.5rem] border border-destructive/30 bg-destructive/10 p-4 text-sm">
+                    <p className="font-semibold text-destructive">
+                      Attachment catalogs unavailable
+                    </p>
+                    <div className="mt-2 space-y-1 text-muted-foreground">
+                      {universeConfigsErrorMessage ? (
+                        <p>Universe lookup failed: {universeConfigsErrorMessage}</p>
+                      ) : null}
+                      {rankingSchemasErrorMessage ? (
+                        <p>Ranking lookup failed: {rankingSchemasErrorMessage}</p>
+                      ) : null}
+                      <p>
+                        Existing attachments stay visible, but attachment changes are frozen until
+                        the catalogs reload.
+                      </p>
                     </div>
+                  </div>
+                ) : null}
 
-                    <div className="grid gap-2">
-                      <Label htmlFor="regime-policy-mode">Policy Mode</Label>
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="strategy-universe-config">Universe Config</Label>
+                    {universeConfigsErrorMessage ? (
+                      <>
+                        <Input
+                          id="strategy-universe-config"
+                          readOnly
+                          value={fallbackUniverseAttachment || 'No universe config attached'}
+                        />
+                        <span className="text-xs text-destructive">
+                          Universe attachments are read-only until the catalog reloads.
+                        </span>
+                      </>
+                    ) : (
                       <Select
-                        value={effectiveRegimePolicy.mode}
+                        value={watchedUniverseConfig}
+                        disabled={universeConfigsQuery.isLoading}
                         onValueChange={(value) =>
-                          setValue('config.regimePolicy.mode', value as RegimePolicyMode, {
-                            shouldDirty: true,
-                            shouldTouch: true
-                          })
+                          setValue(
+                            'config.universeConfigName',
+                            value === '__none__' ? undefined : value,
+                            {
+                              shouldDirty: true,
+                              shouldTouch: true
+                            }
+                          )
                         }
                       >
-                        <SelectTrigger id="regime-policy-mode">
-                          <SelectValue placeholder="Select policy mode" />
+                        <SelectTrigger id="strategy-universe-config">
+                          <SelectValue
+                            placeholder={
+                              universeConfigsQuery.isLoading
+                                ? 'Loading universe configs...'
+                                : 'Select universe config'
+                            }
+                          />
                         </SelectTrigger>
                         <SelectContent>
-                          {REGIME_POLICY_MODES.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
+                          <SelectItem value="__none__">No universe config</SelectItem>
+                          {(universeConfigsQuery.data || []).map((universe) => (
+                            <SelectItem key={universe.name} value={universe.name}>
+                              {universe.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
-                    <div className="space-y-2">
-                      <p className="font-medium text-foreground">Published Contract Scope</p>
-                      <p className="text-sm text-muted-foreground">
-                        The current published contracts package exposes regime policy as model
-                        selection plus mode only. Legacy transition, halt, and exposure knobs were
-                        removed from the shared schema and cannot be edited from this surface until
-                        the contracts repo publishes a richer replacement.
-                      </p>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
-                  No regime policy configured for this draft.
-                </div>
-              )}
-            </section>
-
-            <section id="risk" className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-display text-lg text-foreground">Risk Policy</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Strategy-level risk limits use the shared StrategyRiskPolicy payload and are saved only with the strategy draft.
-                  </p>
-                </div>
-
-                {hasRiskPolicy ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      setValue('config.riskPolicy', undefined, {
-                        shouldDirty: true,
-                        shouldTouch: true
-                      })
-                    }
-                  >
-                    Remove Policy
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    onClick={() =>
-                      setValue(
-                        'config.riskPolicy',
-                        { notes: '' },
-                        {
-                          shouldDirty: true,
-                          shouldTouch: true
-                        }
-                      )
-                    }
-                  >
-                    Add Policy
-                  </Button>
-                )}
-              </div>
-
-              {hasRiskPolicy ? (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="risk-gross-exposure">Gross Exposure Limit</Label>
-                      <Input
-                        id="risk-gross-exposure"
-                        type="number"
-                        step="0.01"
-                        {...register('config.riskPolicy.grossExposureLimit', {
-                          setValueAs: toOptionalNumber
-                        })}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="risk-net-exposure">Net Exposure Limit</Label>
-                      <Input
-                        id="risk-net-exposure"
-                        type="number"
-                        step="0.01"
-                        {...register('config.riskPolicy.netExposureLimit', {
-                          setValueAs: toOptionalNumber
-                        })}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="risk-single-name">Single Name Max Weight</Label>
-                      <Input
-                        id="risk-single-name"
-                        type="number"
-                        step="0.01"
-                        {...register('config.riskPolicy.singleNameMaxWeight', {
-                          setValueAs: toOptionalNumber
-                        })}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="risk-sector-max">Sector Max Weight</Label>
-                      <Input
-                        id="risk-sector-max"
-                        type="number"
-                        step="0.01"
-                        {...register('config.riskPolicy.sectorMaxWeight', {
-                          setValueAs: toOptionalNumber
-                        })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="risk-turnover-budget">Turnover Budget</Label>
-                      <Input
-                        id="risk-turnover-budget"
-                        type="number"
-                        step="0.01"
-                        {...register('config.riskPolicy.turnoverBudget', {
-                          setValueAs: toOptionalNumber
-                        })}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="risk-drawdown-limit">Max Drawdown Limit</Label>
-                      <Input
-                        id="risk-drawdown-limit"
-                        type="number"
-                        step="0.01"
-                        {...register('config.riskPolicy.maxDrawdownLimit', {
-                          setValueAs: toOptionalNumber
-                        })}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="risk-participation">Liquidity Participation Rate</Label>
-                      <Input
-                        id="risk-participation"
-                        type="number"
-                        step="0.01"
-                        {...register('config.riskPolicy.liquidityParticipationRate', {
-                          setValueAs: toOptionalNumber
-                        })}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="risk-max-notional">Max Trade Notional</Label>
-                      <Input
-                        id="risk-max-notional"
-                        type="number"
-                        step="1"
-                        {...register('config.riskPolicy.maxTradeNotionalBaseCcy', {
-                          setValueAs: toOptionalNumber
-                        })}
-                      />
-                    </div>
+                    )}
                   </div>
 
                   <div className="grid gap-2">
-                    <Label htmlFor="risk-notes">Risk Notes</Label>
-                    <Textarea
-                      id="risk-notes"
-                      {...register('config.riskPolicy.notes')}
-                      placeholder="Record desk constraints, limit rationale, or liquidity caveats."
+                    <Label htmlFor="ranking-schema">Ranking Schema</Label>
+                    {rankingSchemasErrorMessage ? (
+                      <>
+                        <Input
+                          id="ranking-schema"
+                          readOnly
+                          value={fallbackRankingAttachment || 'No ranking schema attached'}
+                        />
+                        <span className="text-xs text-destructive">
+                          Ranking attachments are read-only until the catalog reloads.
+                        </span>
+                      </>
+                    ) : (
+                      <Select
+                        value={watchedRankingSchema}
+                        disabled={rankingSchemasQuery.isLoading}
+                        onValueChange={(value) =>
+                          setValue(
+                            'config.rankingSchemaName',
+                            value === '__none__' ? undefined : value,
+                            {
+                              shouldDirty: true,
+                              shouldTouch: true
+                            }
+                          )
+                        }
+                      >
+                        <SelectTrigger id="ranking-schema">
+                          <SelectValue
+                            placeholder={
+                              rankingSchemasQuery.isLoading
+                                ? 'Loading ranking schemas...'
+                                : 'Select ranking schema'
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">No ranking schema</SelectItem>
+                          {(rankingSchemasQuery.data || []).map((schema) => (
+                            <SelectItem key={schema.name} value={schema.name}>
+                              {schema.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="rebalance">Rebalance Frequency</Label>
+                    <Select
+                      value={watchedRebalance}
+                      onValueChange={(value) =>
+                        setValue('config.rebalance', value, {
+                          shouldDirty: true,
+                          shouldTouch: true
+                        })
+                      }
+                    >
+                      <SelectTrigger id="rebalance">
+                        <SelectValue placeholder="Select frequency" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">Daily</SelectItem>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                        <SelectItem value="quarterly">Quarterly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="intrabar-policy">Intrabar Conflict Policy</Label>
+                    <Select
+                      value={watchedPolicy}
+                      onValueChange={(value) =>
+                        setValue('config.intrabarConflictPolicy', value as IntrabarConflictPolicy, {
+                          shouldDirty: true,
+                          shouldTouch: true
+                        })
+                      }
+                    >
+                      <SelectTrigger id="intrabar-policy">
+                        <SelectValue placeholder="Select policy" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INTRABAR_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="top-n">Top N</Label>
+                    <Input
+                      id="top-n"
+                      type="number"
+                      {...register('config.topN', { valueAsNumber: true })}
                     />
                   </div>
-                </>
-              ) : (
-                <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
-                  No strategy risk policy configured for this draft.
+                  <div className="grid gap-2">
+                    <Label htmlFor="lookback">Lookback Bars</Label>
+                    <Input
+                      id="lookback"
+                      type="number"
+                      {...register('config.lookbackWindow', { valueAsNumber: true })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="holding">Holding Bars</Label>
+                    <Input
+                      id="holding"
+                      type="number"
+                      {...register('config.holdingPeriod', { valueAsNumber: true })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="cost-model">Cost Model</Label>
+                    <Input id="cost-model" {...register('config.costModel')} />
+                  </div>
                 </div>
-              )}
-            </section>
 
-            <section id="exits" className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <div>
-                  <h3 className="font-display text-lg text-foreground">Exit Rules</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Current stack summary: {summarizeExitStack(getValues())}
-                  </p>
+                <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-foreground">Long Only</p>
+                      <p className="text-sm text-muted-foreground">
+                        Keep the basic execution stance explicit in the draft.
+                      </p>
+                    </div>
+                    <Switch
+                      aria-label="Toggle long only strategy"
+                      checked={Boolean(watchedLongOnly)}
+                      onCheckedChange={(checked) =>
+                        setValue('config.longOnly', Boolean(checked), {
+                          shouldDirty: true,
+                          shouldTouch: true
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section
+                id="regime"
+                className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-display text-lg text-foreground">Regime Policy</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Regime gating stays inspectable so the desk can see where new risk gets
+                      blocked.
+                    </p>
+                  </div>
+
+                  {hasRegimePolicy ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        setValue('config.regimePolicy', undefined, {
+                          shouldDirty: true,
+                          shouldTouch: true
+                        })
+                      }
+                    >
+                      Remove Policy
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        setValue('config.regimePolicy', buildDefaultRegimePolicy(), {
+                          shouldDirty: true,
+                          shouldTouch: true
+                        })
+                      }
+                    >
+                      Add Policy
+                    </Button>
+                  )}
                 </div>
 
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Select value={newRuleType} onValueChange={(value) => setNewRuleType(value as typeof newRuleType)}>
-                    <SelectTrigger className="min-w-[220px]">
-                      <SelectValue placeholder="Choose rule type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {EXIT_RULE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button type="button" onClick={addExitRule}>
-                    <Plus className="h-4 w-4" />
-                    Add Exit Rule
+                {hasRegimePolicy ? (
+                  <>
+                    <div className="grid gap-4 xl:grid-cols-3">
+                      <div className="grid gap-2 xl:col-span-2">
+                        <Label htmlFor="regime-model-name">Model Name</Label>
+                        <Input
+                          id="regime-model-name"
+                          {...register('config.regimePolicy.modelName')}
+                        />
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label htmlFor="regime-policy-mode">Policy Mode</Label>
+                        <Select
+                          value={effectiveRegimePolicy.mode}
+                          onValueChange={(value) =>
+                            setValue('config.regimePolicy.mode', value as RegimePolicyMode, {
+                              shouldDirty: true,
+                              shouldTouch: true
+                            })
+                          }
+                        >
+                          <SelectTrigger id="regime-policy-mode">
+                            <SelectValue placeholder="Select policy mode" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {REGIME_POLICY_MODES.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+                      <div className="space-y-2">
+                        <p className="font-medium text-foreground">Published Contract Scope</p>
+                        <p className="text-sm text-muted-foreground">
+                          The current published contracts package exposes regime policy as model
+                          selection plus mode only. Legacy transition, halt, and exposure knobs were
+                          removed from the shared schema and cannot be edited from this surface
+                          until the contracts repo publishes a richer replacement.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
+                    No regime policy configured for this draft.
+                  </div>
+                )}
+              </section>
+
+              <section
+                id="risk"
+                className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-display text-lg text-foreground">Risk Policy</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Strategy-level risk limits use the shared StrategyRiskPolicy payload and are
+                      saved only with the strategy draft.
+                    </p>
+                  </div>
+
+                  {hasRiskPolicy ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        setValue('config.riskPolicy', undefined, {
+                          shouldDirty: true,
+                          shouldTouch: true
+                        })
+                      }
+                    >
+                      Remove Policy
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        setValue(
+                          'config.riskPolicy',
+                          { notes: '' },
+                          {
+                            shouldDirty: true,
+                            shouldTouch: true
+                          }
+                        )
+                      }
+                    >
+                      Add Policy
+                    </Button>
+                  )}
+                </div>
+
+                {hasRiskPolicy ? (
+                  <>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="risk-gross-exposure">Gross Exposure Limit</Label>
+                        <Input
+                          id="risk-gross-exposure"
+                          type="number"
+                          step="0.01"
+                          {...register('config.riskPolicy.grossExposureLimit', {
+                            setValueAs: toOptionalNumber
+                          })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="risk-net-exposure">Net Exposure Limit</Label>
+                        <Input
+                          id="risk-net-exposure"
+                          type="number"
+                          step="0.01"
+                          {...register('config.riskPolicy.netExposureLimit', {
+                            setValueAs: toOptionalNumber
+                          })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="risk-single-name">Single Name Max Weight</Label>
+                        <Input
+                          id="risk-single-name"
+                          type="number"
+                          step="0.01"
+                          {...register('config.riskPolicy.singleNameMaxWeight', {
+                            setValueAs: toOptionalNumber
+                          })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="risk-sector-max">Sector Max Weight</Label>
+                        <Input
+                          id="risk-sector-max"
+                          type="number"
+                          step="0.01"
+                          {...register('config.riskPolicy.sectorMaxWeight', {
+                            setValueAs: toOptionalNumber
+                          })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="risk-turnover-budget">Turnover Budget</Label>
+                        <Input
+                          id="risk-turnover-budget"
+                          type="number"
+                          step="0.01"
+                          {...register('config.riskPolicy.turnoverBudget', {
+                            setValueAs: toOptionalNumber
+                          })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="risk-drawdown-limit">Max Drawdown Limit</Label>
+                        <Input
+                          id="risk-drawdown-limit"
+                          type="number"
+                          step="0.01"
+                          {...register('config.riskPolicy.maxDrawdownLimit', {
+                            setValueAs: toOptionalNumber
+                          })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="risk-participation">Liquidity Participation Rate</Label>
+                        <Input
+                          id="risk-participation"
+                          type="number"
+                          step="0.01"
+                          {...register('config.riskPolicy.liquidityParticipationRate', {
+                            setValueAs: toOptionalNumber
+                          })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="risk-max-notional">Max Trade Notional</Label>
+                        <Input
+                          id="risk-max-notional"
+                          type="number"
+                          step="1"
+                          {...register('config.riskPolicy.maxTradeNotionalBaseCcy', {
+                            setValueAs: toOptionalNumber
+                          })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-notes">Risk Notes</Label>
+                      <Textarea
+                        id="risk-notes"
+                        {...register('config.riskPolicy.notes')}
+                        placeholder="Record desk constraints, limit rationale, or liquidity caveats."
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
+                    No strategy risk policy configured for this draft.
+                  </div>
+                )}
+              </section>
+
+              <section
+                id="exits"
+                className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5"
+              >
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                  <div>
+                    <h3 className="font-display text-lg text-foreground">Exit Rules</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Current stack summary: {summarizeExitStack(getValues())}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Select
+                      value={newRuleType}
+                      onValueChange={(value) => setNewRuleType(value as typeof newRuleType)}
+                    >
+                      <SelectTrigger className="min-w-[220px]">
+                        <SelectValue placeholder="Choose rule type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EXIT_RULE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" onClick={addExitRule}>
+                      <Plus className="h-4 w-4" />
+                      Add Exit Rule
+                    </Button>
+                  </div>
+                </div>
+
+                {fields.length === 0 ? (
+                  <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
+                    No exit rules configured yet.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {fields.map((field, index) => {
+                      const currentRule = watchedExits[index];
+                      const ruleType = currentRule?.type || field.type;
+                      const ruleValueLabel = getRuleValueLabel(ruleType);
+
+                      return (
+                        <div
+                          key={field.id}
+                          className="space-y-4 rounded-[1.6rem] border border-mcm-walnut/25 bg-mcm-cream/65 p-4"
+                        >
+                          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="grid gap-2 xl:min-w-[260px]">
+                              <Label htmlFor={`exit-rule-type-${index}`}>Rule Type</Label>
+                              <Select
+                                value={ruleType}
+                                onValueChange={(value) =>
+                                  changeRuleType(index, value as typeof newRuleType)
+                                }
+                              >
+                                <SelectTrigger id={`exit-rule-type-${index}`}>
+                                  <SelectValue placeholder="Select rule type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {EXIT_RULE_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-end xl:self-auto">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={() => move(index, index - 1)}
+                                disabled={index === 0}
+                                aria-label={`Move exit rule ${index + 1} up`}
+                              >
+                                <ArrowUp className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={() => move(index, index + 1)}
+                                disabled={index === fields.length - 1}
+                                aria-label={`Move exit rule ${index + 1} down`}
+                              >
+                                <ArrowDown className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={() => remove(index)}
+                                aria-label={`Remove exit rule ${index + 1}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                            <div className="grid gap-2">
+                              <Label htmlFor={`exit-rule-id-${index}`}>Rule ID</Label>
+                              <Input
+                                id={`exit-rule-id-${index}`}
+                                {...register(`config.exits.${index}.id` as const, {
+                                  required: true
+                                })}
+                              />
+                            </div>
+
+                            <div className="grid gap-2">
+                              <Label htmlFor={`exit-rule-priority-${index}`}>Priority</Label>
+                              <Input
+                                id={`exit-rule-priority-${index}`}
+                                type="number"
+                                {...register(`config.exits.${index}.priority` as const, {
+                                  setValueAs: toOptionalNumber
+                                })}
+                              />
+                            </div>
+
+                            <div className="grid gap-2">
+                              <Label htmlFor={`exit-rule-min-hold-${index}`}>Min Hold Bars</Label>
+                              <Input
+                                id={`exit-rule-min-hold-${index}`}
+                                type="number"
+                                {...register(`config.exits.${index}.minHoldBars` as const, {
+                                  valueAsNumber: true
+                                })}
+                              />
+                            </div>
+
+                            <div className="rounded-[1.2rem] border border-mcm-walnut/20 bg-mcm-paper/85 px-4 py-3">
+                              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                                Rule Shape
+                              </p>
+                              <p className="mt-2 text-sm text-foreground">
+                                Scope: position | action: exit_full
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                            <div className="grid gap-2">
+                              <Label htmlFor={`exit-rule-price-field-${index}`}>Price Field</Label>
+                              <Select
+                                value={
+                                  currentRule?.priceField ||
+                                  (ruleType === 'take_profit_fixed'
+                                    ? 'high'
+                                    : ruleType === 'time_stop'
+                                      ? 'close'
+                                      : 'low')
+                                }
+                                onValueChange={(value) =>
+                                  setValue(
+                                    `config.exits.${index}.priceField` as const,
+                                    value as ExitRulePriceField,
+                                    {
+                                      shouldDirty: true,
+                                      shouldTouch: true
+                                    }
+                                  )
+                                }
+                              >
+                                <SelectTrigger id={`exit-rule-price-field-${index}`}>
+                                  <SelectValue placeholder="Select price field" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {PRICE_FIELD_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="grid gap-2">
+                              <Label htmlFor={`exit-rule-value-${index}`}>{ruleValueLabel}</Label>
+                              <Input
+                                id={`exit-rule-value-${index}`}
+                                type="number"
+                                step={ruleType === 'time_stop' ? 1 : 0.01}
+                                {...register(`config.exits.${index}.value` as const, {
+                                  setValueAs: toOptionalNumber
+                                })}
+                              />
+                            </div>
+
+                            {ruleType === 'trailing_stop_atr' ? (
+                              <div className="grid gap-2 md:col-span-2">
+                                <Label htmlFor={`exit-rule-atr-column-${index}`}>ATR Column</Label>
+                                <Input
+                                  id={`exit-rule-atr-column-${index}`}
+                                  {...register(`config.exits.${index}.atrColumn` as const)}
+                                />
+                              </div>
+                            ) : (
+                              <div className="grid gap-2 md:col-span-2">
+                                <Label htmlFor={`exit-rule-reference-${index}`}>Reference</Label>
+                                <Input
+                                  id={`exit-rule-reference-${index}`}
+                                  readOnly
+                                  value={
+                                    currentRule?.reference ||
+                                    (ruleType === 'take_profit_fixed' ||
+                                    ruleType === 'stop_loss_fixed'
+                                      ? 'entry_price'
+                                      : ruleType === 'time_stop'
+                                        ? ''
+                                        : 'highest_since_entry')
+                                  }
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <div className="border-t border-border/40 bg-mcm-paper/95 px-5 py-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="text-sm text-muted-foreground">
+                  {isDirty
+                    ? 'Draft has unsaved changes.'
+                    : 'Draft matches the last loaded baseline.'}
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={requestCancel}
+                    disabled={saveMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={discardChanges}
+                    disabled={!isDirty || saveMutation.isPending}
+                  >
+                    Discard Changes
+                  </Button>
+                  <Button type="submit" disabled={saveMutation.isPending}>
+                    {saveMutation.isPending
+                      ? 'Saving...'
+                      : mode === 'edit'
+                        ? 'Save Strategy'
+                        : 'Save New Strategy'}
                   </Button>
                 </div>
               </div>
-
-              {fields.length === 0 ? (
-                <div className="rounded-[1.5rem] border border-dashed border-mcm-walnut/35 bg-mcm-cream/70 p-4 text-sm text-muted-foreground">
-                  No exit rules configured yet.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {fields.map((field, index) => {
-                    const currentRule = watchedExits[index];
-                    const ruleType = currentRule?.type || field.type;
-                    const ruleValueLabel = getRuleValueLabel(ruleType);
-
-                    return (
-                      <div
-                        key={field.id}
-                        className="space-y-4 rounded-[1.6rem] border border-mcm-walnut/25 bg-mcm-cream/65 p-4"
-                      >
-                        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                          <div className="grid gap-2 xl:min-w-[260px]">
-                            <Label htmlFor={`exit-rule-type-${index}`}>Rule Type</Label>
-                            <Select
-                              value={ruleType}
-                              onValueChange={(value) => changeRuleType(index, value as typeof newRuleType)}
-                            >
-                              <SelectTrigger id={`exit-rule-type-${index}`}>
-                                <SelectValue placeholder="Select rule type" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {EXIT_RULE_OPTIONS.map((option) => (
-                                  <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="flex items-center gap-2 self-end xl:self-auto">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => move(index, index - 1)}
-                              disabled={index === 0}
-                              aria-label={`Move exit rule ${index + 1} up`}
-                            >
-                              <ArrowUp className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => move(index, index + 1)}
-                              disabled={index === fields.length - 1}
-                              aria-label={`Move exit rule ${index + 1} down`}
-                            >
-                              <ArrowDown className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => remove(index)}
-                              aria-label={`Remove exit rule ${index + 1}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                          <div className="grid gap-2">
-                            <Label htmlFor={`exit-rule-id-${index}`}>Rule ID</Label>
-                            <Input
-                              id={`exit-rule-id-${index}`}
-                              {...register(`config.exits.${index}.id` as const, { required: true })}
-                            />
-                          </div>
-
-                          <div className="grid gap-2">
-                            <Label htmlFor={`exit-rule-priority-${index}`}>Priority</Label>
-                            <Input
-                              id={`exit-rule-priority-${index}`}
-                              type="number"
-                              {...register(`config.exits.${index}.priority` as const, {
-                                setValueAs: toOptionalNumber
-                              })}
-                            />
-                          </div>
-
-                          <div className="grid gap-2">
-                            <Label htmlFor={`exit-rule-min-hold-${index}`}>Min Hold Bars</Label>
-                            <Input
-                              id={`exit-rule-min-hold-${index}`}
-                              type="number"
-                              {...register(`config.exits.${index}.minHoldBars` as const, {
-                                valueAsNumber: true
-                              })}
-                            />
-                          </div>
-
-                          <div className="rounded-[1.2rem] border border-mcm-walnut/20 bg-mcm-paper/85 px-4 py-3">
-                            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-                              Rule Shape
-                            </p>
-                            <p className="mt-2 text-sm text-foreground">Scope: position | action: exit_full</p>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                          <div className="grid gap-2">
-                            <Label htmlFor={`exit-rule-price-field-${index}`}>Price Field</Label>
-                            <Select
-                              value={
-                                currentRule?.priceField ||
-                                (ruleType === 'take_profit_fixed'
-                                  ? 'high'
-                                  : ruleType === 'time_stop'
-                                    ? 'close'
-                                    : 'low')
-                              }
-                              onValueChange={(value) =>
-                                setValue(`config.exits.${index}.priceField` as const, value as ExitRulePriceField, {
-                                  shouldDirty: true,
-                                  shouldTouch: true
-                                })
-                              }
-                            >
-                              <SelectTrigger id={`exit-rule-price-field-${index}`}>
-                                <SelectValue placeholder="Select price field" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {PRICE_FIELD_OPTIONS.map((option) => (
-                                  <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="grid gap-2">
-                            <Label htmlFor={`exit-rule-value-${index}`}>{ruleValueLabel}</Label>
-                            <Input
-                              id={`exit-rule-value-${index}`}
-                              type="number"
-                              step={ruleType === 'time_stop' ? 1 : 0.01}
-                              {...register(`config.exits.${index}.value` as const, {
-                                setValueAs: toOptionalNumber
-                              })}
-                            />
-                          </div>
-
-                          {ruleType === 'trailing_stop_atr' ? (
-                            <div className="grid gap-2 md:col-span-2">
-                              <Label htmlFor={`exit-rule-atr-column-${index}`}>ATR Column</Label>
-                              <Input
-                                id={`exit-rule-atr-column-${index}`}
-                                {...register(`config.exits.${index}.atrColumn` as const)}
-                              />
-                            </div>
-                          ) : (
-                            <div className="grid gap-2 md:col-span-2">
-                              <Label htmlFor={`exit-rule-reference-${index}`}>Reference</Label>
-                              <Input
-                                id={`exit-rule-reference-${index}`}
-                                readOnly
-                                value={
-                                  currentRule?.reference ||
-                                  (ruleType === 'take_profit_fixed' || ruleType === 'stop_loss_fixed'
-                                    ? 'entry_price'
-                                    : ruleType === 'time_stop'
-                                      ? ''
-                                      : 'highest_since_entry')
-                                }
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          </div>
-
-          <div className="border-t border-border/40 bg-mcm-paper/95 px-5 py-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="text-sm text-muted-foreground">
-                {isDirty
-                  ? 'Draft has unsaved changes.'
-                  : 'Draft matches the last loaded baseline.'}
-              </div>
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button type="button" variant="outline" onClick={requestCancel} disabled={saveMutation.isPending}>
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={discardChanges}
-                  disabled={!isDirty || saveMutation.isPending}
-                >
-                  Discard Changes
-                </Button>
-                <Button type="submit" disabled={saveMutation.isPending}>
-                  {saveMutation.isPending ? 'Saving...' : mode === 'edit' ? 'Save Strategy' : 'Save New Strategy'}
-                </Button>
-              </div>
             </div>
-          </div>
-        </form>
-      )}
-      </aside>
+          </form>
+        )}
+      </section>
 
       <AlertDialog open={isDiscardDialogOpen} onOpenChange={setIsDiscardDialogOpen}>
         <AlertDialogContent className="border-2 border-mcm-walnut bg-mcm-paper">

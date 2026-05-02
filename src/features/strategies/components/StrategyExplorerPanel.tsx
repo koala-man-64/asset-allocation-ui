@@ -78,11 +78,7 @@ function buildReferences(
   return selectedNames.map((strategyName, index) => ({
     strategyName,
     role:
-      strategyName === selectedStrategyName
-        ? 'baseline'
-        : index === 1
-          ? 'challenger'
-          : 'candidate'
+      strategyName === selectedStrategyName ? 'baseline' : index === 1 ? 'challenger' : 'candidate'
   }));
 }
 
@@ -236,7 +232,9 @@ export function StrategyExplorerPanel({
         return retained;
       }
 
-      const firstOther = strategies.find((candidate) => candidate.name !== selectedStrategyName)?.name;
+      const firstOther = strategies.find(
+        (candidate) => candidate.name !== selectedStrategyName
+      )?.name;
       return [selectedStrategyName, firstOther].filter(Boolean) as string[];
     });
   }, [selectedStrategyName, strategies]);
@@ -264,7 +262,11 @@ export function StrategyExplorerPanel({
   const rollingQuery = useQuery({
     queryKey: ['backtest', 'rolling', latestCompletedRun?.run_id],
     queryFn: ({ signal }) =>
-      backtestApi.getRolling(String(latestCompletedRun?.run_id), { windowDays: 63, maxPoints: 500 }, signal),
+      backtestApi.getRolling(
+        String(latestCompletedRun?.run_id),
+        { windowDays: 63, maxPoints: 500 },
+        signal
+      ),
     enabled: Boolean(latestCompletedRun?.run_id)
   });
 
@@ -317,7 +319,9 @@ export function StrategyExplorerPanel({
   const forecastMutation = useMutation({
     mutationFn: () =>
       strategyAnalyticsApi.getScenarioForecast({
-        strategies: references.length ? references : buildReferences([String(selectedStrategyName)], selectedStrategyName),
+        strategies: references.length
+          ? references
+          : buildReferences([String(selectedStrategyName)], selectedStrategyName),
         asOfDate: endDate,
         horizon,
         regimeModelName: strategy?.config.regimePolicy?.modelName || null,
@@ -343,12 +347,16 @@ export function StrategyExplorerPanel({
   const comparisonError = comparisonMutation.error
     ? formatSystemStatusText(comparisonMutation.error)
     : '';
-  const forecastError = forecastMutation.error ? formatSystemStatusText(forecastMutation.error) : '';
-  const allocationError = allocationsQuery.error ? formatSystemStatusText(allocationsQuery.error) : '';
+  const forecastError = forecastMutation.error
+    ? formatSystemStatusText(forecastMutation.error)
+    : '';
+  const allocationError = allocationsQuery.error
+    ? formatSystemStatusText(allocationsQuery.error)
+    : '';
   const tradeError = tradeHistoryQuery.error ? formatSystemStatusText(tradeHistoryQuery.error) : '';
 
   return (
-    <aside className="mcm-panel flex min-h-[760px] flex-col overflow-hidden">
+    <section className="mcm-panel flex min-h-0 flex-col overflow-hidden">
       <div className="border-b border-border/40 px-6 py-5">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
@@ -357,16 +365,20 @@ export function StrategyExplorerPanel({
             </p>
             <h2 className="font-display text-xl text-foreground">Evidence And Comparison</h2>
             <p className="text-sm text-muted-foreground">
-              Compare strategies on aligned assumptions and request server-backed analytics without fabricating local forecasts.
+              Compare strategies on aligned assumptions and request server-backed analytics without
+              fabricating local forecasts.
             </p>
           </div>
           {selectedStrategyName ? <Badge variant="secondary">{selectedStrategyName}</Badge> : null}
         </div>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-y-auto p-5">
+      <div className="space-y-5 p-5">
         {!selectedStrategyName ? (
-          <EmptyPanel>Select a strategy to load historical performance, allocations, trades, and comparison controls.</EmptyPanel>
+          <EmptyPanel>
+            Select a strategy to load historical performance, allocations, trades, and comparison
+            controls.
+          </EmptyPanel>
         ) : (
           <>
             <ExplorerCard
@@ -388,7 +400,9 @@ export function StrategyExplorerPanel({
                       />
                       <span className="font-medium text-foreground">{candidate.name}</span>
                     </span>
-                    <Badge variant={candidate.name === selectedStrategyName ? 'default' : 'outline'}>
+                    <Badge
+                      variant={candidate.name === selectedStrategyName ? 'default' : 'outline'}
+                    >
                       {candidate.name === selectedStrategyName ? 'baseline' : 'sleeve'}
                     </Badge>
                   </label>
@@ -396,7 +410,8 @@ export function StrategyExplorerPanel({
               </div>
               {selectedNames.length ? (
                 <div className="rounded-[1.2rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4 text-sm text-muted-foreground">
-                  Equal-weight preview: {selectedNames.map((name) => `${name} ${formatPct(equalWeight)}`).join(' | ')}
+                  Equal-weight preview:{' '}
+                  {selectedNames.map((name) => `${name} ${formatPct(equalWeight)}`).join(' | ')}
                 </div>
               ) : null}
             </ExplorerCard>
@@ -457,7 +472,9 @@ export function StrategyExplorerPanel({
                 {comparisonMutation.isPending ? 'Comparing...' : 'Compare Strategies'}
               </Button>
               {selectedNames.length < 2 ? (
-                <EmptyPanel>Select at least two strategies to compare baseline and challenger.</EmptyPanel>
+                <EmptyPanel>
+                  Select at least two strategies to compare baseline and challenger.
+                </EmptyPanel>
               ) : null}
               {comparisonError ? (
                 <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
@@ -468,7 +485,9 @@ export function StrategyExplorerPanel({
                 comparisonMutation.data.metrics.length ? (
                   <ComparisonTable response={comparisonMutation.data} />
                 ) : (
-                  <EmptyPanel>The comparison API returned no metric rows for the aligned setup.</EmptyPanel>
+                  <EmptyPanel>
+                    The comparison API returned no metric rows for the aligned setup.
+                  </EmptyPanel>
                 )
               ) : null}
             </ExplorerCard>
@@ -482,7 +501,9 @@ export function StrategyExplorerPanel({
                 <EmptyPanel>No backtest runs are available for this strategy.</EmptyPanel>
               ) : summaryQuery.error || timeseriesQuery.error || rollingQuery.error ? (
                 <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-                  {formatSystemStatusText(summaryQuery.error || timeseriesQuery.error || rollingQuery.error)}
+                  {formatSystemStatusText(
+                    summaryQuery.error || timeseriesQuery.error || rollingQuery.error
+                  )}
                 </div>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2">
@@ -494,19 +515,27 @@ export function StrategyExplorerPanel({
                     <div className="mt-3 grid gap-2 text-sm">
                       <div className="flex justify-between">
                         <span>Total return</span>
-                        <span className="font-medium">{formatPct(summaryQuery.data?.total_return)}</span>
+                        <span className="font-medium">
+                          {formatPct(summaryQuery.data?.total_return)}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Sharpe</span>
-                        <span className="font-medium">{formatNumber(summaryQuery.data?.sharpe_ratio)}</span>
+                        <span className="font-medium">
+                          {formatNumber(summaryQuery.data?.sharpe_ratio)}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Max drawdown</span>
-                        <span className="font-medium">{formatPct(summaryQuery.data?.max_drawdown)}</span>
+                        <span className="font-medium">
+                          {formatPct(summaryQuery.data?.max_drawdown)}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Cost drag</span>
-                        <span className="font-medium">{formatNumber(summaryQuery.data?.cost_drag_bps)} bps</span>
+                        <span className="font-medium">
+                          {formatNumber(summaryQuery.data?.cost_drag_bps)} bps
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -518,7 +547,9 @@ export function StrategyExplorerPanel({
                     <div className="mt-3 grid gap-2 text-sm">
                       <div className="flex justify-between">
                         <span>Timeseries points</span>
-                        <span className="font-medium">{timeseriesQuery.data?.total_points ?? 0}</span>
+                        <span className="font-medium">
+                          {timeseriesQuery.data?.total_points ?? 0}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Rolling windows</span>
@@ -530,7 +561,9 @@ export function StrategyExplorerPanel({
                       </div>
                       <div className="flex justify-between">
                         <span>Closed positions</span>
-                        <span className="font-medium">{summaryQuery.data?.closed_positions ?? 0}</span>
+                        <span className="font-medium">
+                          {summaryQuery.data?.closed_positions ?? 0}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -586,7 +619,10 @@ export function StrategyExplorerPanel({
                   />
                 </div>
               </div>
-              <Button onClick={() => forecastMutation.mutate()} disabled={forecastMutation.isPending}>
+              <Button
+                onClick={() => forecastMutation.mutate()}
+                disabled={forecastMutation.isPending}
+              >
                 <RefreshCw className="h-4 w-4" />
                 {forecastMutation.isPending ? 'Requesting...' : 'Request Forecast'}
               </Button>
@@ -599,7 +635,9 @@ export function StrategyExplorerPanel({
                 forecastMutation.data.forecasts.length ? (
                   <ForecastPanel response={forecastMutation.data} />
                 ) : (
-                  <EmptyPanel>The forecast API returned no outlook rows for this scenario.</EmptyPanel>
+                  <EmptyPanel>
+                    The forecast API returned no outlook rows for this scenario.
+                  </EmptyPanel>
                 )
               ) : (
                 <EmptyPanel>No forecast has been requested in this workspace session.</EmptyPanel>
@@ -620,16 +658,28 @@ export function StrategyExplorerPanel({
                 <div className="space-y-3">
                   <div className="grid gap-3 md:grid-cols-3">
                     <div className="rounded-[1.2rem] border border-mcm-walnut/20 bg-mcm-cream/60 p-4">
-                      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Market Value</div>
-                      <div className="mt-2 font-semibold">{formatCurrency(allocationsQuery.data.totalMarketValue)}</div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        Market Value
+                      </div>
+                      <div className="mt-2 font-semibold">
+                        {formatCurrency(allocationsQuery.data.totalMarketValue)}
+                      </div>
                     </div>
                     <div className="rounded-[1.2rem] border border-mcm-walnut/20 bg-mcm-cream/60 p-4">
-                      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Target</div>
-                      <div className="mt-2 font-semibold">{formatPct(allocationsQuery.data.aggregateTargetWeight)}</div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        Target
+                      </div>
+                      <div className="mt-2 font-semibold">
+                        {formatPct(allocationsQuery.data.aggregateTargetWeight)}
+                      </div>
                     </div>
                     <div className="rounded-[1.2rem] border border-mcm-walnut/20 bg-mcm-cream/60 p-4">
-                      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Actual</div>
-                      <div className="mt-2 font-semibold">{formatPct(allocationsQuery.data.aggregateActualWeight)}</div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        Actual
+                      </div>
+                      <div className="mt-2 font-semibold">
+                        {formatPct(allocationsQuery.data.aggregateActualWeight)}
+                      </div>
                     </div>
                   </div>
                   <div className="overflow-x-auto">
@@ -649,7 +699,9 @@ export function StrategyExplorerPanel({
                             <TableCell>{row.accountName}</TableCell>
                             <TableCell>{row.portfolioName}</TableCell>
                             <TableCell>{row.sleeveName || row.sleeveId}</TableCell>
-                            <TableCell className="text-right">{formatPct(row.actualWeight)}</TableCell>
+                            <TableCell className="text-right">
+                              {formatPct(row.actualWeight)}
+                            </TableCell>
                             <TableCell>
                               <Badge variant="outline">{row.status}</Badge>
                             </TableCell>
@@ -660,7 +712,9 @@ export function StrategyExplorerPanel({
                   </div>
                 </div>
               ) : (
-                <EmptyPanel>No portfolio exposure exists for this strategy in the current snapshots.</EmptyPanel>
+                <EmptyPanel>
+                  No portfolio exposure exists for this strategy in the current snapshots.
+                </EmptyPanel>
               )}
             </ExplorerCard>
 
@@ -690,27 +744,35 @@ export function StrategyExplorerPanel({
                     </TableHeader>
                     <TableBody>
                       {tradeHistoryQuery.data.trades.map((trade) => (
-                        <TableRow key={`${trade.timestamp}-${trade.source}-${trade.symbol}-${trade.eventId || trade.orderId || trade.runId || trade.quantity}`}>
+                        <TableRow
+                          key={`${trade.timestamp}-${trade.source}-${trade.symbol}-${trade.eventId || trade.orderId || trade.runId || trade.quantity}`}
+                        >
                           <TableCell>{trade.timestamp}</TableCell>
                           <TableCell>
                             <Badge variant="outline">{trade.source}</Badge>
                           </TableCell>
                           <TableCell className="font-medium">{trade.symbol}</TableCell>
                           <TableCell>{trade.side || 'n/a'}</TableCell>
-                          <TableCell className="text-right">{formatNumber(trade.quantity)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(trade.notional)}</TableCell>
+                          <TableCell className="text-right">
+                            {formatNumber(trade.quantity)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(trade.notional)}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 </div>
               ) : (
-                <EmptyPanel>No unified trade-history rows were returned for the selected window.</EmptyPanel>
+                <EmptyPanel>
+                  No unified trade-history rows were returned for the selected window.
+                </EmptyPanel>
               )}
             </ExplorerCard>
           </>
         )}
       </div>
-    </aside>
+    </section>
   );
 }

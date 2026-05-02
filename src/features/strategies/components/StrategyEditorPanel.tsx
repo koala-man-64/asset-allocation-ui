@@ -1,15 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import {
-  CopyPlus,
-  PencilLine,
-  Play,
-  Plus,
-  Save,
-  ShieldCheck,
-  Trash2
-} from 'lucide-react';
+import { CopyPlus, PencilLine, Play, Plus, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { PageLoader } from '@/app/components/common/PageLoader';
@@ -60,6 +52,7 @@ import {
   summarizeExitStack
 } from '@/features/strategies/lib/strategySummary';
 import { toast } from 'sonner';
+import { cn } from '@/app/components/ui/utils';
 
 interface StrategyEditorPanelProps {
   selectedStrategyName: string | null;
@@ -86,7 +79,10 @@ function formatRatio(value?: number | null): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function riskValue(policy: StrategyRiskPolicy | null | undefined, key: keyof StrategyRiskPolicy): string {
+function riskValue(
+  policy: StrategyRiskPolicy | null | undefined,
+  key: keyof StrategyRiskPolicy
+): string {
   const value = policy?.[key];
   if (typeof value === 'number') {
     return key === 'maxTradeNotionalBaseCcy'
@@ -101,15 +97,7 @@ function riskValue(policy: StrategyRiskPolicy | null | undefined, key: keyof Str
   return 'Unset';
 }
 
-function PanelTile({
-  label,
-  value,
-  detail
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function PanelTile({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
       <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
@@ -210,7 +198,9 @@ export function StrategyEditorPanel({
   }, [activeGroupIndex, rankingDraft?.config.groups]);
 
   const universeDirty = universeDraft ? JSON.stringify(universeDraft) !== universeBaseline : false;
-  const rankingDirty = rankingDraft ? serializeSchemaDetail(rankingDraft) !== rankingBaseline : false;
+  const rankingDirty = rankingDraft
+    ? serializeSchemaDetail(rankingDraft) !== rankingBaseline
+    : false;
 
   const rankingCatalog = rankingCatalogQuery.data;
   const catalogByTable = useMemo(() => {
@@ -375,7 +365,10 @@ export function StrategyEditorPanel({
       }
     }));
     setActiveGroupIndex((current) =>
-      clampIndex(current > groupIndex ? current - 1 : current, (rankingDraft?.config.groups.length || 1) - 1)
+      clampIndex(
+        current > groupIndex ? current - 1 : current,
+        (rankingDraft?.config.groups.length || 1) - 1
+      )
     );
     setActiveFactorIndex(0);
   };
@@ -384,7 +377,10 @@ export function StrategyEditorPanel({
     if (!activeGroup) {
       return;
     }
-    const nextFactor = buildEmptyFactor(activeGroup.name || `group-${activeGroupIndex + 1}`, rankingCatalog);
+    const nextFactor = buildEmptyFactor(
+      activeGroup.name || `group-${activeGroupIndex + 1}`,
+      rankingCatalog
+    );
     replaceGroup(activeGroupIndex, {
       ...activeGroup,
       factors: [...activeGroup.factors, nextFactor]
@@ -435,7 +431,12 @@ export function StrategyEditorPanel({
   };
 
   return (
-    <section className="mcm-panel flex min-h-[760px] flex-col overflow-hidden">
+    <section
+      className={cn(
+        'mcm-panel flex flex-col overflow-hidden',
+        selectedStrategyName ? 'min-h-[640px]' : 'min-h-0'
+      )}
+    >
       <div className="border-b border-border/40 px-6 py-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-1">
@@ -444,7 +445,8 @@ export function StrategyEditorPanel({
             </p>
             <h2 className="font-display text-xl text-foreground">Configuration Workspace</h2>
             <p className="text-sm text-muted-foreground">
-              Universe, ranking, regime, and risk controls are grouped here; child drafts save only from their own section.
+              Universe, ranking, regime, and risk controls are grouped here; child drafts save only
+              from their own section.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -476,9 +478,11 @@ export function StrategyEditorPanel({
         </div>
       </div>
 
-      <div className="flex-1 space-y-6 overflow-y-auto p-6">
+      <div className="space-y-6 p-6">
         {!selectedStrategyName ? (
-          <EmptySection>Select a strategy from the library or create a new one to begin.</EmptySection>
+          <EmptySection>
+            Select a strategy from the library or create a new one to begin.
+          </EmptySection>
         ) : isLoading ? (
           <PageLoader text="Loading strategy workspace..." className="h-80" />
         ) : errorMessage ? (
@@ -529,7 +533,11 @@ export function StrategyEditorPanel({
               <PanelTile
                 label="Universe"
                 value={strategy.config.universeConfigName || 'Not assigned'}
-                detail={strategy.config.universe ? 'Embedded legacy universe present.' : 'Linked eligibility definition.'}
+                detail={
+                  strategy.config.universe
+                    ? 'Embedded legacy universe present.'
+                    : 'Linked eligibility definition.'
+                }
               />
               <PanelTile
                 label="Ranking"
@@ -553,7 +561,8 @@ export function StrategyEditorPanel({
                 <div>
                   <h4 className="font-display text-lg text-foreground">Universe Configuration</h4>
                   <p className="text-sm text-muted-foreground">
-                    Edit the attached universe draft here. Saving this section never saves the strategy record.
+                    Edit the attached universe draft here. Saving this section never saves the
+                    strategy record.
                   </p>
                 </div>
                 <Button
@@ -567,7 +576,10 @@ export function StrategyEditorPanel({
               </div>
 
               {!universeName ? (
-                <EmptySection>No universe configuration is attached. Use Edit Strategy to attach a versioned universe.</EmptySection>
+                <EmptySection>
+                  No universe configuration is attached. Use Edit Strategy to attach a versioned
+                  universe.
+                </EmptySection>
               ) : universeDetailQuery.isLoading ? (
                 <EmptySection>Loading attached universe configuration...</EmptySection>
               ) : universeDetailQuery.error ? (
@@ -601,7 +613,10 @@ export function StrategyEditorPanel({
               </div>
 
               {!rankingName ? (
-                <EmptySection>No ranking schema is attached. Use Edit Strategy to attach a versioned ranking schema.</EmptySection>
+                <EmptySection>
+                  No ranking schema is attached. Use Edit Strategy to attach a versioned ranking
+                  schema.
+                </EmptySection>
               ) : rankingDetailQuery.isLoading ? (
                 <EmptySection>Loading attached ranking schema...</EmptySection>
               ) : rankingDetailQuery.error ? (
@@ -704,7 +719,8 @@ export function StrategyEditorPanel({
                 <div>
                   <h4 className="font-display text-lg text-foreground">Regime Configuration</h4>
                   <p className="text-sm text-muted-foreground">
-                    Regime policy remains part of the strategy payload and is saved from Edit Strategy.
+                    Regime policy remains part of the strategy payload and is saved from Edit
+                    Strategy.
                   </p>
                 </div>
                 <div className="grid gap-3">
@@ -727,7 +743,8 @@ export function StrategyEditorPanel({
                   <div>
                     <h4 className="font-display text-lg text-foreground">Risk Configuration</h4>
                     <p className="text-sm text-muted-foreground">
-                      Risk policy uses the new shared contract bridge and saves with the strategy draft.
+                      Risk policy uses the new shared contract bridge and saves with the strategy
+                      draft.
                     </p>
                   </div>
                 </div>
@@ -755,7 +772,10 @@ export function StrategyEditorPanel({
                     />
                   </div>
                 ) : (
-                  <EmptySection>No risk policy is attached. Open Edit Strategy to add the shared risk-policy payload.</EmptySection>
+                  <EmptySection>
+                    No risk policy is attached. Open Edit Strategy to add the shared risk-policy
+                    payload.
+                  </EmptySection>
                 )}
               </div>
             </section>
@@ -790,7 +810,9 @@ export function StrategyEditorPanel({
                     <TableBody>
                       {recentRuns.map((run) => (
                         <TableRow key={run.run_id}>
-                          <TableCell className="font-medium">{run.run_name || run.run_id}</TableCell>
+                          <TableCell className="font-medium">
+                            {run.run_name || run.run_id}
+                          </TableCell>
                           <TableCell>{`${run.start_date || 'Unknown'} to ${run.end_date || 'Unknown'}`}</TableCell>
                           <TableCell>
                             <Badge
