@@ -630,6 +630,7 @@ export function SystemStatusPage() {
               onRefresh={handleRefresh}
               isRefreshing={isRefreshing}
               isFetching={isFetching}
+              autoRefreshStaleMetadata
             />
           </Suspense>
         </ErrorBoundary>

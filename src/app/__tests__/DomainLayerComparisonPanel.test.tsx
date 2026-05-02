@@ -302,6 +302,40 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     expect((await screen.findAllByText(/updated Mar 3,?\s+06:00 CST/)).length).toBeGreaterThan(0);
   });
 
+  it('auto-refreshes stale cached metadata when enabled', async () => {
+    const staleLayers = makeLayers().map((layer) => ({
+      ...layer,
+      domains: (layer.domains || []).map((domain) => ({
+        ...domain,
+        status: 'stale' as const,
+        lastUpdated: NOW
+      }))
+    }));
+
+    renderPanel({
+      autoRefreshStaleMetadata: true,
+      dataLayers: staleLayers,
+      metadataSnapshot: makeSnapshot({
+        layer: 'bronze',
+        domain: 'market',
+        container: 'bronze',
+        type: 'delta',
+        computedAt: '2026-03-03T10:00:00Z',
+        symbolCount: 1,
+        warnings: []
+      })
+    });
+
+    await waitFor(() => {
+      expect(DataService.getDomainMetadata).toHaveBeenCalledWith('bronze', 'market', {
+        refresh: true
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText('123 symbols').length).toBeGreaterThan(0);
+    });
+  });
+
   it('shows the metadata timestamp when cached entries only have computedAt', async () => {
     renderPanel({
       metadataSnapshot: makeSnapshot({

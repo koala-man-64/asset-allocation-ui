@@ -104,6 +104,8 @@ const CHECKPOINT_RESET_LAYERS = new Set<LayerKey>(['silver', 'gold']);
 const DOMAIN_COLUMN_WIDTH_PX = 280;
 const PURGE_POLL_INTERVAL_MS = 1000;
 const PURGE_POLL_TIMEOUT_MS = 5 * 60_000;
+const STALE_METADATA_AUTO_REFRESH_MS = 5 * 60_000;
+const METADATA_TIMESTAMP_SKEW_MS = 60_000;
 const CPU_USAGE_PERCENT_SIGNAL_NAMES = [
   'cpupercent',
   'cpupercentage',
@@ -245,6 +247,53 @@ function getLayerVisual(layerKey: LayerKey): LayerVisualConfig {
 
 function hasFiniteNumber(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function parseTimestampMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isStaleDataStatus(status: string | null | undefined): boolean {
+  const normalized = String(status || '')
+    .trim()
+    .toLowerCase();
+  return normalized === 'stale' || normalized === 'warning' || normalized === 'degraded';
+}
+
+function shouldAutoRefreshCellMetadata({
+  metadata,
+  domainConfig,
+  snapshotUpdatedAt,
+  nowMs
+}: {
+  metadata?: DomainMetadata | null;
+  domainConfig?: DataDomain | null;
+  snapshotUpdatedAt?: string | null;
+  nowMs: number;
+}): boolean {
+  if (!metadata) {
+    return true;
+  }
+
+  const metadataTimestamp =
+    parseTimestampMs(metadata.cachedAt) ??
+    parseTimestampMs(metadata.computedAt) ??
+    parseTimestampMs(snapshotUpdatedAt);
+  const domainUpdatedAt = parseTimestampMs(domainConfig?.lastUpdated);
+
+  if (
+    domainUpdatedAt !== null &&
+    (metadataTimestamp === null || metadataTimestamp + METADATA_TIMESTAMP_SKEW_MS < domainUpdatedAt)
+  ) {
+    return true;
+  }
+
+  return (
+    isStaleDataStatus(domainConfig?.status) &&
+    (metadataTimestamp === null || nowMs - metadataTimestamp >= STALE_METADATA_AUTO_REFRESH_MS)
+  );
 }
 
 function makeCellKey(layerKey: LayerKey, domainKey: string): string {
@@ -628,6 +677,7 @@ interface DomainLayerComparisonPanelProps {
   onRefresh?: () => Promise<void> | void;
   isRefreshing?: boolean;
   isFetching?: boolean;
+  autoRefreshStaleMetadata?: boolean;
 }
 
 export function DomainLayerComparisonPanel({
@@ -642,7 +692,8 @@ export function DomainLayerComparisonPanel({
   onMetadataSnapshotChange,
   onRefresh,
   isRefreshing,
-  isFetching
+  isFetching,
+  autoRefreshStaleMetadata = false
 }: DomainLayerComparisonPanelProps) {
   const queryClient = useQueryClient();
   const { triggeringJob, triggerJob } = useJobTrigger();
@@ -650,6 +701,7 @@ export function DomainLayerComparisonPanel({
   const jobStatuses = useJobStatuses({ autoRefresh: false });
   const jobStatusesByKey = jobStatuses.byKey;
   const lastSettledRecentJobsRef = useRef<JobRun[]>(recentJobs);
+  const autoRefreshSignatureRef = useRef<string>('');
   const [localMetadataSnapshot, setLocalMetadataSnapshot] = useState<
     DomainMetadataSnapshotResponse | undefined
   >(metadataSnapshot);
@@ -1014,6 +1066,48 @@ export function DomainLayerComparisonPanel({
     },
     [queryClient, refreshingCells, updateMetadataSnapshot]
   );
+
+  useEffect(() => {
+    if (!autoRefreshStaleMetadata || queryPairs.length === 0 || isAnyRefreshInProgress) {
+      return;
+    }
+
+    const nowMs = Date.now();
+    const targets = queryPairs.filter((pair) => {
+      const metadata = metadataByCell.get(makeCellKey(pair.layerKey, pair.domainKey));
+      const domainConfig = domainConfigByLayer.get(pair.layerKey)?.get(pair.domainKey) || null;
+      return shouldAutoRefreshCellMetadata({
+        metadata,
+        domainConfig,
+        snapshotUpdatedAt: metadataUpdatedAt,
+        nowMs
+      });
+    });
+
+    if (targets.length === 0) {
+      return;
+    }
+
+    const signature = `${metadataUpdatedAt || 'none'}:${targets
+      .map((target) => makeCellKey(target.layerKey, target.domainKey))
+      .join(',')}`;
+    if (autoRefreshSignatureRef.current === signature) {
+      return;
+    }
+
+    autoRefreshSignatureRef.current = signature;
+    void Promise.allSettled(
+      targets.map((target) => handleCellRefresh(target.layerKey, target.domainKey))
+    );
+  }, [
+    autoRefreshStaleMetadata,
+    domainConfigByLayer,
+    handleCellRefresh,
+    isAnyRefreshInProgress,
+    metadataByCell,
+    metadataUpdatedAt,
+    queryPairs
+  ]);
 
   const refreshDomainMetadataAndStatus = useCallback(
     async (targets: Array<{ layerKey: LayerKey; domainKey: string }>) => {
