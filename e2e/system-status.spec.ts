@@ -13,7 +13,11 @@ async function expectNoSeriousViolations(page: Page) {
     seriousViolations.map((violation) => ({
       id: violation.id,
       impact: violation.impact,
-      nodes: violation.nodes.length
+      nodes: violation.nodes.map((node) => ({
+        target: node.target,
+        html: node.html,
+        failureSummary: node.failureSummary
+      }))
     }))
   ).toEqual([]);
 }
@@ -31,11 +35,10 @@ test('desktop smoke covers shell navigation, collapse state, and system-status a
 
   await expect(page).toHaveURL(/\/system-status$/);
   await expect(page.getByRole('heading', { name: 'Operations Command Deck' })).toBeVisible();
-  await expect(
-    page.getByRole('heading', { name: 'Backtests, Rankings, and Regime Workflows' })
-  ).toBeVisible();
+  const operationalJobsHeading = 'Operational Workflows and Control Jobs';
+  await expect(page.getByRole('heading', { name: operationalJobsHeading })).toBeVisible();
   const operationalJobs = page.getByRole('region', {
-    name: 'Backtests, Rankings, and Regime Workflows'
+    name: operationalJobsHeading
   });
   await expect(operationalJobs.getByText('aca-job-backtest-runner').first()).toBeVisible();
   await expect(operationalJobs.getByText('aca-job-market-bronze')).toHaveCount(0);
