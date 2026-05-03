@@ -6,6 +6,11 @@ import type {
   BrokerAccountConfiguration,
   BrokerAccountDetail,
   BrokerAccountListResponse,
+  BrokerAccountOnboardingCandidateListResponse,
+  BrokerAccountOnboardingEnvironment,
+  BrokerAccountOnboardingRequest,
+  BrokerAccountOnboardingResponse,
+  BrokerVendor,
   BrokerTradingPolicyUpdateRequest,
   PauseBrokerSyncRequest,
   ReconnectBrokerAccountRequest,
@@ -18,7 +23,17 @@ export const accountOperationsKeys = {
   detail: (accountId: string | null) =>
     [...accountOperationsKeys.all(), 'detail', accountId ?? 'none'] as const,
   configuration: (accountId: string | null) =>
-    [...accountOperationsKeys.all(), 'configuration', accountId ?? 'none'] as const
+    [...accountOperationsKeys.all(), 'configuration', accountId ?? 'none'] as const,
+  onboardingCandidates: (
+    provider: BrokerVendor | null,
+    environment: BrokerAccountOnboardingEnvironment | null
+  ) =>
+    [
+      ...accountOperationsKeys.all(),
+      'onboarding-candidates',
+      provider ?? 'none',
+      environment ?? 'none'
+    ] as const
 };
 
 export const accountOperationsApi = {
@@ -40,6 +55,31 @@ export const accountOperationsApi = {
       `/broker-accounts/${encodeURIComponent(accountId)}/configuration`,
       { signal }
     );
+  },
+
+  async listOnboardingCandidates(
+    provider: BrokerVendor,
+    environment: BrokerAccountOnboardingEnvironment,
+    signal?: AbortSignal
+  ): Promise<BrokerAccountOnboardingCandidateListResponse> {
+    return request<BrokerAccountOnboardingCandidateListResponse>(
+      '/broker-accounts/onboarding/candidates',
+      {
+        params: { provider, environment },
+        signal
+      }
+    );
+  },
+
+  async onboardAccount(
+    payload: BrokerAccountOnboardingRequest,
+    signal?: AbortSignal
+  ): Promise<BrokerAccountOnboardingResponse> {
+    return request<BrokerAccountOnboardingResponse>('/broker-accounts/onboarding', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal
+    });
   },
 
   async reconnectAccount(

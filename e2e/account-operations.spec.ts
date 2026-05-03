@@ -99,6 +99,286 @@ test('account operations mobile viewports do not introduce horizontal overflow',
   }
 });
 
+test('account operations empty state can onboard a discovered broker account', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const generatedAt = '2026-04-18T14:30:00Z';
+  const freshness = {
+    balancesState: 'unknown',
+    positionsState: 'unknown',
+    ordersState: 'unknown',
+    balancesAsOf: null,
+    positionsAsOf: null,
+    ordersAsOf: null,
+    maxAgeSeconds: 300,
+    staleReason: 'Seeded through broker onboarding; initial refresh pending.'
+  };
+  const tradeAccount = {
+    accountId: 'alpaca-paper',
+    name: 'Alpaca Paper',
+    provider: 'alpaca',
+    environment: 'paper',
+    accountNumberMasked: '***6789',
+    baseCurrency: 'USD',
+    readiness: 'review',
+    readinessReason: 'Seeded through broker onboarding; refresh required.',
+    capabilities: {
+      canReadAccount: true,
+      canReadPositions: true,
+      canReadOrders: true,
+      canReadHistory: true,
+      canPreview: true,
+      canSubmitPaper: true,
+      canSubmitSandbox: false,
+      canSubmitLive: false,
+      canCancel: true,
+      supportsMarketOrders: true,
+      supportsLimitOrders: true,
+      supportsStopOrders: false,
+      supportsFractionalQuantity: false,
+      supportsNotionalOrders: false,
+      supportsEquities: true,
+      supportsEtfs: true,
+      supportsOptions: false,
+      readOnly: false,
+      unsupportedReason: null
+    },
+    cash: 0,
+    buyingPower: 0,
+    equity: 0,
+    openOrderCount: 0,
+    positionCount: 0,
+    unresolvedAlertCount: 0,
+    killSwitchActive: false,
+    confirmationRequired: false,
+    lastSyncedAt: null,
+    snapshotAsOf: generatedAt,
+    freshness,
+    pnl: null,
+    lastTradeAt: null
+  };
+  const brokerAccount = {
+    accountId: tradeAccount.accountId,
+    broker: tradeAccount.provider,
+    name: tradeAccount.name,
+    accountNumberMasked: tradeAccount.accountNumberMasked,
+    baseCurrency: tradeAccount.baseCurrency,
+    overallStatus: 'warning',
+    tradeReadiness: tradeAccount.readiness,
+    tradeReadinessReason: tradeAccount.readinessReason,
+    highestAlertSeverity: null,
+    connectionHealth: {
+      overallStatus: 'warning',
+      authStatus: 'authenticated',
+      connectionState: 'degraded',
+      syncStatus: 'never_synced',
+      lastCheckedAt: generatedAt,
+      lastSuccessfulSyncAt: null,
+      lastFailedSyncAt: null,
+      authExpiresAt: null,
+      staleReason: freshness.staleReason,
+      failureMessage: null,
+      syncPaused: false
+    },
+    equity: 0,
+    cash: 0,
+    buyingPower: 0,
+    openPositionCount: 0,
+    openOrderCount: 0,
+    lastSyncedAt: null,
+    snapshotAsOf: generatedAt,
+    activePortfolioName: null,
+    strategyLabel: null,
+    configurationVersion: null,
+    allocationSummary: null,
+    alertCount: 0
+  };
+  const brokerDetail = {
+    account: brokerAccount,
+    capabilities: {
+      canReadBalances: true,
+      canReadPositions: true,
+      canReadOrders: true,
+      canTrade: true,
+      canReconnect: false,
+      canPauseSync: true,
+      canRefresh: true,
+      canAcknowledgeAlerts: false,
+      canReadTradingPolicy: true,
+      canWriteTradingPolicy: true,
+      canReadAllocation: true,
+      canWriteAllocation: true,
+      canReleaseTradeConfirmation: false,
+      readOnlyReason: null
+    },
+    accountType: 'paper',
+    tradingBlocked: false,
+    tradingBlockedReason: null,
+    unsettledFunds: null,
+    dayTradeBuyingPower: null,
+    maintenanceExcess: null,
+    alerts: [],
+    syncRuns: [],
+    recentActivity: [],
+    configuration: null
+  };
+  const tradeDetail = {
+    account: tradeAccount,
+    restrictions: [],
+    riskLimits: {
+      maxOrderNotional: 50000,
+      maxDailyNotional: 100000,
+      maxShareQuantity: 1000,
+      allowedAssetClasses: ['equity'],
+      allowedOrderTypes: ['market', 'limit'],
+      liveTradingAllowed: false,
+      liveTradingReason: null
+    },
+    unresolvedAlerts: [],
+    recentAuditEvents: [],
+    alerts: []
+  };
+  const onboardingCandidate = {
+    candidateId: 'alpaca:paper:123',
+    provider: 'alpaca',
+    environment: 'paper',
+    suggestedAccountId: tradeAccount.accountId,
+    displayName: tradeAccount.name,
+    accountNumberMasked: tradeAccount.accountNumberMasked,
+    baseCurrency: tradeAccount.baseCurrency,
+    state: 'available',
+    stateReason: null,
+    existingAccountId: null,
+    allowedExecutionPostures: ['monitor_only', 'paper'],
+    blockedExecutionPostureReasons: {
+      live: 'Live posture requires environment=live.'
+    },
+    canOnboard: true
+  };
+  let onboarded = false;
+
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url());
+    const apiPath = url.pathname.replace(/\/api/, '').replace(/\/+$/, '');
+
+    if (apiPath === '/broker-accounts') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ accounts: onboarded ? [brokerAccount] : [], generatedAt })
+      });
+    }
+    if (apiPath === '/trade-accounts') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ accounts: onboarded ? [tradeAccount] : [], generatedAt })
+      });
+    }
+    if (apiPath === '/broker-accounts/onboarding/candidates') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          candidates: [onboardingCandidate],
+          discoveryStatus: 'completed',
+          message: '',
+          generatedAt
+        })
+      });
+    }
+    if (apiPath === '/broker-accounts/onboarding') {
+      onboarded = true;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          account: brokerAccount,
+          configuration: null,
+          created: true,
+          reenabled: false,
+          refreshAction: null,
+          audit: null,
+          message: 'Broker account onboarded.',
+          generatedAt
+        })
+      });
+    }
+    if (apiPath === '/broker-accounts/alpaca-paper') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(brokerDetail)
+      });
+    }
+    if (apiPath === '/trade-accounts/alpaca-paper') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(tradeDetail)
+      });
+    }
+    if (apiPath === '/trade-accounts/alpaca-paper/positions') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ accountId: tradeAccount.accountId, positions: [], generatedAt, freshness })
+      });
+    }
+    if (apiPath === '/trade-accounts/alpaca-paper/orders') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ accountId: tradeAccount.accountId, orders: [], generatedAt })
+      });
+    }
+    if (apiPath === '/trade-accounts/alpaca-paper/history') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ accountId: tradeAccount.accountId, orders: [], generatedAt })
+      });
+    }
+    if (apiPath === '/trade-accounts/alpaca-paper/blotter') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ accountId: tradeAccount.accountId, rows: [], generatedAt })
+      });
+    }
+
+    return route.fallback();
+  });
+
+  await page.goto('/accounts');
+  await expect(page.getByText(/No configured accounts/i)).toBeVisible();
+
+  await page.getByRole('button', { name: /add account/i }).first().click();
+  await page.getByRole('button', { name: /discover accounts/i }).click();
+  await page.getByRole('button', { name: /alpaca paper/i }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: /paper execution posture/i }).click();
+  await page.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.getByLabel(/operator reason/i).fill('Create paper account for monitoring.');
+
+  const onboardingRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === '/api/broker-accounts/onboarding' && request.method() === 'POST';
+  });
+  await page.getByRole('button', { name: /onboard account/i }).click();
+  expect((await onboardingRequest).postDataJSON()).toMatchObject({
+    candidateId: onboardingCandidate.candidateId,
+    displayName: tradeAccount.name,
+    readiness: 'review',
+    executionPosture: 'paper',
+    initialRefresh: true,
+    reason: 'Create paper account for monitoring.'
+  });
+
+  await expect(page.getByTestId('account-card-alpaca-paper')).toContainText('Alpaca Paper');
+});
+
 test('account operations dossier monitoring is keyboard reachable and accessible', async ({
   page
 }) => {
