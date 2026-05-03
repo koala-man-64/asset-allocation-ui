@@ -676,10 +676,10 @@ function brokerCapabilitiesFromTrade(account: TradeAccountMock) {
       account.capabilities.canSubmitPaper ||
       account.capabilities.canSubmitSandbox ||
       account.capabilities.canSubmitLive,
-    canReconnect: false,
-    canPauseSync: false,
-    canRefresh: false,
-    canAcknowledgeAlerts: false,
+    canReconnect: account.accountId === 'acct-live',
+    canPauseSync: account.capabilities.canReadAccount,
+    canRefresh: account.capabilities.canReadAccount,
+    canAcknowledgeAlerts: account.unresolvedAlertCount > 0,
     canReadTradingPolicy: account.capabilities.canReadAccount,
     canWriteTradingPolicy: !account.capabilities.readOnly,
     canReadAllocation: account.capabilities.canReadAccount,
@@ -706,10 +706,18 @@ function brokerSyncStatusFromTrade(account: TradeAccountMock) {
 
 function brokerOverallStatusFromTrade(account: TradeAccountMock) {
   const syncStatus = brokerSyncStatusFromTrade(account);
-  if (account.readiness === 'blocked' || account.killSwitchActive || !account.capabilities.canReadAccount) {
+  if (
+    account.readiness === 'blocked' ||
+    account.killSwitchActive ||
+    !account.capabilities.canReadAccount
+  ) {
     return 'critical';
   }
-  if (account.readiness === 'review' || syncStatus !== 'fresh' || account.unresolvedAlertCount > 0) {
+  if (
+    account.readiness === 'review' ||
+    syncStatus !== 'fresh' ||
+    account.unresolvedAlertCount > 0
+  ) {
     return 'warning';
   }
   return 'healthy';
@@ -726,17 +734,17 @@ function brokerConnectionHealthFromTrade(account: TradeAccountMock) {
       : account.capabilities.canReadAccount
         ? 'authenticated'
         : 'not_connected',
-    connectionState:
-      reconnectRequired
-        ? 'reconnect_required'
-        : !account.capabilities.canReadAccount
-          ? 'disconnected'
-          : syncStatus === 'fresh'
-            ? 'connected'
-            : 'degraded',
+    connectionState: reconnectRequired
+      ? 'reconnect_required'
+      : !account.capabilities.canReadAccount
+        ? 'disconnected'
+        : syncStatus === 'fresh'
+          ? 'connected'
+          : 'degraded',
     syncStatus,
     lastCheckedAt: account.snapshotAsOf,
-    lastSuccessfulSyncAt: syncStatus === 'fresh' || syncStatus === 'stale' ? account.lastSyncedAt : null,
+    lastSuccessfulSyncAt:
+      syncStatus === 'fresh' || syncStatus === 'stale' ? account.lastSyncedAt : null,
     lastFailedSyncAt: reconnectRequired ? account.snapshotAsOf : null,
     authExpiresAt: null,
     staleReason: syncStatus === 'stale' ? account.freshness.staleReason : null,
@@ -751,7 +759,8 @@ function brokerConnectionHealthFromTrade(account: TradeAccountMock) {
 
 function brokerAllocationForTradeAccount(account: TradeAccountMock) {
   return {
-    portfolioName: account.accountId === 'acct-live' ? 'Live Alpha Portfolio' : 'Core Paper Portfolio',
+    portfolioName:
+      account.accountId === 'acct-live' ? 'Live Alpha Portfolio' : 'Core Paper Portfolio',
     portfolioVersion: 1,
     allocationMode: 'percent',
     allocatableCapital: account.buyingPower,
@@ -847,7 +856,9 @@ function effectivePolicyFromRequestedPolicy(
   account: TradeAccountMock,
   requestedPolicy: ReturnType<typeof brokerConfigurationFromTradeAccount>['requestedPolicy']
 ) {
-  const allowedSides = requestedPolicy.allowedSides.filter((side) => side === 'long' || side === 'short');
+  const allowedSides = requestedPolicy.allowedSides.filter(
+    (side) => side === 'long' || side === 'short'
+  );
   const allowedAssetClasses = requestedPolicy.allowedAssetClasses.filter((assetClass) => {
     if (assetClass === 'option') {
       return account.capabilities.supportsOptions;
@@ -932,9 +943,93 @@ function resetBrokerMocks() {
   );
   for (const account of tradeAccounts) {
     brokerAccountById[account.accountId] = brokerAccountFromTradeAccount(account);
-    brokerConfigurationByAccountId[account.accountId] = brokerConfigurationFromTradeAccount(account);
+    brokerConfigurationByAccountId[account.accountId] =
+      brokerConfigurationFromTradeAccount(account);
     brokerAccountDetailsById[account.accountId] = brokerAccountDetailFromTradeAccount(account);
   }
+}
+
+async function handleBrokerAccountAction(route: Route, accountId: string, apiPath: string) {
+  const request = route.request();
+  const body = request.postDataJSON() as {
+    reason?: string;
+    note?: string;
+    paused?: boolean;
+  } | null;
+  const alertMatch = apiPath.match(/^\/broker-accounts\/([^/]+)\/alerts\/([^/]+)\/acknowledge$/);
+  const detail = brokerAccountDetailsById[accountId];
+  const account = brokerAccountById[accountId];
+  const note = body?.reason ?? body?.note ?? null;
+  let action: 'reconnect' | 'pause_sync' | 'resume_sync' | 'refresh' | 'acknowledge_alert' =
+    'refresh';
+  let summary = 'Account action accepted from Account Operations.';
+  let syncPaused = account?.connectionHealth.syncPaused ?? false;
+
+  if (apiPath === `/broker-accounts/${accountId}/reconnect`) {
+    action = 'reconnect';
+    summary = 'Reconnect request accepted from Account Operations.';
+  } else if (apiPath === `/broker-accounts/${accountId}/sync/pause`) {
+    action = 'pause_sync';
+    summary = 'Sync pause accepted from Account Operations.';
+    syncPaused = true;
+  } else if (apiPath === `/broker-accounts/${accountId}/sync/resume`) {
+    action = 'resume_sync';
+    summary = 'Sync resume accepted from Account Operations.';
+    syncPaused = false;
+  } else if (alertMatch) {
+    action = 'acknowledge_alert';
+    summary = 'Alert acknowledgement accepted from Account Operations.';
+  }
+
+  if (account) {
+    const nextAccount = {
+      ...account,
+      connectionHealth: {
+        ...account.connectionHealth,
+        syncPaused,
+        syncStatus: syncPaused ? 'paused' : account.connectionHealth.syncStatus
+      }
+    };
+    brokerAccountById[accountId] = nextAccount;
+    const accountIndex = brokerAccounts.findIndex((candidate) => candidate.accountId === accountId);
+    if (accountIndex >= 0) {
+      brokerAccounts[accountIndex] = nextAccount;
+    }
+  }
+
+  if (detail) {
+    brokerAccountDetailsById[accountId] = {
+      ...detail,
+      account: brokerAccountById[accountId] ?? detail.account,
+      recentActivity: [
+        {
+          activityId: `activity-${action}-${Date.now()}`,
+          accountId,
+          activityType: action,
+          status: 'accepted',
+          requestedAt: NOW,
+          completedAt: null,
+          actor: 'playwright',
+          summary,
+          note,
+          relatedAlertId: alertMatch ? decodeURIComponent(alertMatch[2] || '') : null
+        },
+        ...detail.recentActivity
+      ]
+    };
+  }
+
+  return json(route, {
+    actionId: `action-${action}-${Date.now()}`,
+    accountId,
+    action,
+    status: 'accepted',
+    requestedAt: NOW,
+    message: summary,
+    resultingConnectionHealth: brokerAccountById[accountId]?.connectionHealth ?? null,
+    tradeReadiness: brokerAccountById[accountId]?.tradeReadiness ?? null,
+    syncPaused
+  });
 }
 
 const tradeOrdersByAccountId = {
@@ -1339,7 +1434,7 @@ function json(route: Route, body: unknown, status = 200) {
 
 function requestJson(route: Route): Record<string, unknown> {
   const body = route.request().postData();
-  return body ? JSON.parse(body) as Record<string, unknown> : {};
+  return body ? (JSON.parse(body) as Record<string, unknown>) : {};
 }
 
 function saveBrokerTradingPolicy(route: Route, accountId: string) {
@@ -1361,7 +1456,8 @@ function saveBrokerTradingPolicy(route: Route, accountId: string) {
     );
   }
 
-  const requestedPolicy = (payload.requestedPolicy ?? current.requestedPolicy) as typeof current.requestedPolicy;
+  const requestedPolicy = (payload.requestedPolicy ??
+    current.requestedPolicy) as typeof current.requestedPolicy;
   const nextConfiguration = {
     ...current,
     configurationVersion: current.configurationVersion + 1,
@@ -1586,7 +1682,7 @@ async function handleApiRoute(route: Route) {
       apiPath === `/broker-accounts/${accountId}/refresh` ||
       apiPath.match(/^\/broker-accounts\/([^/]+)\/alerts\/([^/]+)\/acknowledge$/)
     ) {
-      return json(route, { detail: 'Action is not implemented in Account Operations v1.' }, 501);
+      return handleBrokerAccountAction(route, accountId, apiPath);
     }
   }
 
@@ -1656,8 +1752,9 @@ async function handleApiRoute(route: Route) {
       const matchedAccountId = decodeURIComponent(cancelMatch[1] || '');
       const orderId = decodeURIComponent(cancelMatch[2] || '');
       const order =
-        (tradeOrdersByAccountId[matchedAccountId] ?? []).find((candidate) => candidate.orderId === orderId) ??
-        tradeOrdersByAccountId[matchedAccountId]?.[0];
+        (tradeOrdersByAccountId[matchedAccountId] ?? []).find(
+          (candidate) => candidate.orderId === orderId
+        ) ?? tradeOrdersByAccountId[matchedAccountId]?.[0];
 
       return json(route, {
         order: { ...order, status: 'cancel_pending' },

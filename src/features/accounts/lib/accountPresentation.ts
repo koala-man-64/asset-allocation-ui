@@ -6,6 +6,7 @@ import type {
   BrokerStrategyAllocationSummary,
   BrokerVendor
 } from '@/types/brokerAccounts';
+import type { TradeAccountSummaryView } from '@/services/tradeDeskModels';
 
 export function formatCurrency(value?: number | null, currency: string = 'USD'): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
@@ -165,7 +166,10 @@ export function alertToneClass(severity: BrokerAccountAlert['severity']): string
   return 'border-mcm-teal/25 bg-mcm-teal/10';
 }
 
-export function getAccountSearchText(account: BrokerAccountSummary): string {
+export function getAccountSearchText(
+  account: BrokerAccountSummary,
+  tradeAccount?: TradeAccountSummaryView | null
+): string {
   return [
     account.name,
     account.broker,
@@ -179,7 +183,18 @@ export function getAccountSearchText(account: BrokerAccountSummary): string {
     ]),
     account.tradeReadinessReason,
     account.connectionHealth.staleReason,
-    account.connectionHealth.failureMessage
+    account.connectionHealth.failureMessage,
+    tradeAccount?.name,
+    tradeAccount?.provider,
+    tradeAccount?.environment,
+    tradeAccount?.readiness,
+    tradeAccount?.readinessReason,
+    tradeAccount?.accountNumberMasked,
+    tradeAccount?.capabilities.unsupportedReason,
+    tradeAccount?.freshness.balancesState,
+    tradeAccount?.freshness.positionsState,
+    tradeAccount?.freshness.ordersState,
+    tradeAccount?.freshness.staleReason
   ]
     .filter(Boolean)
     .join(' ')
@@ -236,7 +251,9 @@ function tradePriority(account: BrokerAccountSummary): number {
   return 0;
 }
 
-export function sortAccountsByPriority(accounts: readonly BrokerAccountSummary[]): BrokerAccountSummary[] {
+export function sortAccountsByPriority(
+  accounts: readonly BrokerAccountSummary[]
+): BrokerAccountSummary[] {
   return [...accounts].sort((left, right) => {
     const alertDelta = alertPriority(right) - alertPriority(left);
     if (alertDelta !== 0) {

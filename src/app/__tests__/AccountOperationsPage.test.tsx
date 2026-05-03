@@ -4,9 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountOperationsPage } from '@/features/accounts/AccountOperationsPage';
 import { accountOperationsApi } from '@/services/accountOperationsApi';
+import { tradeDeskApi } from '@/services/tradeDeskApi';
 import { ApiError } from '@/services/apiService';
 import { renderWithProviders } from '@/test/utils';
 import { toast } from 'sonner';
+import type {
+  TradeAccountDetailView,
+  TradeAccountSummaryView,
+  TradeBlotterRow
+} from '@/services/tradeDeskModels';
 import type {
   BrokerAccountActionResponse,
   BrokerAccountConfiguration,
@@ -14,6 +20,7 @@ import type {
   BrokerAccountListResponse,
   BrokerAccountSummary
 } from '@/types/brokerAccounts';
+import type { TradeOrder, TradePosition } from '@asset-allocation/contracts';
 
 vi.mock('@/services/accountOperationsApi', () => ({
   accountOperationsApi: {
@@ -36,6 +43,26 @@ vi.mock('@/services/accountOperationsApi', () => ({
       'configuration',
       accountId ?? 'none'
     ]
+  }
+}));
+
+vi.mock('@/services/tradeDeskApi', () => ({
+  tradeDeskApi: {
+    listAccounts: vi.fn(),
+    getAccountDetail: vi.fn(),
+    listPositions: vi.fn(),
+    listOrders: vi.fn(),
+    listHistory: vi.fn(),
+    listBlotter: vi.fn()
+  },
+  tradeDeskKeys: {
+    all: () => ['trade-desk'],
+    accounts: () => ['trade-desk', 'accounts'],
+    detail: (accountId: string | null) => ['trade-desk', 'detail', accountId ?? 'none'],
+    positions: (accountId: string | null) => ['trade-desk', 'positions', accountId ?? 'none'],
+    orders: (accountId: string | null) => ['trade-desk', 'orders', accountId ?? 'none'],
+    history: (accountId: string | null) => ['trade-desk', 'history', accountId ?? 'none'],
+    blotter: (accountId: string | null) => ['trade-desk', 'blotter', accountId ?? 'none']
   }
 }));
 
@@ -343,6 +370,293 @@ const detailResponse: BrokerAccountDetail = {
   configuration: configurationResponse
 };
 
+const tradeCapabilities = {
+  canReadAccount: true,
+  canReadPositions: true,
+  canReadOrders: true,
+  canReadHistory: true,
+  canPreview: true,
+  canSubmitPaper: true,
+  canSubmitSandbox: false,
+  canSubmitLive: false,
+  canCancel: true,
+  supportsMarketOrders: true,
+  supportsLimitOrders: true,
+  supportsStopOrders: false,
+  supportsFractionalQuantity: true,
+  supportsNotionalOrders: true,
+  supportsEquities: true,
+  supportsEtfs: true,
+  supportsOptions: false,
+  readOnly: false,
+  unsupportedReason: null
+};
+
+const tradeFreshness = {
+  balancesState: 'stale',
+  positionsState: 'fresh',
+  ordersState: 'fresh',
+  balancesAsOf: '2026-04-20T12:00:00Z',
+  positionsAsOf: '2026-04-20T13:45:00Z',
+  ordersAsOf: '2026-04-20T13:46:00Z',
+  maxAgeSeconds: 900,
+  staleReason: 'Balances missed the freshness threshold.'
+} as const;
+
+const disconnectedTradeAccount: TradeAccountSummaryView = {
+  accountId: disconnectedAccount.accountId,
+  name: disconnectedAccount.name,
+  provider: 'schwab',
+  environment: 'live',
+  accountNumberMasked: disconnectedAccount.accountNumberMasked,
+  baseCurrency: disconnectedAccount.baseCurrency,
+  readiness: 'blocked',
+  readinessReason: 'Broker session expired and order permissions are stale.',
+  capabilities: {
+    ...tradeCapabilities,
+    canSubmitLive: false,
+    readOnly: true,
+    unsupportedReason: 'Reconnect required before live routing.'
+  },
+  cash: disconnectedAccount.cash,
+  buyingPower: disconnectedAccount.buyingPower,
+  equity: disconnectedAccount.equity,
+  openOrderCount: 3,
+  positionCount: 18,
+  unresolvedAlertCount: 2,
+  killSwitchActive: true,
+  pnl: {
+    realizedPnl: 2100,
+    unrealizedPnl: -5200,
+    dayPnl: -1250,
+    grossExposure: 410000,
+    netExposure: 285000,
+    asOf: '2026-04-20T13:45:00Z'
+  },
+  lastSyncedAt: disconnectedAccount.lastSyncedAt,
+  lastTradeAt: '2026-04-20T13:15:00Z',
+  snapshotAsOf: disconnectedAccount.snapshotAsOf,
+  freshness: tradeFreshness,
+  policyVersion: 7,
+  projectedTradingPolicy: null,
+  confirmationRequired: true
+};
+
+const warningTradeAccount: TradeAccountSummaryView = {
+  ...disconnectedTradeAccount,
+  accountId: warningAccount.accountId,
+  name: warningAccount.name,
+  provider: 'etrade',
+  environment: 'paper',
+  accountNumberMasked: warningAccount.accountNumberMasked,
+  readiness: 'review',
+  readinessReason: warningAccount.tradeReadinessReason,
+  capabilities: tradeCapabilities,
+  cash: warningAccount.cash,
+  buyingPower: warningAccount.buyingPower,
+  equity: warningAccount.equity,
+  openOrderCount: 1,
+  positionCount: 12,
+  unresolvedAlertCount: 1,
+  killSwitchActive: false,
+  pnl: {
+    realizedPnl: 800,
+    unrealizedPnl: 1100,
+    dayPnl: 200,
+    grossExposure: 180000,
+    netExposure: 92000,
+    asOf: '2026-04-20T13:45:00Z'
+  },
+  lastSyncedAt: warningAccount.lastSyncedAt,
+  lastTradeAt: '2026-04-20T12:30:00Z',
+  snapshotAsOf: warningAccount.snapshotAsOf,
+  freshness: {
+    ...tradeFreshness,
+    balancesState: 'stale',
+    positionsState: 'stale',
+    ordersState: 'fresh'
+  },
+  confirmationRequired: false
+};
+
+const healthyTradeAccount: TradeAccountSummaryView = {
+  ...disconnectedTradeAccount,
+  accountId: healthyAccount.accountId,
+  name: healthyAccount.name,
+  provider: 'alpaca',
+  environment: 'paper',
+  accountNumberMasked: healthyAccount.accountNumberMasked,
+  readiness: 'ready',
+  readinessReason: null,
+  capabilities: tradeCapabilities,
+  cash: healthyAccount.cash,
+  buyingPower: healthyAccount.buyingPower,
+  equity: healthyAccount.equity,
+  openOrderCount: 4,
+  positionCount: 25,
+  unresolvedAlertCount: 0,
+  killSwitchActive: false,
+  pnl: {
+    realizedPnl: 12000,
+    unrealizedPnl: 6400,
+    dayPnl: 750,
+    grossExposure: 500000,
+    netExposure: 360000,
+    asOf: '2026-04-20T13:45:00Z'
+  },
+  lastSyncedAt: healthyAccount.lastSyncedAt,
+  lastTradeAt: '2026-04-20T13:20:00Z',
+  snapshotAsOf: healthyAccount.snapshotAsOf,
+  freshness: {
+    ...tradeFreshness,
+    balancesState: 'fresh',
+    positionsState: 'fresh',
+    ordersState: 'fresh',
+    staleReason: null
+  },
+  confirmationRequired: false
+};
+
+const tradeAccountList = {
+  accounts: [healthyTradeAccount, warningTradeAccount, disconnectedTradeAccount],
+  generatedAt: '2026-04-20T13:50:00Z'
+};
+
+const positionRows: TradePosition[] = [
+  {
+    accountId: disconnectedAccount.accountId,
+    symbol: 'MSFT',
+    assetClass: 'equity',
+    quantity: 10,
+    marketValue: 4200,
+    averageEntryPrice: 380,
+    lastPrice: 420,
+    costBasis: 3800,
+    unrealizedPnl: 400,
+    unrealizedPnlPercent: 10.53,
+    dayPnl: 125,
+    weight: 0.01,
+    asOf: '2026-04-20T13:45:00Z'
+  }
+];
+
+const openOrderRows: TradeOrder[] = [
+  {
+    orderId: 'order-open-1',
+    accountId: disconnectedAccount.accountId,
+    provider: 'schwab',
+    environment: 'live',
+    status: 'accepted',
+    symbol: 'AAPL',
+    side: 'buy',
+    orderType: 'limit',
+    timeInForce: 'day',
+    assetClass: 'equity',
+    clientRequestId: 'client-open-1',
+    idempotencyKey: 'idem-open-1',
+    correlationId: null,
+    providerOrderId: 'provider-open-1',
+    providerCorrelationId: null,
+    quantity: 5,
+    notional: null,
+    limitPrice: 180,
+    stopPrice: null,
+    estimatedPrice: null,
+    estimatedNotional: 900,
+    filledQuantity: 0,
+    averageFillPrice: null,
+    submittedAt: '2026-04-20T13:30:00Z',
+    acceptedAt: '2026-04-20T13:30:05Z',
+    filledAt: null,
+    cancelledAt: null,
+    expiresAt: null,
+    createdAt: '2026-04-20T13:30:00Z',
+    updatedAt: '2026-04-20T13:30:05Z',
+    statusReason: null,
+    riskChecks: [],
+    reconciliationRequired: false
+  }
+];
+
+const historyRows: TradeOrder[] = [
+  ...openOrderRows,
+  {
+    ...openOrderRows[0],
+    orderId: 'order-filled-1',
+    status: 'filled',
+    symbol: 'NVDA',
+    filledQuantity: 2,
+    averageFillPrice: 900,
+    filledAt: '2026-04-20T13:40:00Z',
+    updatedAt: '2026-04-20T13:40:00Z'
+  }
+];
+
+const blotterRows: TradeBlotterRow[] = [
+  {
+    rowId: 'blotter-1',
+    accountId: disconnectedAccount.accountId,
+    provider: 'schwab',
+    environment: 'live',
+    eventType: 'fill',
+    occurredAt: '2026-04-20T13:40:00Z',
+    orderId: 'order-filled-1',
+    providerOrderId: 'provider-filled-1',
+    clientRequestId: 'client-filled-1',
+    symbol: 'NVDA',
+    side: 'buy',
+    status: 'filled',
+    quantity: 2,
+    price: 900,
+    fees: 1.5,
+    realizedPnl: 125,
+    cashImpact: -1801.5,
+    note: null
+  }
+];
+
+const tradeDetailResponse: TradeAccountDetailView = {
+  account: disconnectedTradeAccount,
+  restrictions: ['Reconnect required before execution.'],
+  riskLimits: {
+    maxOrderNotional: 50000,
+    maxDailyNotional: 100000,
+    maxShareQuantity: 1000,
+    allowedAssetClasses: ['equity'],
+    allowedOrderTypes: ['market', 'limit'],
+    liveTradingAllowed: false,
+    liveTradingReason: 'Live routing is blocked while the broker session is expired.'
+  },
+  unresolvedAlerts: ['Broker session expired.'],
+  alerts: [],
+  recentAuditEvents: [
+    {
+      eventId: 'trade-audit-1',
+      accountId: disconnectedAccount.accountId,
+      provider: 'schwab',
+      environment: 'live',
+      eventType: 'submit',
+      severity: 'warning',
+      occurredAt: '2026-04-20T13:40:00Z',
+      actor: 'desk-op',
+      orderId: 'order-filled-1',
+      providerOrderId: 'provider-filled-1',
+      clientRequestId: 'client-filled-1',
+      idempotencyKey: 'idem-filled-1',
+      previewId: null,
+      confirmationTokenId: null,
+      requestId: 'req-trade-1',
+      statusBefore: 'accepted',
+      statusAfter: 'filled',
+      summary: 'Live trade filled under supervisory review.',
+      sanitizedError: null,
+      denialReason: null,
+      grantedRoles: ['AssetAllocation.Trade.Read'],
+      details: {}
+    }
+  ]
+};
+
 const cloneJson = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 function cloneConfiguration(
@@ -402,7 +716,9 @@ describe('AccountOperationsPage', () => {
     vi.mocked(accountOperationsApi.listAccounts).mockResolvedValue(listResponse);
     vi.mocked(accountOperationsApi.getAccountDetail).mockResolvedValue(detailResponse);
     vi.mocked(accountOperationsApi.getConfiguration).mockResolvedValue(configurationResponse);
-    vi.mocked(accountOperationsApi.refreshAccount).mockResolvedValue(buildActionResponse('refresh'));
+    vi.mocked(accountOperationsApi.refreshAccount).mockResolvedValue(
+      buildActionResponse('refresh')
+    );
     vi.mocked(accountOperationsApi.reconnectAccount).mockResolvedValue(
       buildActionResponse('reconnect')
     );
@@ -414,6 +730,29 @@ describe('AccountOperationsPage', () => {
     );
     vi.mocked(accountOperationsApi.saveTradingPolicy).mockResolvedValue(configurationResponse);
     vi.mocked(accountOperationsApi.saveAllocation).mockResolvedValue(configurationResponse);
+    vi.mocked(tradeDeskApi.listAccounts).mockResolvedValue(tradeAccountList);
+    vi.mocked(tradeDeskApi.getAccountDetail).mockResolvedValue(tradeDetailResponse);
+    vi.mocked(tradeDeskApi.listPositions).mockResolvedValue({
+      accountId: disconnectedAccount.accountId,
+      positions: positionRows,
+      generatedAt: '2026-04-20T13:50:00Z',
+      freshness: tradeFreshness
+    });
+    vi.mocked(tradeDeskApi.listOrders).mockResolvedValue({
+      accountId: disconnectedAccount.accountId,
+      orders: openOrderRows,
+      generatedAt: '2026-04-20T13:50:00Z'
+    });
+    vi.mocked(tradeDeskApi.listHistory).mockResolvedValue({
+      accountId: disconnectedAccount.accountId,
+      orders: historyRows,
+      generatedAt: '2026-04-20T13:50:00Z'
+    });
+    vi.mocked(tradeDeskApi.listBlotter).mockResolvedValue({
+      accountId: disconnectedAccount.accountId,
+      rows: blotterRows,
+      generatedAt: '2026-04-20T13:50:00Z'
+    });
   });
 
   it('renders the board summary and sorts the board by exception priority', async () => {
@@ -424,7 +763,9 @@ describe('AccountOperationsPage', () => {
     expect(screen.getAllByText('Trade Ready').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Needs Action').length).toBeGreaterThan(0);
     expect(screen.getByText('$960,000')).toBeInTheDocument();
-    expect(screen.getByText('1 currently connected.')).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 currently connected in the visible account set/i)
+    ).toBeInTheDocument();
 
     const cardIds = Array.from(
       document.querySelectorAll<HTMLElement>('[data-testid^="account-card-"]')
@@ -437,13 +778,23 @@ describe('AccountOperationsPage', () => {
     ]);
   });
 
-  it('renders the account board without the former filters rail', async () => {
+  it('renders board-header search and scope controls that filter the account queue', async () => {
+    const user = userEvent.setup();
     renderWithProviders(<AccountOperationsPage />);
 
     expect(await screen.findByText(/account board/i)).toBeInTheDocument();
-    expect(screen.queryByText('Board Scope')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Account search')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^All Brokers/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Account search')).toBeInTheDocument();
+    expect(screen.getByLabelText('Broker filter')).toBeInTheDocument();
+    expect(screen.getByLabelText('Status filter')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Account scope' })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Account search'), 'alpaca');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('account-card-acct-alpaca-1')).toBeInTheDocument();
+      expect(screen.queryByTestId('account-card-acct-schwab-1')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('account-card-acct-etrade-1')).not.toBeInTheDocument();
+    });
   });
 
   it('opens the account dossier and renders the detail tabs including configuration', async () => {
@@ -464,6 +815,7 @@ describe('AccountOperationsPage', () => {
     expect(screen.getByRole('tab', { name: 'Overview' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Connectivity' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Risk' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Monitoring' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Activity' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Configuration' })).toBeInTheDocument();
 
@@ -478,6 +830,42 @@ describe('AccountOperationsPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Activity' }));
     expect(await screen.findByText(/reconnect request submitted/i)).toBeInTheDocument();
+  });
+
+  it('renders account-scoped monitoring with positions, orders, history, blotter, freshness, and links', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /open dossier/i })[0]);
+    await user.click(await screen.findByRole('tab', { name: 'Monitoring' }));
+
+    expect(await screen.findByText(/positions, orders, fills, p&l/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open in trade desk/i })).toHaveAttribute(
+      'href',
+      '/trade-desk?accountId=acct-schwab-1'
+    );
+    expect(screen.getByRole('link', { name: /open in trade monitor/i })).toHaveAttribute(
+      'href',
+      '/trade-monitor?accountId=acct-schwab-1'
+    );
+    expect(screen.getByText(/balances feed/i)).toBeInTheDocument();
+    expect(screen.getByText(/trade risk controls/i)).toBeInTheDocument();
+    expect(screen.getByText('MSFT')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Open Orders' }));
+    expect(await screen.findByText('AAPL')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'History' }));
+    expect(await screen.findByText('NVDA')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Blotter/Fills' }));
+    expect(await screen.findByText(/cash impact/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Trade Activity' }));
+    expect(
+      await screen.findByText(/live trade filled under supervisory review/i)
+    ).toBeInTheDocument();
   });
 
   it('loads and saves account configuration from the configuration tab', async () => {
@@ -528,7 +916,9 @@ describe('AccountOperationsPage', () => {
 
     await user.click(screen.getByRole('button', { name: /save trading policy/i }));
 
-    expect(screen.getByText(/resolve the inline validation errors before saving/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/resolve the inline validation errors before saving/i)
+    ).toBeInTheDocument();
     expect(accountOperationsApi.saveTradingPolicy).not.toHaveBeenCalled();
   });
 
@@ -573,9 +963,7 @@ describe('AccountOperationsPage', () => {
     await user.type(maxOpenPositionsInput, '24');
     await user.click(screen.getByRole('button', { name: /save trading policy/i }));
 
-    expect(
-      await screen.findByText(/configuration changed on the server/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/configuration changed on the server/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save trading policy/i })).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: /discard changes/i }));
@@ -633,7 +1021,7 @@ describe('AccountOperationsPage', () => {
     ).toBeLessThan(vi.mocked(accountOperationsApi.saveAllocation).mock.invocationCallOrder[0]);
   });
 
-  it('disables the refresh action while a refresh mutation is pending', async () => {
+  it('requires an operator reason before queueing refresh and carries scope in the payload', async () => {
     const user = userEvent.setup();
     const deferred = createDeferred<BrokerAccountActionResponse>();
     vi.mocked(accountOperationsApi.refreshAccount).mockReturnValueOnce(deferred.promise);
@@ -642,16 +1030,82 @@ describe('AccountOperationsPage', () => {
 
     expect(await screen.findByText(/account board/i)).toBeInTheDocument();
     const refreshButton = screen.getAllByRole('button', { name: /refresh now/i })[0];
+    await waitFor(() => {
+      expect(refreshButton).not.toBeDisabled();
+    });
     await user.click(refreshButton);
 
+    const submitButton = await screen.findByRole('button', { name: /queue refresh/i });
+    expect(submitButton).toBeDisabled();
+
+    await user.click(
+      screen.getByRole('button', { name: /refresh requested before rebalance review/i })
+    );
+    expect(submitButton).not.toBeDisabled();
+    await user.click(submitButton);
+
     await waitFor(() => {
-      expect(refreshButton).toBeDisabled();
+      expect(accountOperationsApi.refreshAccount).toHaveBeenCalledWith(
+        disconnectedAccount.accountId,
+        expect.objectContaining({
+          scope: 'full',
+          force: true,
+          reason: 'Refresh requested before rebalance review.'
+        })
+      );
+      expect(submitButton).toBeDisabled();
     });
 
     deferred.resolve(buildActionResponse('refresh'));
 
     await waitFor(() => {
       expect(toast.success).toHaveBeenCalledWith('Refresh queued.');
+    });
+  });
+
+  it('disables board actions when prefetched capabilities deny the operation', async () => {
+    vi.mocked(accountOperationsApi.getAccountDetail).mockResolvedValue({
+      ...detailResponse,
+      capabilities: {
+        ...detailResponse.capabilities,
+        canRefresh: false
+      }
+    });
+
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    const refreshButton = screen.getAllByRole('button', { name: /refresh now/i })[0];
+
+    await waitFor(() => {
+      expect(refreshButton).toBeDisabled();
+      expect(refreshButton).toHaveAttribute('title', 'Refresh is not supported for this account.');
+    });
+  });
+
+  it('requires an acknowledgement note before acknowledging account alerts', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /open dossier/i })[0]);
+    await user.click(await screen.findByRole('tab', { name: 'Risk' }));
+
+    await user.click(await screen.findByRole('button', { name: 'Acknowledge' }));
+    const submitButton = await screen.findByRole('button', { name: /acknowledge alert/i });
+    expect(submitButton).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: /acknowledged for active desk review/i }));
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(accountOperationsApi.acknowledgeAlert).toHaveBeenCalledWith(
+        disconnectedAccount.accountId,
+        'alert-1',
+        {
+          note: 'Acknowledged for active desk review.'
+        }
+      );
     });
   });
 
@@ -697,13 +1151,11 @@ describe('AccountOperationsPage', () => {
 
     const adjacentSurfaceCard = screen.getByText('Adjacent Surfaces').parentElement;
     expect(adjacentSurfaceCard).not.toBeNull();
-    expect(within(adjacentSurfaceCard as HTMLElement).getByRole('link', { name: /portfolio workspace/i })).toHaveAttribute(
-      'href',
-      '/portfolios'
-    );
-    expect(within(adjacentSurfaceCard as HTMLElement).getByRole('link', { name: /runtime config/i })).toHaveAttribute(
-      'href',
-      '/runtime-config'
-    );
+    expect(
+      within(adjacentSurfaceCard as HTMLElement).getByRole('link', { name: /portfolio workspace/i })
+    ).toHaveAttribute('href', '/portfolios');
+    expect(
+      within(adjacentSurfaceCard as HTMLElement).getByRole('link', { name: /runtime config/i })
+    ).toHaveAttribute('href', '/runtime-config');
   });
 });
