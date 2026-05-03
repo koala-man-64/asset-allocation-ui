@@ -18,6 +18,46 @@ async function expectNoSeriousViolations(page: Page) {
   ).toEqual([]);
 }
 
+async function expectScopeControlsToFit(page: Page) {
+  const controls = page.locator('[aria-label="Account scope"] [data-slot="toggle-group-item"]');
+  await expect(controls).toHaveCount(7);
+
+  const boxes = await controls.evaluateAll((items) =>
+    items.map((item) => {
+      const rect = item.getBoundingClientRect();
+
+      return {
+        bottom: rect.bottom,
+        clientWidth: item.clientWidth,
+        left: rect.left,
+        right: rect.right,
+        scrollWidth: item.scrollWidth,
+        text: item.textContent?.trim() ?? '',
+        top: rect.top
+      };
+    })
+  );
+
+  for (const box of boxes) {
+    expect(
+      box.scrollWidth,
+      `${box.text} scope filter should fit inside its button`
+    ).toBeLessThanOrEqual(box.clientWidth + 1);
+  }
+
+  for (const [index, box] of boxes.entries()) {
+    for (const next of boxes.slice(index + 1)) {
+      const verticallyOverlaps = box.top < next.bottom && next.top < box.bottom;
+      const horizontallyOverlaps = box.left < next.right && next.left < box.right;
+
+      expect(
+        verticallyOverlaps && horizontallyOverlaps,
+        `${box.text} and ${next.text} scope filters should not overlap`
+      ).toBe(false);
+    }
+  }
+}
+
 test.beforeEach(async ({ page }) => {
   await registerUiApiMocks(page);
 });
@@ -38,6 +78,7 @@ test('account operations loads broker accounts without unavailable fallback', as
   await expect(page.getByTestId('account-card-acct-live')).toBeVisible();
   await expect(page.getByTestId('account-card-acct-live')).toContainText('reconnect_required');
   await expect(page.getByText('Account Operations Unavailable')).toHaveCount(0);
+  await expectScopeControlsToFit(page);
 
   const boardBox = await page.getByRole('region', { name: 'Account board' }).boundingBox();
   const verdictBox = await page.getByRole('complementary', { name: 'Desk verdict' }).boundingBox();
@@ -92,6 +133,7 @@ test('account operations mobile viewports do not introduce horizontal overflow',
     await page.setViewportSize(viewport);
     await page.goto('/accounts');
     await expect(page.getByRole('heading', { name: 'Account Board' })).toBeVisible();
+    await expectScopeControlsToFit(page);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth
     );

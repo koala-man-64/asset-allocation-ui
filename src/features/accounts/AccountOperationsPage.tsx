@@ -588,7 +588,7 @@ function AccountBoardControls({
       <ToggleGroup
         type="single"
         value={scope}
-        className="flex flex-wrap justify-start gap-2"
+        className="flex w-full flex-wrap items-center justify-start gap-2"
         aria-label="Account scope"
         onValueChange={(value) => {
           if (value) {
@@ -597,7 +597,12 @@ function AccountBoardControls({
         }}
       >
         {scopeOptions.map((option) => (
-          <ToggleGroupItem key={option.value} value={option.value} aria-label={option.label}>
+          <ToggleGroupItem
+            key={option.value}
+            value={option.value}
+            aria-label={option.label}
+            className="h-8 flex-none rounded-full border border-mcm-walnut/15 bg-mcm-paper/45 px-3 text-[11px] leading-none tracking-[0.12em] first:rounded-full last:rounded-full data-[state=on]:border-mcm-teal/30 data-[state=on]:bg-accent"
+          >
             {option.label}
           </ToggleGroupItem>
         ))}
