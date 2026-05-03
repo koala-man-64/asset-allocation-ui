@@ -688,7 +688,6 @@ export function DomainLayerComparisonPanel({
   managedContainerJobs = [],
   metadataSnapshot,
   metadataUpdatedAt,
-  metadataSource,
   onMetadataSnapshotChange,
   onRefresh,
   isRefreshing,
@@ -1726,31 +1725,14 @@ export function DomainLayerComparisonPanel({
         </AlertDialogContent>
       </AlertDialog>
 
-      <CardHeader className="gap-4 border-b border-mcm-walnut/12 bg-mcm-paper/72 pb-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-1.5">
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-              Coverage Matrix
-            </p>
-            <CardTitle className="leading-tight">Domain Layer Coverage</CardTitle>
-            <p className="max-w-3xl text-sm leading-6 text-mcm-walnut/72">
-              Medallion-domain coverage with freshness, job state, and row-level controls.
-            </p>
-          </div>
-
-          <div className="rounded-[0.9rem] border border-mcm-walnut/12 bg-mcm-cream/45 px-3 py-2">
-            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/55">
-              Snapshot
-            </div>
-            <div className="mt-0.5 text-sm font-semibold text-mcm-walnut">
-              {metadataSource === 'persisted-snapshot' ? 'Persisted snapshot' : 'Snapshot'}
-            </div>
-            <div className="mt-0.5 text-xs text-mcm-walnut/68">
-              {metadataUpdatedAt
-                ? `As of ${formatMetadataTimestamp(metadataUpdatedAt)}`
-                : 'Not available'}
-            </div>
-          </div>
+      <CardHeader className="border-b border-mcm-walnut/12 bg-mcm-paper/72 pb-5">
+        <div className="flex items-center justify-between gap-4">
+          <CardTitle className="shrink-0 leading-tight">Domain Layer Coverage</CardTitle>
+          <p className="min-w-0 truncate text-right text-sm font-medium text-mcm-walnut/68">
+            {metadataUpdatedAt
+              ? `Last snapshot: ${formatMetadataTimestamp(metadataUpdatedAt)}`
+              : 'Last snapshot: Not available'}
+          </p>
         </div>
       </CardHeader>
 
