@@ -19,6 +19,22 @@ describe('normalizeApiBaseUrl', () => {
     expect(normalizeApiBaseUrl('/api/')).toBe('/api');
     expect(normalizeApiBaseUrl('http://localhost:9000/api')).toBe('http://localhost:9000/api');
   });
+
+  it('coerces insecure remote API URLs to same-origin on HTTPS pages', () => {
+    expect(
+      normalizeApiBaseUrl('http://asset-allocation-api.example.com/api', '/api', {
+        currentProtocol: 'https:'
+      })
+    ).toBe('/api');
+  });
+
+  it('preserves loopback HTTP API URLs for HTTPS local development', () => {
+    expect(
+      normalizeApiBaseUrl('http://127.0.0.1:9000/api', '/api', {
+        currentProtocol: 'https:'
+      })
+    ).toBe('http://127.0.0.1:9000/api');
+  });
 });
 
 describe('toWebSocketBaseUrl', () => {
