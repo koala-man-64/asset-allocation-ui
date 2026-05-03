@@ -14,7 +14,7 @@ interface ExitRuleSetListResponse {
 
 export const exitRuleSetApi = {
   async listExitRuleSets(signal?: AbortSignal): Promise<ExitRuleSetSummary[]> {
-    const response = await request<ExitRuleSetListResponse>('/exit-rule-sets', { signal });
+    const response = await request<ExitRuleSetListResponse>('/exit-rule-sets/', { signal });
     return response.ruleSets || [];
   },
 
@@ -39,7 +39,7 @@ export const exitRuleSetApi = {
     payload: ExitRuleSetUpsertRequest,
     signal?: AbortSignal
   ): Promise<ConfigSaveResponse> {
-    return request<ConfigSaveResponse>('/exit-rule-sets', {
+    return request<ConfigSaveResponse>('/exit-rule-sets/', {
       method: 'POST',
       body: JSON.stringify(payload),
       signal

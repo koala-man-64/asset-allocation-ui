@@ -14,7 +14,7 @@ interface RiskPolicyListResponse {
 
 export const riskPolicyApi = {
   async listRiskPolicies(signal?: AbortSignal): Promise<RiskPolicyConfigSummary[]> {
-    const response = await request<RiskPolicyListResponse>('/risk-policies', { signal });
+    const response = await request<RiskPolicyListResponse>('/risk-policies/', { signal });
     return response.policies || [];
   },
 
@@ -39,7 +39,7 @@ export const riskPolicyApi = {
     payload: RiskPolicyConfigUpsertRequest,
     signal?: AbortSignal
   ): Promise<ConfigSaveResponse> {
-    return request<ConfigSaveResponse>('/risk-policies', {
+    return request<ConfigSaveResponse>('/risk-policies/', {
       method: 'POST',
       body: JSON.stringify(payload),
       signal

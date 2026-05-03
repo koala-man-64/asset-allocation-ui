@@ -10,7 +10,7 @@ import type {
 
 export const rankingApi = {
   async listRankingSchemas(signal?: AbortSignal): Promise<RankingSchemaSummary[]> {
-    return request<RankingSchemaSummary[]>('/rankings', { signal });
+    return request<RankingSchemaSummary[]>('/rankings/', { signal });
   },
 
   async getRankingSchemaDetail(name: string, signal?: AbortSignal): Promise<RankingSchemaDetail> {
@@ -40,7 +40,7 @@ export const rankingApi = {
     },
     signal?: AbortSignal
   ): Promise<{ status: string; message: string; version: number }> {
-    return request<{ status: string; message: string; version: number }>('/rankings', {
+    return request<{ status: string; message: string; version: number }>('/rankings/', {
       method: 'POST',
       body: JSON.stringify(payload),
       signal

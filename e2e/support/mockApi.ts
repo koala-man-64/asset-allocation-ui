@@ -1405,7 +1405,8 @@ function jobLogsPayload(jobName: string) {
 }
 
 function normalizeApiPath(url: URL) {
-  return url.pathname.replace(/\/api/, '');
+  const apiPath = url.pathname.replace(/\/api/, '');
+  return apiPath.length > 1 ? apiPath.replace(/\/+$/, '') : apiPath;
 }
 
 async function handleApiRoute(route: Route) {

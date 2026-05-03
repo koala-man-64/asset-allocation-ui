@@ -14,7 +14,7 @@ interface RebalancePolicyListResponse {
 
 export const rebalancePolicyApi = {
   async listRebalancePolicies(signal?: AbortSignal): Promise<RebalancePolicySummary[]> {
-    const response = await request<RebalancePolicyListResponse>('/rebalance-policies', { signal });
+    const response = await request<RebalancePolicyListResponse>('/rebalance-policies/', { signal });
     return response.policies || [];
   },
 
@@ -42,7 +42,7 @@ export const rebalancePolicyApi = {
     payload: RebalancePolicyUpsertRequest,
     signal?: AbortSignal
   ): Promise<ConfigSaveResponse> {
-    return request<ConfigSaveResponse>('/rebalance-policies', {
+    return request<ConfigSaveResponse>('/rebalance-policies/', {
       method: 'POST',
       body: JSON.stringify(payload),
       signal

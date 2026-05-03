@@ -14,7 +14,7 @@ interface RegimePolicyListResponse {
 
 export const regimePolicyApi = {
   async listRegimePolicies(signal?: AbortSignal): Promise<RegimePolicyConfigSummary[]> {
-    const response = await request<RegimePolicyListResponse>('/regime-policies', { signal });
+    const response = await request<RegimePolicyListResponse>('/regime-policies/', { signal });
     return response.policies || [];
   },
 
@@ -42,7 +42,7 @@ export const regimePolicyApi = {
     payload: RegimePolicyConfigUpsertRequest,
     signal?: AbortSignal
   ): Promise<ConfigSaveResponse> {
-    return request<ConfigSaveResponse>('/regime-policies', {
+    return request<ConfigSaveResponse>('/regime-policies/', {
       method: 'POST',
       body: JSON.stringify(payload),
       signal

@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { exitRuleSetApi } from '@/services/exitRuleSetApi';
+import { rankingApi } from '@/services/rankingApi';
 import { rebalancePolicyApi } from '@/services/rebalancePolicyApi';
 import { regimePolicyApi } from '@/services/regimePolicyApi';
 import { request } from '@/services/apiService';
 import { riskPolicyApi } from '@/services/riskPolicyApi';
+import { universeApi } from '@/services/universeApi';
 import type { RiskPolicyConfigUpsertRequest } from '@/types/strategy';
 
 vi.mock('@/services/apiService', () => ({
@@ -18,13 +20,21 @@ describe('configuration library APIs', () => {
     mockedRequest.mockReset();
   });
 
-  it('unwraps list responses for new configuration families', async () => {
+  it('uses canonical collection routes for configuration library lists', async () => {
     mockedRequest
+      .mockResolvedValueOnce([{ name: 'universe', version: 1 }])
+      .mockResolvedValueOnce([{ name: 'ranking', version: 1 }])
       .mockResolvedValueOnce({ policies: [{ name: 'regime', version: 1 }] })
       .mockResolvedValueOnce({ policies: [{ name: 'risk', version: 2 }] })
       .mockResolvedValueOnce({ policies: [{ name: 'monthly-last', version: 1 }] })
       .mockResolvedValueOnce({ ruleSets: [{ name: 'exits', version: 3 }] });
 
+    await expect(universeApi.listUniverseConfigs()).resolves.toEqual([
+      { name: 'universe', version: 1 }
+    ]);
+    await expect(rankingApi.listRankingSchemas()).resolves.toEqual([
+      { name: 'ranking', version: 1 }
+    ]);
     await expect(regimePolicyApi.listRegimePolicies()).resolves.toEqual([
       { name: 'regime', version: 1 }
     ]);
@@ -36,10 +46,12 @@ describe('configuration library APIs', () => {
       { name: 'exits', version: 3 }
     ]);
 
-    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/regime-policies', { signal: undefined });
-    expect(mockedRequest).toHaveBeenNthCalledWith(2, '/risk-policies', { signal: undefined });
-    expect(mockedRequest).toHaveBeenNthCalledWith(3, '/rebalance-policies', { signal: undefined });
-    expect(mockedRequest).toHaveBeenNthCalledWith(4, '/exit-rule-sets', { signal: undefined });
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/universes/', { signal: undefined });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, '/rankings/', { signal: undefined });
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, '/regime-policies/', { signal: undefined });
+    expect(mockedRequest).toHaveBeenNthCalledWith(4, '/risk-policies/', { signal: undefined });
+    expect(mockedRequest).toHaveBeenNthCalledWith(5, '/rebalance-policies/', { signal: undefined });
+    expect(mockedRequest).toHaveBeenNthCalledWith(6, '/exit-rule-sets/', { signal: undefined });
   });
 
   it('uses revision-aware detail and archive endpoints', async () => {
@@ -109,12 +121,12 @@ describe('configuration library APIs', () => {
       }
     });
 
-    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/risk-policies', {
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/risk-policies/', {
       method: 'POST',
       body: JSON.stringify(riskPayload),
       signal: undefined
     });
-    expect(mockedRequest).toHaveBeenNthCalledWith(2, '/rebalance-policies', {
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, '/rebalance-policies/', {
       method: 'POST',
       body: JSON.stringify({
         name: 'monthly-last-trading-day',
