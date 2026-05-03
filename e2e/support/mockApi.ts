@@ -718,18 +718,33 @@ function brokerOverallStatusFromTrade(account: TradeAccountMock) {
 function brokerConnectionHealthFromTrade(account: TradeAccountMock) {
   const syncStatus = brokerSyncStatusFromTrade(account);
   const overallStatus = brokerOverallStatusFromTrade(account);
+  const reconnectRequired = account.accountId === 'acct-live';
   return {
     overallStatus,
-    authStatus: account.capabilities.canReadAccount ? 'authenticated' : 'not_connected',
+    authStatus: reconnectRequired
+      ? 'reauth_required'
+      : account.capabilities.canReadAccount
+        ? 'authenticated'
+        : 'not_connected',
     connectionState:
-      !account.capabilities.canReadAccount ? 'disconnected' : syncStatus === 'fresh' ? 'connected' : 'degraded',
+      reconnectRequired
+        ? 'reconnect_required'
+        : !account.capabilities.canReadAccount
+          ? 'disconnected'
+          : syncStatus === 'fresh'
+            ? 'connected'
+            : 'degraded',
     syncStatus,
     lastCheckedAt: account.snapshotAsOf,
     lastSuccessfulSyncAt: syncStatus === 'fresh' || syncStatus === 'stale' ? account.lastSyncedAt : null,
-    lastFailedSyncAt: null,
+    lastFailedSyncAt: reconnectRequired ? account.snapshotAsOf : null,
     authExpiresAt: null,
     staleReason: syncStatus === 'stale' ? account.freshness.staleReason : null,
-    failureMessage: account.readiness === 'blocked' ? account.readinessReason : null,
+    failureMessage: reconnectRequired
+      ? 'Schwab OAuth session is not connected. Reconnect required.'
+      : account.readiness === 'blocked'
+        ? account.readinessReason
+        : null,
     syncPaused: false
   };
 }

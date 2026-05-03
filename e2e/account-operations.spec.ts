@@ -20,6 +20,7 @@ test('account operations loads broker accounts without unavailable fallback', as
   await expect(page.getByRole('heading', { name: 'Account Board' })).toBeVisible();
   await expect(page.getByTestId('account-card-acct-paper')).toBeVisible();
   await expect(page.getByTestId('account-card-acct-live')).toBeVisible();
+  await expect(page.getByTestId('account-card-acct-live')).toContainText('reconnect_required');
   await expect(page.getByText('Account Operations Unavailable')).toHaveCount(0);
 });
 

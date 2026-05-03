@@ -420,11 +420,11 @@ describe('AccountOperationsPage', () => {
     renderWithProviders(<AccountOperationsPage />);
 
     expect(await screen.findByText(/account board/i)).toBeInTheDocument();
-    expect(screen.getByText('Connected Accounts')).toBeInTheDocument();
+    expect(screen.getByText('Configured Accounts')).toBeInTheDocument();
     expect(screen.getAllByText('Trade Ready').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Needs Action').length).toBeGreaterThan(0);
     expect(screen.getByText('$960,000')).toBeInTheDocument();
-    expect(screen.getByText('3 tracked accounts on the board.')).toBeInTheDocument();
+    expect(screen.getByText('1 currently connected.')).toBeInTheDocument();
 
     const cardIds = Array.from(
       document.querySelectorAll<HTMLElement>('[data-testid^="account-card-"]')
@@ -655,7 +655,7 @@ describe('AccountOperationsPage', () => {
     });
   });
 
-  it('shows an empty state when no accounts are connected', async () => {
+  it('shows an empty state when no accounts are configured', async () => {
     vi.mocked(accountOperationsApi.listAccounts).mockResolvedValue({
       accounts: [],
       generatedAt: '2026-04-20T13:50:00Z'
@@ -663,7 +663,7 @@ describe('AccountOperationsPage', () => {
 
     renderWithProviders(<AccountOperationsPage />);
 
-    expect(await screen.findByText(/no connected accounts/i)).toBeInTheDocument();
+    expect(await screen.findByText(/no configured accounts/i)).toBeInTheDocument();
   });
 
   it('shows an unavailable panel when the account list request fails', async () => {

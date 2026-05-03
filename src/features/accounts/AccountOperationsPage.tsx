@@ -93,7 +93,7 @@ function buildVerdict(accounts: readonly BrokerAccountSummary[]): {
   return {
     title: 'Broker posture is orderly.',
     summary:
-      'Connectivity, sync freshness, and trade readiness are aligned across the connected accounts. The page can stay in scan mode instead of triage mode.'
+      'Connectivity, sync freshness, and trade readiness are aligned across the configured accounts. The page can stay in scan mode instead of triage mode.'
   };
 }
 
@@ -978,9 +978,9 @@ export function AccountOperationsPage() {
         className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
       >
         <StatCard
-          label="Connected Accounts"
-          value={String(connectedAccounts)}
-          detail={`${accounts.length} tracked accounts on the board.`}
+          label="Configured Accounts"
+          value={String(accounts.length)}
+          detail={`${connectedAccounts} currently connected.`}
           icon={<Cable className="h-4 w-4 text-mcm-teal" />}
         />
         <StatCard
@@ -998,7 +998,7 @@ export function AccountOperationsPage() {
         <StatCard
           label="Buying Power"
           value={formatCurrency(aggregateBuyingPower)}
-          detail="Aggregate board-level buying power across the connected accounts."
+          detail="Aggregate board-level buying power across configured accounts."
           icon={<Wallet className="h-4 w-4 text-mcm-olive" />}
         />
       </section>
@@ -1025,8 +1025,8 @@ export function AccountOperationsPage() {
             {!accounts.length ? (
               <StatePanel
                 tone="empty"
-                title="No connected accounts"
-                message="Connect a broker account to populate the board and start monitoring trade readiness."
+                title="No configured accounts"
+                message="Add enabled broker account rows to populate the board and start monitoring trade readiness."
               />
             ) : (
               sortedAccounts.map((account) => (
