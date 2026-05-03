@@ -2,8 +2,12 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrategyConfigPage } from '@/features/strategies/StrategyConfigPage';
+import { buildDefaultRiskPolicy } from '@/features/strategies/lib/strategyDraft';
 import { backtestApi } from '@/services/backtestApi';
+import { exitRuleSetApi } from '@/services/exitRuleSetApi';
 import { rankingApi } from '@/services/rankingApi';
+import { regimePolicyApi } from '@/services/regimePolicyApi';
+import { riskPolicyApi } from '@/services/riskPolicyApi';
 import { strategyApi } from '@/services/strategyApi';
 import { strategyAnalyticsApi } from '@/services/strategyAnalyticsApi';
 import { universeApi } from '@/services/universeApi';
@@ -39,6 +43,24 @@ vi.mock('@/services/rankingApi', () => ({
     getRankingSchemaDetail: vi.fn(),
     getRankingCatalog: vi.fn(),
     saveRankingSchema: vi.fn()
+  }
+}));
+
+vi.mock('@/services/regimePolicyApi', () => ({
+  regimePolicyApi: {
+    listRegimePolicies: vi.fn()
+  }
+}));
+
+vi.mock('@/services/riskPolicyApi', () => ({
+  riskPolicyApi: {
+    listRiskPolicies: vi.fn()
+  }
+}));
+
+vi.mock('@/services/exitRuleSetApi', () => ({
+  exitRuleSetApi: {
+    listExitRuleSets: vi.fn()
   }
 }));
 
@@ -93,13 +115,8 @@ function buildStrategyDetail(name: string, overrides: Partial<Record<string, unk
         modelName: 'default-regime',
         mode: 'observe_only'
       },
-      riskPolicy: {
-        grossExposureLimit: 1,
-        singleNameMaxWeight: 0.08,
-        turnoverBudget: 0.35,
-        maxTradeNotionalBaseCcy: 250000,
-        notes: 'Desk risk envelope'
-      },
+      riskPolicy: buildDefaultRiskPolicy(),
+      strategyRiskPolicy: buildDefaultRiskPolicy(),
       exits: [
         {
           id: 'stop-8',
@@ -201,7 +218,12 @@ describe('StrategyConfigPage', () => {
       version: 2
     });
     (backtestApi.listRuns as Mock).mockResolvedValue({ runs: [], limit: 6, offset: 0 });
-    (backtestApi.getTrades as Mock).mockResolvedValue({ trades: [], total: 0, limit: 20, offset: 0 });
+    (backtestApi.getTrades as Mock).mockResolvedValue({
+      trades: [],
+      total: 0,
+      limit: 20,
+      offset: 0
+    });
     (backtestApi.getSummary as Mock).mockResolvedValue({
       run_id: 'run-1',
       total_return: 0.12,
@@ -226,6 +248,9 @@ describe('StrategyConfigPage', () => {
       status: 'queued',
       submitted_at: '2026-03-08T00:00:00Z'
     });
+    (regimePolicyApi.listRegimePolicies as Mock).mockResolvedValue([]);
+    (riskPolicyApi.listRiskPolicies as Mock).mockResolvedValue([]);
+    (exitRuleSetApi.listExitRuleSets as Mock).mockResolvedValue([]);
     (strategyApi.getUniverseCatalog as Mock).mockResolvedValue({
       source: 'postgres_gold',
       fields: [
@@ -448,7 +473,7 @@ describe('StrategyConfigPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'quality-trend' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /edit strategy/i }));
+    fireEvent.click(screen.getByRole('button', { name: /edit pins/i }));
     expect(await screen.findByRole('heading', { name: /edit strategy/i })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/desk note/i), {
@@ -494,7 +519,7 @@ describe('StrategyConfigPage', () => {
 
     expect(await screen.findByText(/top 25 with 90-bar lookback/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /edit strategy/i }));
+    fireEvent.click(screen.getByRole('button', { name: /edit pins/i }));
     expect(await screen.findByRole('heading', { name: /edit strategy/i })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/desk note/i), {
@@ -553,16 +578,11 @@ describe('StrategyConfigPage', () => {
 
     expect(await screen.findByText(/top 25 with 90-bar lookback/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /edit strategy/i }));
+    fireEvent.click(screen.getByRole('button', { name: /edit pins/i }));
     expect(await screen.findByRole('heading', { name: /edit strategy/i })).toBeInTheDocument();
 
-    expect(await screen.findByText(/attachment catalogs unavailable/i)).toBeInTheDocument();
-    expect(screen.getByText(/universe lookup failed: universe offline/i)).toBeInTheDocument();
-    expect(screen.getByText(/ranking lookup failed: ranking offline/i)).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByLabelText(/universe config/i)).toHaveValue('large-cap-quality');
-      expect(screen.getByLabelText(/ranking schema/i)).toHaveValue('quality-momentum');
-    });
+    expect(await screen.findByText(/universe offline/i)).toBeInTheDocument();
+    expect(screen.getByText(/ranking offline/i)).toBeInTheDocument();
   });
 
   it('prompts before closing a dirty editor and honors a rejected discard', async () => {

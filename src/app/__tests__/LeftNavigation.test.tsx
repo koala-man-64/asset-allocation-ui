@@ -16,6 +16,7 @@ vi.mock('lucide-react', () => ({
   Database: () => <div data-testid="icon-database" />,
   Layers3: () => <div data-testid="icon-layers-3" />,
   Landmark: () => <div data-testid="icon-landmark" />,
+  Library: () => <div data-testid="icon-library" />,
   LogIn: () => <div data-testid="icon-login" />,
   Target: () => <div data-testid="icon-target" />,
   Folder: () => <div data-testid="icon-folder" />,
@@ -227,9 +228,11 @@ describe('LeftNavigation', () => {
         '/portfolios',
         '/trade-desk',
         '/trade-monitor',
+        '/strategy-configurations',
         '/login'
       ])
     );
+    expect(screen.getByRole('link', { name: 'Configurations' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Strategy Exploration' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Universe Configurations' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Ranking Configurations' })).not.toBeInTheDocument();
