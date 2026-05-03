@@ -6,7 +6,16 @@
       "Bash(npx tsc *)",
       "Bash(findstr /i \"system\\\\|status\")",
       "Bash(dir src\\\\app\\\\components\\\\pages)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Read(//c/Users/rdpro/.codex/skills/project-workflow-enforcer-agent/**)",
+      "Read(//c/Users/rdpro/.codex/skills/qa-release-gate-agent/**)",
+      "Read(//c/Users/rdpro/.codex/skills/regime-scenario-analyst/**)",
+      "Read(//c/Users/rdpro/.codex/skills/research-librarian-evidence-packager/**)",
+      "Read(//c/Users/rdpro/.codex/skills/senior-trading-desk-reviewer/**)",
+      "Read(//c/Users/rdpro/.codex/skills/software-testing-validation-architect/**)",
+      "Bash(Get-ChildItem -Path \".codex\\\\skills\" -Directory)",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Bash(Sort-Object)"
     ]
   }
 }
