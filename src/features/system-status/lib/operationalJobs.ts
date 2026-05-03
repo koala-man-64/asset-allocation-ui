@@ -327,7 +327,7 @@ export function buildOperationalJobTargets({
       duration: run?.duration ?? null,
       recordsProcessed: run?.recordsProcessed ?? null,
       triggeredBy: run?.triggeredBy ?? null,
-      jobUrl: null,
+      jobUrl: resource.azureId || null,
       signals: resource.signals || null
     });
   }

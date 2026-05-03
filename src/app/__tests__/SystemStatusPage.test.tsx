@@ -58,6 +58,9 @@ vi.mock('@/features/system-status/components/OperationalJobMonitorPanel', () => 
   }
 }));
 
+const BACKTEST_JOB_AZURE_ID =
+  '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner';
+
 function buildSystemStatusView(
   overrides: Partial<SystemStatusViewResponse> = {}
 ): SystemStatusViewResponse {
@@ -268,6 +271,7 @@ function buildSystemStatusView(
           name: 'aca-job-backtest-runner',
           resourceType: 'Microsoft.App/jobs',
           status: 'healthy',
+          azureId: BACKTEST_JOB_AZURE_ID,
           lastChecked: MOCK_RUN_TIMESTAMPS.latest,
           runningState: 'Running',
           lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
@@ -329,10 +333,12 @@ describe('SystemStatusPage', () => {
 
     await screen.findByTestId('mock-domain-layer-coverage-panel');
 
-    expect(screen.getByText('Risk Readout')).toBeInTheDocument();
-    expect(screen.getByText('Configured Coverage')).toBeInTheDocument();
-    expect(screen.getByText('Job Risk')).toBeInTheDocument();
-    expect(screen.getByText('Open Alerts')).toBeInTheDocument();
+    expect(screen.queryByText('Risk Readout')).not.toBeInTheDocument();
+    expect(screen.queryByText('Configured Coverage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Job Risk')).not.toBeInTheDocument();
+    expect(screen.queryByText('Open Alerts')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Live medallion coverage/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Refresh View/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/VIEW UPDATED/i)).not.toBeInTheDocument();
     expect(screen.queryByText('Session Readout')).not.toBeInTheDocument();
     expect(screen.queryByText('Live refresh feed')).not.toBeInTheDocument();
@@ -361,7 +367,7 @@ describe('SystemStatusPage', () => {
       </QueryClientProvider>
     );
 
-    expect(await screen.findByText('Risk Readout')).toBeInTheDocument();
+    expect(await screen.findByTestId('mock-domain-layer-coverage-panel')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(DataService.getSystemStatusView).toHaveBeenCalled();
@@ -551,7 +557,7 @@ describe('SystemStatusPage', () => {
     });
 
     const operationalProps = operationalJobSpy.mock.calls.at(-1)?.[0] as {
-      jobs: Array<{ name: string; category: string }>;
+      jobs: Array<{ name: string; category: string; jobUrl?: string | null }>;
     };
     const operationalNames = operationalProps.jobs.map((job) => job.name);
 
@@ -583,7 +589,8 @@ describe('SystemStatusPage', () => {
         }),
         expect.objectContaining({
           name: 'aca-job-backtest-runner',
-          category: 'backtest'
+          category: 'backtest',
+          jobUrl: BACKTEST_JOB_AZURE_ID
         }),
         expect.objectContaining({
           name: 'aca-job-ranking-materialize',

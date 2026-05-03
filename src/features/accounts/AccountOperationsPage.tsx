@@ -3,15 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Cable,
   CheckCircle2,
-  Landmark,
   RefreshCw,
   ShieldAlert,
   Wallet
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import { PageHero } from '@/app/components/common/PageHero';
 import { PageLoader } from '@/app/components/common/PageLoader';
+import { StatCard } from '@/app/components/common/StatCard';
 import { StatePanel } from '@/app/components/common/StatePanel';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
@@ -1173,59 +1172,37 @@ export function AccountOperationsPage() {
 
   return (
     <div className="page-shell">
-      <PageHero
-        kicker="Account Operations"
-        title={
-          <span className="flex items-center gap-2">
-            <Landmark className="h-6 w-6 text-mcm-teal" />
-            Account Operations
-          </span>
-        }
-        subtitle="An account-first broker operations board for connectivity health, sync freshness, trade readiness, and capital availability across Alpaca, Schwab, and E*TRADE without turning the surface into an order-entry screen."
-        actions={
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge variant="outline">
-              <Cable className="mr-1 h-3.5 w-3.5" />
-              {connectedAccounts} connected
-            </Badge>
-            <Button
-              type="button"
-              onClick={() => listQuery.refetch()}
-              disabled={listQuery.isFetching}
-            >
-              {listQuery.isFetching ? 'Refreshing...' : 'Refresh Board'}
-            </Button>
-          </div>
-        }
-        metrics={[
-          {
-            label: 'Connected Accounts',
-            value: String(connectedAccounts),
-            detail: `${accounts.length} tracked accounts on the board.`,
-            icon: <Cable className="h-4 w-4 text-mcm-teal" />
-          },
-          {
-            label: 'Trade Ready',
-            value: String(tradeReadyAccounts),
-            detail: 'Accounts currently clear for trade readiness.',
-            icon: <CheckCircle2 className="h-4 w-4 text-mcm-teal" />
-          },
-          {
-            label: 'Needs Action',
-            value: String(needsActionAccounts),
-            detail: 'Accounts carrying warnings, stale sync, or blocked trade state.',
-            icon: <ShieldAlert className="h-4 w-4 text-mcm-rust" />
-          },
-          {
-            label: 'Buying Power',
-            value: formatCurrency(aggregateBuyingPower),
-            detail: 'Aggregate board-level buying power across the connected accounts.',
-            icon: <Wallet className="h-4 w-4 text-mcm-olive" />
-          }
-        ]}
-        sideClassName="max-w-[72rem]"
-        metricsClassName="grid-cols-2 xl:grid-cols-4"
-      />
+      <h1 className="sr-only">Account Operations</h1>
+
+      <section
+        aria-label="Account operations summary"
+        className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
+      >
+        <StatCard
+          label="Connected Accounts"
+          value={String(connectedAccounts)}
+          detail={`${accounts.length} tracked accounts on the board.`}
+          icon={<Cable className="h-4 w-4 text-mcm-teal" />}
+        />
+        <StatCard
+          label="Trade Ready"
+          value={String(tradeReadyAccounts)}
+          detail="Accounts currently clear for trade readiness."
+          icon={<CheckCircle2 className="h-4 w-4 text-mcm-teal" />}
+        />
+        <StatCard
+          label="Needs Action"
+          value={String(needsActionAccounts)}
+          detail="Accounts carrying warnings, stale sync, or blocked trade state."
+          icon={<ShieldAlert className="h-4 w-4 text-mcm-rust" />}
+        />
+        <StatCard
+          label="Buying Power"
+          value={formatCurrency(aggregateBuyingPower)}
+          detail="Aggregate board-level buying power across the connected accounts."
+          icon={<Wallet className="h-4 w-4 text-mcm-olive" />}
+        />
+      </section>
 
       <div className="grid gap-6 2xl:grid-cols-[300px_minmax(0,1.2fr)_340px]">
         <AccountFilterRail
@@ -1335,4 +1312,3 @@ export function AccountOperationsPage() {
     </div>
   );
 }
-

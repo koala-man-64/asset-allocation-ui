@@ -1,5 +1,4 @@
-import React, { useCallback, useMemo, useState, lazy, Suspense } from 'react';
-import { Activity, Layers3, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { useCallback, useMemo, useState, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { useJobStatuses } from '@/hooks/useJobStatuses';
@@ -11,8 +10,6 @@ import type {
 import { ErrorBoundary } from '@/app/components/common/ErrorBoundary';
 import { Skeleton } from '@/app/components/ui/skeleton';
 import { PageLoader } from '@/app/components/common/PageLoader';
-import { Badge } from '@/app/components/ui/badge';
-import { Button } from '@/app/components/ui/button';
 import type { ManagedContainerJob } from '@/features/system-status/types';
 import type { JobLogStreamTarget } from '@/features/system-status/components/JobLogStreamPanel';
 import type {
@@ -49,8 +46,6 @@ const OperationalJobMonitorPanel = lazy(() =>
 
 import {
   effectiveJobStatus,
-  formatTimeAgo,
-  getStatusConfig,
   normalizeAzureJobName,
   resolveRunnableJobName
 } from '@/features/system-status/lib/SystemStatusHelpers';
@@ -66,6 +61,7 @@ import { JobStatusDebugOverlay } from '@/features/system-status/components/JobSt
 
 type JobResourceSummary = {
   name: string;
+  azureId?: string | null;
   jobCategory?: JobCategory | null;
   jobKey?: string | null;
   jobRole?: string | null;
@@ -78,99 +74,11 @@ type JobResourceSummary = {
   signals?: ResourceSignal[] | null;
 };
 
-type SummaryTone = 'good' | 'watch' | 'risk' | 'neutral';
-
 const JOB_CATEGORY_LABELS = new Map<JobCategory, string>([
   ['data-pipeline', 'Data Pipelines'],
   ['strategy-compute', 'Strategy Compute'],
   ['operational-support', 'Operational Support']
 ]);
-
-function pluralize(count: number, singular: string, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
-function getSummaryToneClasses(tone: SummaryTone): string {
-  switch (tone) {
-    case 'good':
-      return 'border-mcm-teal/35 bg-mcm-paper/80 text-foreground';
-    case 'watch':
-      return 'border-mcm-mustard/60 bg-mcm-mustard/10 text-foreground';
-    case 'risk':
-      return 'border-destructive/55 bg-destructive/10 text-foreground shadow-[inset_4px_0_0_rgba(180,35,24,0.55)]';
-    default:
-      return 'border-mcm-walnut/14 bg-mcm-paper/62 text-foreground';
-  }
-}
-
-function getSummaryBadgeVariant(
-  tone: SummaryTone
-): 'default' | 'secondary' | 'destructive' | 'outline' {
-  switch (tone) {
-    case 'good':
-      return 'default';
-    case 'watch':
-      return 'secondary';
-    case 'risk':
-      return 'destructive';
-    default:
-      return 'outline';
-  }
-}
-
-function determineTone({
-  overall,
-  failedJobs,
-  alertCount,
-  stressedLayers
-}: {
-  overall: string;
-  failedJobs: number;
-  alertCount: number;
-  stressedLayers: number;
-}): SummaryTone {
-  if (overall === 'critical' || failedJobs > 0) {
-    return 'risk';
-  }
-  if (overall === 'degraded' || alertCount > 0 || stressedLayers > 0) {
-    return 'watch';
-  }
-  if (overall === 'healthy') {
-    return 'good';
-  }
-  return 'neutral';
-}
-
-function SummaryCard({
-  label,
-  value,
-  detail,
-  icon,
-  tone = 'neutral'
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  icon: React.ReactNode;
-  tone?: SummaryTone;
-}) {
-  return (
-    <div className={`rounded-[1.15rem] border px-4 py-4 ${getSummaryToneClasses(tone)}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-2">
-          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-            {label}
-          </div>
-          <div className="font-display text-xl tracking-[0.04em] text-foreground">{value}</div>
-        </div>
-        <div className="rounded-full border border-mcm-walnut/12 bg-mcm-cream/55 p-2 text-mcm-walnut">
-          {icon}
-        </div>
-      </div>
-      <div className="mt-3 text-sm leading-5 text-muted-foreground">{detail}</div>
-    </div>
-  );
-}
 
 function buildOperationalJobConsoleTargets(
   operationalJobs: OperationalJobTarget[]
@@ -226,6 +134,7 @@ export function SystemStatusPage() {
       if (resources.has(jobKey)) continue;
       resources.set(jobKey, {
         name: rawName,
+        azureId: resource.azureId || null,
         jobCategory: resource.jobCategory || null,
         jobKey: resource.jobKey || null,
         jobRole: resource.jobRole || null,
@@ -257,6 +166,7 @@ export function SystemStatusPage() {
     for (const resource of jobResourcesByKey.values()) {
       items.push({
         name: resource.name,
+        azureId: resource.azureId || null,
         jobCategory: resource.jobCategory || null,
         jobKey: resource.jobKey || null,
         jobRole: resource.jobRole || null,
@@ -482,48 +392,6 @@ export function SystemStatusPage() {
   }
 
   const { overall, recentJobs } = systemHealth;
-  const headerRefreshLabel = systemStatusView?.generatedAt
-    ? `Updated ${formatTimeAgo(systemStatusView.generatedAt)} ago`
-    : 'Link established';
-  const layerCount = displayDataLayers.length;
-  const domainCount = displayDataLayers.reduce(
-    (total, layer) => total + (layer.domains?.length || 0),
-    0
-  );
-  const configuredDomainKeys = new Set<string>();
-  for (const layer of displayDataLayers) {
-    for (const domain of layer.domains || []) {
-      const domainKey = normalizeDomainKey(String(domain?.name || ''));
-      if (domainKey) {
-        configuredDomainKeys.add(domainKey);
-      }
-    }
-  }
-  const configuredDomainCount = configuredDomainKeys.size;
-  const alertCount = systemHealth.alerts?.length || 0;
-  const stressedLayerCount = displayDataLayers.filter((layer) => {
-    const status = String(layer.status || '')
-      .trim()
-      .toLowerCase();
-    return status !== 'healthy' && status !== 'success';
-  }).length;
-  const runningJobCount = domainJobLogStreamJobs.filter(
-    (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'running'
-  ).length;
-  const warningJobCount = domainJobLogStreamJobs.filter(
-    (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'warning'
-  ).length;
-  const failedJobCount = domainJobLogStreamJobs.filter(
-    (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'failed'
-  ).length;
-  const overallTone = determineTone({
-    overall,
-    failedJobs: failedJobCount,
-    alertCount,
-    stressedLayers: stressedLayerCount
-  });
-  const overallStatus = getStatusConfig(overall);
-  const OverallIcon = overallStatus.icon;
 
   return (
     <div className="page-shell">
@@ -531,102 +399,10 @@ export function SystemStatusPage() {
         <div className="page-header">
           <p className="page-kicker">System Status</p>
           <h1 className="page-title">Operations Command Deck</h1>
-          <p className="page-subtitle">
-            Live medallion coverage, job state, runtime controls, and console tails for the current
-            operating session.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={getSummaryBadgeVariant(overallTone)}>
-            <OverallIcon
-              className={`h-3.5 w-3.5 ${overallStatus.animation === 'spin' ? 'animate-spin' : ''}`}
-            />
-            {overall.toUpperCase()}
-          </Badge>
-          <Badge variant="outline">{isFetching ? 'Receiving telemetry' : headerRefreshLabel}</Badge>
-          <Button
-            className="gap-2"
-            onClick={() => void handleRefresh()}
-            disabled={isRefreshing || isFetching}
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing || isFetching ? 'animate-spin' : ''}`} />
-            Refresh View
-          </Button>
         </div>
       </div>
 
       <div className="space-y-6">
-        <section className="mcm-panel overflow-hidden">
-          <div className="border-b border-border/40 px-6 py-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-                  Command Summary
-                </p>
-                <h2 className="font-display text-xl text-foreground">Risk Readout</h2>
-                <p className="text-sm text-muted-foreground">
-                  Scan failures, warnings, configured coverage, and open alerts before drilling into
-                  the matrix.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard
-              label="Overall Status"
-              value={overall.toUpperCase()}
-              detail={
-                overallTone === 'risk'
-                  ? 'Do not treat green downstream cells as reliable until failures clear.'
-                  : overallTone === 'watch'
-                    ? 'Usable, but there is enough friction to keep this page open.'
-                    : 'No blocking risk is visible in the current status view.'
-              }
-              icon={<OverallIcon className="h-5 w-5" />}
-              tone={overallTone}
-            />
-            <SummaryCard
-              label="Configured Coverage"
-              value={`${domainCount} cells`}
-              detail={`${pluralize(configuredDomainCount, 'domain')} mapped across ${pluralize(layerCount, 'layer')}; ${pluralize(stressedLayerCount, 'layer')} under watch.`}
-              icon={<Layers3 className="h-5 w-5" />}
-              tone={stressedLayerCount > 0 ? 'watch' : 'neutral'}
-            />
-            <SummaryCard
-              label="Job Risk"
-              value={`${failedJobCount} fail / ${warningJobCount} warn`}
-              detail={
-                failedJobCount > 0
-                  ? `${pluralize(failedJobCount, 'failure')} visible across ${pluralize(domainJobLogStreamJobs.length, 'domain job')}.`
-                  : warningJobCount > 0
-                    ? `${pluralize(warningJobCount, 'warning')} visible; ${pluralize(runningJobCount, 'job')} currently running.`
-                    : `${pluralize(runningJobCount, 'job')} running; no failed jobs visible.`
-              }
-              icon={<Activity className="h-5 w-5" />}
-              tone={failedJobCount > 0 ? 'risk' : warningJobCount > 0 ? 'watch' : 'neutral'}
-            />
-            <SummaryCard
-              label="Open Alerts"
-              value={String(alertCount)}
-              detail={
-                alertCount > 0
-                  ? `${pluralize(alertCount, 'alert')} remain open across tracked system signals.`
-                  : `${pluralize((systemHealth.resources || []).length, 'resource')} checked with no open alert.`
-              }
-              icon={
-                alertCount > 0 ? (
-                  <TriangleAlert className="h-5 w-5" />
-                ) : (
-                  <ShieldCheck className="h-5 w-5" />
-                )
-              }
-              tone={alertCount > 0 ? 'watch' : 'good'}
-            />
-          </div>
-        </section>
-
         <ErrorBoundary>
           <Suspense fallback={<Skeleton className="h-[360px] w-full rounded-xl bg-muted/20" />}>
             <OperationalJobMonitorPanel
