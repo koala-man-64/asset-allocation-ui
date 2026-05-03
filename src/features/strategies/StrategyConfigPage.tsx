@@ -15,7 +15,10 @@ import { StrategyEditorPanel } from '@/features/strategies/components/StrategyEd
 import { StrategyEditorWorkspace } from '@/features/strategies/components/StrategyEditorWorkspace';
 import { StrategyExplorerPanel } from '@/features/strategies/components/StrategyExplorerPanel';
 import { StrategyLibraryRail } from '@/features/strategies/components/StrategyLibraryRail';
-import type { StrategyEditorMode } from '@/features/strategies/lib/strategyDraft';
+import {
+  normalizeStrategyDetail,
+  type StrategyEditorMode
+} from '@/features/strategies/lib/strategyDraft';
 import {
   getStrategySearchText,
   sortStrategies,
@@ -72,6 +75,10 @@ export function StrategyConfigPage() {
     queryFn: () => strategyApi.getStrategyDetail(String(selectedStrategyName)),
     enabled: Boolean(selectedStrategyName)
   });
+  const strategyDetail = useMemo(
+    () => (detailQuery.data ? normalizeStrategyDetail(detailQuery.data) : undefined),
+    [detailQuery.data]
+  );
 
   const recentRunsQuery = useQuery({
     queryKey: ['backtest', 'runs', selectedStrategyName],
@@ -159,7 +166,7 @@ export function StrategyConfigPage() {
 
   const editorSourceDetail =
     editorState?.strategyName && editorState.strategyName === selectedStrategyName
-      ? detailQuery.data
+      ? strategyDetail
       : undefined;
   const editorHydrating =
     Boolean(editorState?.strategyName) &&
@@ -240,10 +247,10 @@ export function StrategyConfigPage() {
           <StrategyEditorPanel
             selectedStrategyName={selectedStrategyName}
             selectedStrategy={selectedStrategy}
-            strategy={detailQuery.data}
+            strategy={strategyDetail}
             isLoading={detailQuery.isLoading}
             errorMessage={detailErrorMessage}
-            detailReady={Boolean(detailQuery.data) && !detailQuery.isLoading && !detailErrorMessage}
+            detailReady={Boolean(strategyDetail) && !detailQuery.isLoading && !detailErrorMessage}
             recentRuns={recentRunsQuery.data?.runs || []}
             recentRunsLoading={recentRunsQuery.isLoading}
             recentRunsError={recentRunsErrorMessage}
@@ -257,7 +264,7 @@ export function StrategyConfigPage() {
 
         <StrategyExplorerPanel
           selectedStrategyName={selectedStrategyName}
-          strategy={detailQuery.data}
+          strategy={strategyDetail}
           strategies={strategies}
           recentRuns={recentRunsQuery.data?.runs || []}
         />
