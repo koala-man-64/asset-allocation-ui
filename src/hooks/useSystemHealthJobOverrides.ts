@@ -16,7 +16,7 @@ const SYSTEM_HEALTH_JOB_OVERRIDE_STORAGE_KEY = 'asset-allocation.systemHealthJob
 const RUNNING_JOB_STATUS: JobRun['status'] = 'running';
 const RUNNING_RESOURCE_STATE = 'Running';
 const MANUAL_TRIGGER_SOURCE = 'manual';
-const SERVER_CATCH_UP_STATUSES = new Set([
+const SERVER_OBSERVED_STATUSES = new Set([
   'pending',
   'running',
   'queued',
@@ -24,7 +24,19 @@ const SERVER_CATCH_UP_STATUSES = new Set([
   'scheduling',
   'processing',
   'inprogress',
-  'starting'
+  'starting',
+  'success',
+  'succeeded',
+  'completed',
+  'complete',
+  'warning',
+  'succeededwithwarnings',
+  'completedwithwarnings',
+  'failed',
+  'error',
+  'failure',
+  'terminated',
+  'terminatedwitherror'
 ]);
 
 export interface SystemHealthJobOverride {
@@ -109,6 +121,18 @@ function hasRunningState(raw?: string | null): boolean {
   return hasActiveJobRunningState(raw);
 }
 
+function normalizeStatusToken(raw?: string | null): string {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function hasObservedServerJobStatus(raw?: string | null): boolean {
+  const status = normalizeStatusToken(raw);
+  return Boolean(status) && SERVER_OBSERVED_STATUSES.has(status);
+}
+
 function activeOverrideMap(
   overrides?: SystemHealthJobOverrideMap,
   nowMs: number = Date.now()
@@ -168,10 +192,7 @@ function jobReflectsServerState(
   override: SystemHealthJobOverride
 ): boolean {
   if (!job) return false;
-  const status = String(job.status || '')
-    .trim()
-    .toLowerCase();
-  if (!SERVER_CATCH_UP_STATUSES.has(status)) return false;
+  if (!hasObservedServerJobStatus(job.status)) return false;
 
   const overrideId = override.executionId ? String(override.executionId) : '';
   const jobId = job.executionId ? String(job.executionId) : '';
@@ -374,6 +395,8 @@ export function renewPendingOverrides(
       jobReflectsServerState(recentJob, override) ||
       resourceReflectsServerState(resource, override)
     ) {
+      delete next[jobKey];
+      changed = true;
       continue;
     }
     const firstSeenMs = Date.parse(String(override.firstSeenAt || override.startTime || ''));

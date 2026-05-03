@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
 
+import { queryKeys } from '@/hooks/useDataQueries';
 import {
   mergeSystemHealthWithJobOverrides,
+  renewPendingOverrides,
   type SystemHealthJobOverride,
   type SystemHealthJobOverrideMap
 } from '@/hooks/useSystemHealthJobOverrides';
@@ -58,7 +61,7 @@ const overridesMap = (override: SystemHealthJobOverride): SystemHealthJobOverrid
 });
 
 describe('mergeSystemHealthWithJobOverrides - duplicate filter', () => {
-  it('drops a stale failed server JobRun matching the override executionId', () => {
+  it('keeps a terminal server JobRun matching the override executionId', () => {
     const baseEpoch = Date.now();
     const baseTime = new Date(baseEpoch).toISOString();
     const override = buildOverride(baseTime, { executionId: 'exec-42' });
@@ -74,11 +77,10 @@ describe('mergeSystemHealthWithJobOverrides - duplicate filter', () => {
     );
 
     expect(merged?.recentJobs).toHaveLength(1);
-    expect(merged?.recentJobs[0].status).toBe('running');
-    expect(merged?.recentJobs[0].executionId).toBe('exec-42');
+    expect(merged?.recentJobs[0]).toEqual(sameExecRun);
   });
 
-  it('drops a stale failed server JobRun within start-time tolerance when neither side has an executionId', () => {
+  it('keeps a terminal server JobRun within start-time tolerance when neither side has an executionId', () => {
     const baseEpoch = Date.now();
     const baseTime = new Date(baseEpoch).toISOString();
     const override = buildOverride(baseTime);
@@ -93,7 +95,7 @@ describe('mergeSystemHealthWithJobOverrides - duplicate filter', () => {
     );
 
     expect(merged?.recentJobs).toHaveLength(1);
-    expect(merged?.recentJobs[0].status).toBe('running');
+    expect(merged?.recentJobs[0]).toEqual(nearbyRun);
   });
 
   it('keeps unrelated recentJobs entries when the override matches nothing', () => {
@@ -198,5 +200,28 @@ describe('mergeSystemHealthWithJobOverrides - resource handling', () => {
     );
 
     expect(merged?.resources?.[0]).toEqual(liveResource);
+  });
+});
+
+describe('renewPendingOverrides', () => {
+  it('removes an optimistic override after the server reports the same execution as terminal', () => {
+    const queryClient = new QueryClient();
+    const baseTime = new Date().toISOString();
+    const override = buildOverride(baseTime, { executionId: 'exec-42' });
+
+    queryClient.setQueryData(queryKeys.systemHealthJobOverrides(), overridesMap(override));
+
+    renewPendingOverrides(
+      queryClient,
+      buildHealth([
+        buildJobRun({
+          status: 'success',
+          executionId: 'exec-42',
+          startTime: baseTime
+        })
+      ])
+    );
+
+    expect(queryClient.getQueryData(queryKeys.systemHealthJobOverrides())).toEqual({});
   });
 });
