@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-      RUNTIME_COMMON_VERSION: "3.4.7"
+      RUNTIME_COMMON_VERSION: "3.5.7"
     steps:
       - name: Validate manual dispatch release ref
         if: ${{ github.event_name == 'workflow_dispatch' }}

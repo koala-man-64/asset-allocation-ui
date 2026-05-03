@@ -83,7 +83,7 @@ def test_release_workflow_uses_registry_auth_without_contracts_checkout() -> Non
 
 def test_release_manifest_tracks_runtime_common_version() -> None:
     release_text = workflow_text("release.yml")
-    assert 'RUNTIME_COMMON_VERSION: "3.4.7"' in release_text
+    assert 'RUNTIME_COMMON_VERSION: "3.5.7"' in release_text
     assert '"runtime_common": os.environ["RUNTIME_COMMON_VERSION"]' in release_text
     assert '"runtime_common": None' not in release_text
 
