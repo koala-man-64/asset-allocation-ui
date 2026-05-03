@@ -329,10 +329,12 @@ describe('SystemStatusPage', () => {
 
     await screen.findByTestId('mock-domain-layer-coverage-panel');
 
-    expect(screen.getByText('Risk Readout')).toBeInTheDocument();
-    expect(screen.getByText('Configured Coverage')).toBeInTheDocument();
-    expect(screen.getByText('Job Risk')).toBeInTheDocument();
-    expect(screen.getByText('Open Alerts')).toBeInTheDocument();
+    expect(screen.queryByText('Risk Readout')).not.toBeInTheDocument();
+    expect(screen.queryByText('Configured Coverage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Job Risk')).not.toBeInTheDocument();
+    expect(screen.queryByText('Open Alerts')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Live medallion coverage/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Refresh View/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/VIEW UPDATED/i)).not.toBeInTheDocument();
     expect(screen.queryByText('Session Readout')).not.toBeInTheDocument();
     expect(screen.queryByText('Live refresh feed')).not.toBeInTheDocument();
@@ -361,7 +363,7 @@ describe('SystemStatusPage', () => {
       </QueryClientProvider>
     );
 
-    expect(await screen.findByText('Risk Readout')).toBeInTheDocument();
+    expect(await screen.findByTestId('mock-domain-layer-coverage-panel')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(DataService.getSystemStatusView).toHaveBeenCalled();

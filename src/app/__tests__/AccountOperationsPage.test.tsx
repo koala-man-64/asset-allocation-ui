@@ -416,7 +416,7 @@ describe('AccountOperationsPage', () => {
     vi.mocked(accountOperationsApi.saveAllocation).mockResolvedValue(configurationResponse);
   });
 
-  it('renders the hero summary and sorts the board by exception priority', async () => {
+  it('renders the board summary and sorts the board by exception priority', async () => {
     renderWithProviders(<AccountOperationsPage />);
 
     expect(await screen.findByText(/account board/i)).toBeInTheDocument();
