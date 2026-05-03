@@ -30,6 +30,17 @@ const CSRF_COOKIE_NAMES = ['__Host-aa_csrf', 'aa_csrf_dev'] as const;
 const apiWarmupAttempted = new Set<string>();
 const apiWarmupInFlight = new Map<string, Promise<void>>();
 
+/**
+ * Ensures array fields are never null/undefined from API responses.
+ * Azure SDK may return null instead of empty array; this normalizes to [].
+ */
+function normalizeArrayField<T>(
+  arr: T[] | null | undefined,
+  defaultValue: T[] = []
+): T[] {
+  return Array.isArray(arr) ? arr : defaultValue;
+}
+
 function logApiRequest(
   event: string,
   detail: Record<string, unknown> = {},
@@ -1133,7 +1144,20 @@ export const apiService = {
       params,
       signal,
       timeoutMs: SYSTEM_STATUS_VIEW_TIMEOUT_MS
-    });
+    }).then((response) => ({
+      ...response,
+      systemHealth: {
+        ...response.systemHealth,
+        dataLayers: normalizeArrayField(response.systemHealth.dataLayers, []),
+        recentJobs: normalizeArrayField(response.systemHealth.recentJobs, []),
+        alerts: normalizeArrayField(response.systemHealth.alerts, []),
+        resources: normalizeArrayField(response.systemHealth.resources, [])
+      },
+      metadataSnapshot: {
+        ...response.metadataSnapshot,
+        warnings: normalizeArrayField(response.metadataSnapshot.warnings, [])
+      }
+    }));
   },
 
   getPersistedDomainMetadataSnapshotCache(): Promise<DomainMetadataSnapshotResponse> {
@@ -1183,7 +1207,16 @@ export const apiService = {
     return request<JobLogsResponse>(`/system/jobs/${jobName}/logs`, {
       params,
       signal
-    });
+    }).then((response) => ({
+      ...response,
+      runs: Array.isArray(response.runs)
+        ? response.runs.map((run) => ({
+            ...run,
+            consoleLogs: Array.isArray(run.consoleLogs) ? run.consoleLogs : [],
+            tail: Array.isArray(run.tail) ? run.tail : []
+          }))
+        : []
+    }));
   },
 
   getContainerApps(
@@ -1193,7 +1226,10 @@ export const apiService = {
     return request<ContainerAppsStatusResponse>('/system/container-apps', {
       params: { probe: params.probe ?? true },
       signal
-    });
+    }).then((response) => ({
+      ...response,
+      apps: normalizeArrayField(response.apps, [])
+    }));
   },
 
   startContainerApp(appName: string, signal?: AbortSignal): Promise<ContainerAppControlResponse> {

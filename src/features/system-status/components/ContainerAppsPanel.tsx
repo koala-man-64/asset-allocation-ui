@@ -212,13 +212,13 @@ export function ContainerAppsPanel() {
 
     DataService.getContainerAppLogs(appName, { tail: LOG_TAIL_LINES }, controller.signal)
       .then((response) => {
-        const logs = Array.isArray(response?.logs)
-          ? response.logs
-              .filter((line) => line !== undefined && line !== null)
-              .map((line) => formatSystemStatusText(line))
-              .filter((line) => line.length > 0)
-              .slice(-LOG_TAIL_LINES)
-          : [];
+        const logs = (response?.logs ?? [])
+          .map((line) => {
+            const formatted = formatSystemStatusText(line);
+            // Preserve original if formatting stripped content
+            return formatted.length > 0 ? formatted : line;
+          })
+          .slice(-LOG_TAIL_LINES);
         setLogStateByName((prev) => ({
           ...prev,
           [appName]: {
@@ -288,8 +288,11 @@ export function ContainerAppsPanel() {
       }
 
       const incoming = detail.lines
-        .map((line) => formatSystemStatusText(line.message))
-        .filter((line) => line.length > 0);
+        .map((line) => {
+          const formatted = formatSystemStatusText(line.message);
+          // Preserve original if formatting stripped content
+          return formatted.length > 0 ? formatted : line.message;
+        });
 
       if (incoming.length === 0) {
         return;

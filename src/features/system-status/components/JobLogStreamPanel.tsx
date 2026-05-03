@@ -305,10 +305,17 @@ function normalizeLogLine(
     id?: string | null;
   }
 ): ConsoleTailLine | null {
-  const message = formatSystemStatusText(line.message);
+  let message = String(line.message || '').trim();
   if (!message) {
     return null;
   }
+
+  // Try formatting for system status messages, but preserve original if it strips content
+  const formatted = formatSystemStatusText(message);
+  if (formatted) {
+    message = formatted;
+  }
+  // else: keep original message if formatting resulted in empty string
 
   const timestamp = typeof line.timestamp === 'string' ? line.timestamp.trim() || null : null;
   const stream_s = typeof line.stream_s === 'string' ? line.stream_s.trim() || null : null;

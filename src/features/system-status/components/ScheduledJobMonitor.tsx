@@ -343,8 +343,11 @@ export function ScheduledJobMonitor({
           ...(anchoredRun?.consoleLogs ?? [])
         ]
           .filter((line) => line !== undefined && line !== null)
-          .map((line) => formatSystemStatusText(line))
-          .filter((line) => line.length > 0);
+          .map((line) => {
+            const formatted = formatSystemStatusText(line);
+            // Preserve original if formatting stripped content
+            return formatted.length > 0 ? formatted : line;
+          });
 
         const firstError = anchoredRun?.error ?? null;
         const formattedFirstError = formatSystemStatusText(firstError);
@@ -390,8 +393,11 @@ export function ScheduledJobMonitor({
       }
 
       const incoming = detail.lines
-        .map((line) => formatSystemStatusText(line.message))
-        .filter((line) => line.length > 0);
+        .map((line) => {
+          const formatted = formatSystemStatusText(line.message);
+          // Preserve original if formatting stripped content
+          return formatted.length > 0 ? formatted : line.message;
+        });
 
       if (incoming.length === 0) {
         return;

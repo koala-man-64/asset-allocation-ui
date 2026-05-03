@@ -15,7 +15,15 @@
       "Read(//c/Users/rdpro/.codex/skills/software-testing-validation-architect/**)",
       "Bash(Get-ChildItem -Path \".codex\\\\skills\" -Directory)",
       "Bash(Select-Object -ExpandProperty Name)",
-      "Bash(Sort-Object)"
+      "Bash(Sort-Object)",
+      "Bash(Get-ChildItem -Path . -Depth 2 -Directory)",
+      "Bash(Select-Object -First 20)",
+      "Bash(Format-Table FullName)",
+      "Bash(Get-ChildItem -Path src -Recurse -Filter \"*api*.ts\" -o File)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(xargs grep *)",
+      "Bash(cd /d \"c:\\\\Users\\\\rdpro\\\\.codex\\\\worktrees\\\\f4f6\\\\asset-allocation-ui\")",
+      "Bash(npm test *)"
     ]
   }
 }
