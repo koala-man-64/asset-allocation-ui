@@ -10,6 +10,9 @@ const { triggerJobSpy, setJobSuspendedSpy } = vi.hoisted(() => ({
   setJobSuspendedSpy: vi.fn()
 }));
 
+const BACKTEST_JOB_AZURE_ID =
+  '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner';
+
 vi.mock('@/hooks/useJobTrigger', () => ({
   useJobTrigger: () => ({
     triggeringJob: null,
@@ -36,7 +39,8 @@ const JOBS: OperationalJobTarget[] = [
     startTime: '2026-04-18T14:31:00Z',
     duration: 120,
     recordsProcessed: 2400,
-    triggeredBy: 'manual'
+    triggeredBy: 'manual',
+    jobUrl: BACKTEST_JOB_AZURE_ID
   },
   {
     name: 'aca-job-ranking-materialize',
@@ -122,6 +126,20 @@ describe('OperationalJobMonitorPanel', () => {
     expect(screen.queryByRole('button', { name: /Rankings/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Intraday Monitoring/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /View logs for/i })).not.toBeInTheDocument();
+  });
+
+  it('links Azure actions to the concrete Container App Job executions blade', () => {
+    renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
+
+    expect(
+      screen.getByRole('link', { name: 'Open aca-job-backtest-runner executions in Azure' })
+    ).toHaveAttribute(
+      'href',
+      'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner/executions'
+    );
+    expect(
+      screen.getByRole('button', { name: 'No Azure execution link for aca-job-ranking-materialize' })
+    ).toBeDisabled();
   });
 
   it('runs stopped jobs and stops running managed jobs', () => {

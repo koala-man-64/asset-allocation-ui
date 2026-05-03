@@ -61,6 +61,7 @@ import { JobStatusDebugOverlay } from '@/features/system-status/components/JobSt
 
 type JobResourceSummary = {
   name: string;
+  azureId?: string | null;
   jobCategory?: JobCategory | null;
   jobKey?: string | null;
   jobRole?: string | null;
@@ -133,6 +134,7 @@ export function SystemStatusPage() {
       if (resources.has(jobKey)) continue;
       resources.set(jobKey, {
         name: rawName,
+        azureId: resource.azureId || null,
         jobCategory: resource.jobCategory || null,
         jobKey: resource.jobKey || null,
         jobRole: resource.jobRole || null,
@@ -164,6 +166,7 @@ export function SystemStatusPage() {
     for (const resource of jobResourcesByKey.values()) {
       items.push({
         name: resource.name,
+        azureId: resource.azureId || null,
         jobCategory: resource.jobCategory || null,
         jobKey: resource.jobKey || null,
         jobRole: resource.jobRole || null,

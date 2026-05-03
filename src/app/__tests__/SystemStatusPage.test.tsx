@@ -58,6 +58,9 @@ vi.mock('@/features/system-status/components/OperationalJobMonitorPanel', () => 
   }
 }));
 
+const BACKTEST_JOB_AZURE_ID =
+  '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner';
+
 function buildSystemStatusView(
   overrides: Partial<SystemStatusViewResponse> = {}
 ): SystemStatusViewResponse {
@@ -268,6 +271,7 @@ function buildSystemStatusView(
           name: 'aca-job-backtest-runner',
           resourceType: 'Microsoft.App/jobs',
           status: 'healthy',
+          azureId: BACKTEST_JOB_AZURE_ID,
           lastChecked: MOCK_RUN_TIMESTAMPS.latest,
           runningState: 'Running',
           lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
@@ -553,7 +557,7 @@ describe('SystemStatusPage', () => {
     });
 
     const operationalProps = operationalJobSpy.mock.calls.at(-1)?.[0] as {
-      jobs: Array<{ name: string; category: string }>;
+      jobs: Array<{ name: string; category: string; jobUrl?: string | null }>;
     };
     const operationalNames = operationalProps.jobs.map((job) => job.name);
 
@@ -585,7 +589,8 @@ describe('SystemStatusPage', () => {
         }),
         expect.objectContaining({
           name: 'aca-job-backtest-runner',
-          category: 'backtest'
+          category: 'backtest',
+          jobUrl: BACKTEST_JOB_AZURE_ID
         }),
         expect.objectContaining({
           name: 'aca-job-ranking-materialize',

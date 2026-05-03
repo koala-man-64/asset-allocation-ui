@@ -7,6 +7,7 @@ import type {
 
 export interface ManagedContainerJob {
   name: string;
+  azureId?: string | null;
   jobCategory?: JobCategory | null;
   jobKey?: string | null;
   jobRole?: string | null;

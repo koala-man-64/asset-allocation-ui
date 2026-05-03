@@ -10,6 +10,11 @@ import {
 import type { ManagedContainerJob } from '@/features/system-status/types';
 import type { DataLayer, JobRun } from '@/types/strategy';
 
+const BACKTEST_JOB_AZURE_ID =
+  '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner';
+const GOLD_REGIME_JOB_AZURE_ID =
+  '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/gold-regime-job';
+
 const DATA_LAYERS: DataLayer[] = [
   {
     name: 'Bronze',
@@ -335,6 +340,7 @@ describe('operational job classification', () => {
       managedContainerJobs: [
         {
           name: 'gold-regime-job',
+          azureId: GOLD_REGIME_JOB_AZURE_ID,
           runningState: 'Succeeded',
           lastModifiedAt: '2026-04-18T14:32:00Z',
           signals: [
@@ -361,6 +367,7 @@ describe('operational job classification', () => {
           duration: 97,
           recordsProcessed: 42,
           triggeredBy: 'schedule',
+          jobUrl: GOLD_REGIME_JOB_AZURE_ID,
           signals: expect.arrayContaining([
             expect.objectContaining({
               name: 'CpuUsage',
@@ -454,6 +461,7 @@ describe('operational job classification', () => {
       },
       {
         name: 'aca-job-backtest-runner',
+        azureId: BACKTEST_JOB_AZURE_ID,
         runningState: 'Running',
         lastModifiedAt: '2026-04-18T14:31:00Z'
       },
@@ -481,7 +489,8 @@ describe('operational job classification', () => {
           category: 'backtest',
           runningState: 'Running',
           recentStatus: 'running',
-          recordsProcessed: 1200
+          recordsProcessed: 1200,
+          jobUrl: BACKTEST_JOB_AZURE_ID
         }),
         expect.objectContaining({
           name: 'aca-job-ranking-materialize',
