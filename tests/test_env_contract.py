@@ -130,6 +130,7 @@ def test_ui_repo_has_bootstrap_scripts_and_no_shared_provisioner() -> None:
     scripts_dir = repo_root() / "scripts"
     assert (scripts_dir / "setup-env.ps1").exists()
     assert (scripts_dir / "sync-all-to-github.ps1").exists()
+    assert (scripts_dir / "validate_deployed_ui_assets.py").exists()
     assert (scripts_dir / "validate_deployed_ui_oidc.py").exists()
     assert (scripts_dir / "validate_github_deploy_vars.py").exists()
     assert not (scripts_dir / "provision_azure.ps1").exists()
@@ -226,6 +227,16 @@ def test_nginx_https_proxying_enables_sni() -> None:
     assert "proxy_set_header X-Forwarded-Host $http_host;" in text
 
 
+def test_nginx_static_asset_requests_do_not_fall_back_to_spa_shell() -> None:
+    text = (repo_root() / "nginx.conf").read_text(encoding="utf-8")
+    match = re.search(r"location \^~ /assets/ \{(?P<body>.*?)\n  \}", text, re.S)
+    assert match
+    asset_location = match.group("body")
+    assert 'Cache-Control "public, max-age=31536000, immutable"' in asset_location
+    assert "try_files $uri =404;" in asset_location
+    assert "try_files $uri $uri/ /index.html;" not in asset_location
+
+
 def test_browser_bootstrap_loads_only_ui_config() -> None:
     text = (repo_root() / "index.html").read_text(encoding="utf-8")
     assert '<script src="/ui-config.js"></script>' in text
@@ -246,6 +257,9 @@ def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None
     validator_text = (
         repo_root() / "scripts" / "validate_deployed_ui_oidc.py"
     ).read_text(encoding="utf-8")
+    asset_validator_text = (
+        repo_root() / "scripts" / "validate_deployed_ui_assets.py"
+    ).read_text(encoding="utf-8")
     assert "vars.API_UPSTREAM_SCHEME || 'https'" in text
     assert "vars.UI_AUTH_ENABLED || 'true'" in text
     assert "vars.UI_AUTH_PROVIDER || 'oidc'" in text
@@ -254,6 +268,7 @@ def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None
     assert "vars.UI_OIDC_CLIENT_ID" in text
     assert "vars.UI_OIDC_SCOPES" in text
     assert "python scripts/validate_deployed_ui_oidc.py \\" in text
+    assert "python scripts/validate_deployed_ui_assets.py \\" in text
     assert '--ui-origin "https://${fqdn}"' in text
     assert '--ui-auth-enabled "${UI_AUTH_ENABLED}"' in text
     assert '--ui-auth-provider "${UI_AUTH_PROVIDER}"' in text
@@ -266,6 +281,8 @@ def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None
     assert "--validation-method CNAME \\" in text
     assert "https://${UI_PUBLIC_HOSTNAME}/ui-config.js" in text
     assert "ui-config.js advertises apiBaseUrl=" in validator_text
+    assert "missingAssetCheck=" in asset_validator_text
+    assert "expected JavaScript" in asset_validator_text
     assert "Allowed: $*" in text
 
 
