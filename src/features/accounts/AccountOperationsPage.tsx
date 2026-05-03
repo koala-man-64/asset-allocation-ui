@@ -1,9 +1,8 @@
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Cable,
   CheckCircle2,
-  RefreshCw,
   ShieldAlert,
   Wallet
 } from 'lucide-react';
@@ -14,7 +13,6 @@ import { StatCard } from '@/app/components/common/StatCard';
 import { StatePanel } from '@/app/components/common/StatePanel';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
-import { Input } from '@/app/components/ui/input';
 import {
   Sheet,
   SheetContent,
@@ -46,15 +44,12 @@ import {
   formatCurrency,
   formatNumber,
   formatTimestamp,
-  getAccountSearchText,
   sortAccountsByPriority,
   statusBadgeVariant,
   tradeReadinessLabel
 } from '@/features/accounts/lib/accountPresentation';
 import { toast } from 'sonner';
 
-type BrokerFilter = 'all' | BrokerVendor;
-type HealthFilter = 'all' | 'needs-action' | 'healthy' | 'paused' | 'disconnected';
 type DetailTab = 'overview' | 'connectivity' | 'risk' | 'activity' | 'configuration';
 const EMPTY_ACCOUNTS: readonly BrokerAccountSummary[] = [];
 
@@ -68,26 +63,6 @@ function brokerLabel(broker: BrokerVendor): string {
   }
 
   return 'E*TRADE';
-}
-
-function matchesHealthFilter(account: BrokerAccountSummary, filter: HealthFilter): boolean {
-  if (filter === 'all') {
-    return true;
-  }
-
-  if (filter === 'needs-action') {
-    return account.overallStatus !== 'healthy' || account.tradeReadiness !== 'ready';
-  }
-
-  if (filter === 'healthy') {
-    return account.overallStatus === 'healthy' && account.tradeReadiness === 'ready';
-  }
-
-  if (filter === 'paused') {
-    return account.connectionHealth.syncPaused;
-  }
-
-  return account.connectionHealth.connectionState !== 'connected';
 }
 
 function buildVerdict(accounts: readonly BrokerAccountSummary[]): {
@@ -137,160 +112,6 @@ function AccountActionButton({
     <Button type="button" size="sm" variant={variant} disabled={disabled} onClick={onClick}>
       {label}
     </Button>
-  );
-}
-
-function AccountFilterRail({
-  accounts,
-  brokerFilter,
-  healthFilter,
-  searchText,
-  onBrokerFilterChange,
-  onHealthFilterChange,
-  onSearchTextChange,
-  onRefreshBoard,
-  onClearFilters,
-  boardRefreshing
-}: {
-  accounts: readonly BrokerAccountSummary[];
-  brokerFilter: BrokerFilter;
-  healthFilter: HealthFilter;
-  searchText: string;
-  onBrokerFilterChange: (value: BrokerFilter) => void;
-  onHealthFilterChange: (value: HealthFilter) => void;
-  onSearchTextChange: (value: string) => void;
-  onRefreshBoard: () => void;
-  onClearFilters: () => void;
-  boardRefreshing: boolean;
-}) {
-  const brokerCounts = useMemo(
-    () => ({
-      all: accounts.length,
-      alpaca: accounts.filter((account) => account.broker === 'alpaca').length,
-      schwab: accounts.filter((account) => account.broker === 'schwab').length,
-      etrade: accounts.filter((account) => account.broker === 'etrade').length
-    }),
-    [accounts]
-  );
-
-  const healthCounts = useMemo(
-    () => ({
-      all: accounts.length,
-      'needs-action': accounts.filter(
-        (account) => account.overallStatus !== 'healthy' || account.tradeReadiness !== 'ready'
-      ).length,
-      healthy: accounts.filter(
-        (account) => account.overallStatus === 'healthy' && account.tradeReadiness === 'ready'
-      ).length,
-      paused: accounts.filter((account) => account.connectionHealth.syncPaused).length,
-      disconnected: accounts.filter(
-        (account) => account.connectionHealth.connectionState !== 'connected'
-      ).length
-    }),
-    [accounts]
-  );
-
-  return (
-    <aside className="mcm-panel flex min-h-[760px] flex-col overflow-hidden">
-      <div className="border-b border-border/40 px-5 py-5">
-        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-          Filters
-        </p>
-        <h2 className="mt-1 font-display text-xl text-foreground">Board Scope</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Keep the page in exception-first scan mode. Filter broker noise before you open the
-          account dossier.
-        </p>
-      </div>
-
-      <div className="flex-1 space-y-5 p-5">
-        <div className="space-y-2">
-          <label htmlFor="account-ops-search">Account search</label>
-          <Input
-            id="account-ops-search"
-            placeholder="Broker, portfolio, account, reason"
-            value={searchText}
-            onChange={(event) => onSearchTextChange(event.target.value)}
-          />
-        </div>
-
-        <div className="space-y-3 rounded-[1.6rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-            Broker Routing
-          </p>
-          {([
-            ['all', 'All Brokers'],
-            ['alpaca', 'Alpaca'],
-            ['schwab', 'Schwab'],
-            ['etrade', 'E*TRADE']
-          ] as const).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              className={`flex w-full items-center justify-between rounded-[1.1rem] border px-3 py-3 text-left transition ${
-                brokerFilter === value
-                  ? 'border-mcm-walnut bg-mcm-cream/90'
-                  : 'border-mcm-walnut/15 bg-mcm-paper/70'
-              }`}
-              onClick={() => onBrokerFilterChange(value)}
-            >
-              <span className="font-medium text-foreground">{label}</span>
-              <span className="text-sm text-muted-foreground">
-                {brokerCounts[value as keyof typeof brokerCounts]}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-3 rounded-[1.6rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-            Health Buckets
-          </p>
-          {([
-            ['all', 'All States'],
-            ['needs-action', 'Needs Action'],
-            ['healthy', 'Healthy'],
-            ['paused', 'Paused Sync'],
-            ['disconnected', 'Disconnected']
-          ] as const).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              className={`flex w-full items-center justify-between rounded-[1.1rem] border px-3 py-3 text-left transition ${
-                healthFilter === value
-                  ? 'border-mcm-walnut bg-mcm-cream/90'
-                  : 'border-mcm-walnut/15 bg-mcm-paper/70'
-              }`}
-              onClick={() => onHealthFilterChange(value)}
-            >
-              <span className="font-medium text-foreground">{label}</span>
-              <span className="text-sm text-muted-foreground">
-                {healthCounts[value as keyof typeof healthCounts]}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-3 rounded-[1.6rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-4">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-            Quick Actions
-          </p>
-          <Button
-            type="button"
-            className="w-full justify-between"
-            onClick={onRefreshBoard}
-            disabled={boardRefreshing}
-          >
-            {boardRefreshing ? 'Refreshing Board...' : 'Refresh Board'}
-            <RefreshCw className={`h-4 w-4 ${boardRefreshing ? 'animate-spin' : ''}`} />
-          </Button>
-          <Button type="button" variant="ghost" className="w-full justify-between" onClick={onClearFilters}>
-            Clear Filters
-            <CheckCircle2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </aside>
   );
 }
 
@@ -927,13 +748,9 @@ function DeskVerdictRail({
 
 export function AccountOperationsPage() {
   const queryClient = useQueryClient();
-  const [brokerFilter, setBrokerFilter] = useState<BrokerFilter>('all');
-  const [healthFilter, setHealthFilter] = useState<HealthFilter>('all');
-  const [searchText, setSearchText] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [configurationDirty, setConfigurationDirty] = useState(false);
-  const deferredSearchText = useDeferredValue(searchText);
 
   const listQuery = useQuery({
     queryKey: accountOperationsKeys.list(),
@@ -1071,25 +888,7 @@ export function AccountOperationsPage() {
     [accounts, selectedAccountId]
   );
 
-  const filteredAccounts = useMemo(() => {
-    const query = deferredSearchText.trim().toLowerCase();
-
-    return sortAccountsByPriority(accounts).filter((account) => {
-      if (brokerFilter !== 'all' && account.broker !== brokerFilter) {
-        return false;
-      }
-
-      if (!matchesHealthFilter(account, healthFilter)) {
-        return false;
-      }
-
-      if (query && !getAccountSearchText(account).includes(query)) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [accounts, brokerFilter, deferredSearchText, healthFilter]);
+  const sortedAccounts = useMemo(() => sortAccountsByPriority(accounts), [accounts]);
 
   const connectedAccounts = accounts.filter(
     (account) => account.connectionHealth.connectionState === 'connected'
@@ -1204,24 +1003,7 @@ export function AccountOperationsPage() {
         />
       </section>
 
-      <div className="grid gap-6 2xl:grid-cols-[300px_minmax(0,1.2fr)_340px]">
-        <AccountFilterRail
-          accounts={accounts}
-          brokerFilter={brokerFilter}
-          healthFilter={healthFilter}
-          searchText={searchText}
-          onBrokerFilterChange={setBrokerFilter}
-          onHealthFilterChange={setHealthFilter}
-          onSearchTextChange={setSearchText}
-          onRefreshBoard={() => void listQuery.refetch()}
-          onClearFilters={() => {
-            setBrokerFilter('all');
-            setHealthFilter('all');
-            setSearchText('');
-          }}
-          boardRefreshing={listQuery.isFetching}
-        />
-
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.2fr)_340px]">
         <section className="mcm-panel min-h-[760px] overflow-hidden">
           <div className="border-b border-border/40 px-5 py-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1235,7 +1017,7 @@ export function AccountOperationsPage() {
                   blocked trading posture, then capital at risk.
                 </p>
               </div>
-              <Badge variant="outline">{filteredAccounts.length} visible</Badge>
+              <Badge variant="outline">{sortedAccounts.length} accounts</Badge>
             </div>
           </div>
 
@@ -1246,14 +1028,8 @@ export function AccountOperationsPage() {
                 title="No connected accounts"
                 message="Connect a broker account to populate the board and start monitoring trade readiness."
               />
-            ) : !filteredAccounts.length ? (
-              <StatePanel
-                tone="empty"
-                title="No accounts match the current filters"
-                message="Clear the filters or broaden the search to restore the board."
-              />
             ) : (
-              filteredAccounts.map((account) => (
+              sortedAccounts.map((account) => (
                 <AccountCard
                   key={account.accountId}
                   account={account.allocationSummary ? { ...account, strategyLabel: null } : account}
@@ -1273,7 +1049,7 @@ export function AccountOperationsPage() {
           </div>
         </section>
 
-        <DeskVerdictRail accounts={filteredAccounts.length ? filteredAccounts : accounts} generatedAt={listQuery.data?.generatedAt} />
+        <DeskVerdictRail accounts={sortedAccounts} generatedAt={listQuery.data?.generatedAt} />
       </div>
 
       <AccountDetailSheet

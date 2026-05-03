@@ -437,20 +437,13 @@ describe('AccountOperationsPage', () => {
     ]);
   });
 
-  it('filters the board by broker from the left rail', async () => {
-    const user = userEvent.setup();
+  it('renders the account board without the former filters rail', async () => {
     renderWithProviders(<AccountOperationsPage />);
 
     expect(await screen.findByText(/account board/i)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^Schwab/ }));
-
-    await waitFor(() => {
-      const visibleCards = Array.from(
-        document.querySelectorAll<HTMLElement>('[data-testid^="account-card-"]')
-      ).map((element) => element.dataset.testid);
-
-      expect(visibleCards).toEqual(['account-card-acct-schwab-1']);
-    });
+    expect(screen.queryByText('Board Scope')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Account search')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^All Brokers/ })).not.toBeInTheDocument();
   });
 
   it('opens the account dossier and renders the detail tabs including configuration', async () => {
