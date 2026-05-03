@@ -134,6 +134,17 @@ describe('RequireSession', () => {
     });
   });
 
+  it('does not start realtime auth recovery when auth is disabled', () => {
+    mockConfig.authRequired = false;
+    mockConfig.oidcEnabled = false;
+
+    renderRequireSession();
+
+    expect(screen.getByTestId('protected')).toBeInTheDocument();
+    expect(DataService.getAuthSessionStatusWithMeta).not.toHaveBeenCalled();
+    expect(mockUseRealtime).toHaveBeenCalledWith({ enabled: false });
+  });
+
   it('does not render a new protected route until that route session check completes', async () => {
     mockAuth.ready = true;
 
