@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlertTriangle, Gauge, Layers3, Sparkles } from 'lucide-react';
+import {
+  Activity,
+  Clock3,
+  Gauge,
+  Layers3,
+  RefreshCw,
+  ShieldAlert,
+  SlidersHorizontal,
+  Sparkles
+} from 'lucide-react';
 
-import { PageLoader } from '@/app/components/common/PageLoader';
 import { PageHero } from '@/app/components/common/PageHero';
+import { PageLoader } from '@/app/components/common/PageLoader';
 import { StatePanel } from '@/app/components/common/StatePanel';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
@@ -26,9 +35,11 @@ import {
 } from '@/app/components/ui/table';
 import { Textarea } from '@/app/components/ui/textarea';
 import { regimeApi } from '@/services/regimeApi';
-import type { RegimeSnapshot } from '@/types/regime';
+import type { RegimeSignal, RegimeSnapshot } from '@/types/regime';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { toast } from 'sonner';
+
+const REGIME_REFETCH_INTERVAL_MS = 30_000;
 
 const DEFAULT_MODEL_CONFIG_JSON = JSON.stringify(
   {
@@ -66,6 +77,8 @@ const DEFAULT_MODEL_CONFIG_JSON = JSON.stringify(
   2
 );
 
+type BadgeTone = 'default' | 'secondary' | 'destructive' | 'outline';
+
 function formatTimestamp(value?: string | null): string {
   if (!value) return 'Not available';
   const parsed = new Date(value);
@@ -78,6 +91,12 @@ function formatTimestamp(value?: string | null): string {
 
 function formatDate(value?: string | null): string {
   if (!value) return 'Not available';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(
+      new Date(year, month - 1, day)
+    );
+  }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(parsed);
@@ -95,11 +114,42 @@ function formatLabel(value?: string | null): string {
   return value.replaceAll('_', ' ');
 }
 
+function formatTitleLabel(value?: string | null): string {
+  return formatLabel(value).replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatEvidenceValue(value: unknown): string {
+  if (value === null || value === undefined) return 'n/a';
+  if (typeof value === 'number') {
+    if (Number.isNaN(value)) return 'n/a';
+    if (Number.isInteger(value)) return String(value);
+    const digits = Math.abs(value) >= 10 ? 2 : 4;
+    return value.toFixed(digits).replace(/\.?0+$/, '');
+  }
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'string') return value || 'n/a';
+  if (Array.isArray(value)) return value.map(formatEvidenceValue).join(', ');
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function getEvidenceEntries(signal: RegimeSignal): Array<{ key: string; value: string }> {
+  const evidence = signal.evidence;
+  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
+    return [];
+  }
+
+  return Object.entries(evidence as Record<string, unknown>).map(([key, value]) => ({
+    key: formatLabel(key),
+    value: formatEvidenceValue(value)
+  }));
+}
+
 function getPrimaryRegimeCode(snapshot?: RegimeSnapshot | null): string | null {
   return snapshot?.active_regimes[0] ?? null;
 }
 
-function getActiveSignals(snapshot?: RegimeSnapshot | null) {
+function getActiveSignals(snapshot?: RegimeSnapshot | null): RegimeSignal[] {
   return (snapshot?.signals ?? []).filter((signal) => signal.is_active);
 }
 
@@ -111,21 +161,145 @@ function getMatchedRule(snapshot?: RegimeSnapshot | null): string {
   );
 }
 
-function regimeTone(
-  snapshot?: RegimeSnapshot | null
-): 'default' | 'secondary' | 'destructive' | 'outline' {
+function regimeTone(snapshot?: RegimeSnapshot | null): BadgeTone {
   if (!snapshot) return 'outline';
   const primaryRegime = getPrimaryRegimeCode(snapshot);
-  if (snapshot.halt_flag || primaryRegime === 'high_volatility' || primaryRegime === 'liquidity_stress') {
+  if (
+    snapshot.halt_flag ||
+    primaryRegime === 'high_volatility' ||
+    primaryRegime === 'liquidity_stress'
+  ) {
     return 'destructive';
   }
   if (!snapshot.active_regimes.length || primaryRegime === 'unclassified') return 'secondary';
   return 'default';
 }
 
+function signalTone(signal: RegimeSignal): BadgeTone {
+  if (signal.is_active) return 'default';
+  if (signal.signal_state === 'inactive') return 'outline';
+  return 'secondary';
+}
+
+function getFreshness(value?: string | null): {
+  label: string;
+  detail: string;
+  tone: BadgeTone;
+} {
+  if (!value) {
+    return {
+      label: 'No computation',
+      detail: 'No computed timestamp is available for this snapshot.',
+      tone: 'outline'
+    };
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      label: 'Unknown freshness',
+      detail: value,
+      tone: 'secondary'
+    };
+  }
+
+  const ageMs = Date.now() - parsed.getTime();
+  if (ageMs < 0) {
+    return {
+      label: 'Future timestamp',
+      detail: formatTimestamp(value),
+      tone: 'secondary'
+    };
+  }
+
+  const ageMinutes = Math.floor(ageMs / 60_000);
+  if (ageMinutes < 5) {
+    return {
+      label: 'Fresh',
+      detail: 'Computed within the last 5 minutes.',
+      tone: 'default'
+    };
+  }
+  if (ageMinutes < 60) {
+    return {
+      label: `${ageMinutes}m old`,
+      detail: formatTimestamp(value),
+      tone: 'secondary'
+    };
+  }
+
+  const ageHours = Math.floor(ageMinutes / 60);
+  if (ageHours < 24) {
+    return {
+      label: `${ageHours}h old`,
+      detail: formatTimestamp(value),
+      tone: ageHours >= 2 ? 'destructive' : 'secondary'
+    };
+  }
+
+  const ageDays = Math.floor(ageHours / 24);
+  return {
+    label: `${ageDays}d old`,
+    detail: formatTimestamp(value),
+    tone: 'destructive'
+  };
+}
+
+function sortSignals(signals: RegimeSignal[]): RegimeSignal[] {
+  return signals
+    .slice()
+    .sort(
+      (left, right) =>
+        Number(right.is_active) - Number(left.is_active) ||
+        (right.score ?? Number.NEGATIVE_INFINITY) - (left.score ?? Number.NEGATIVE_INFINITY) ||
+        left.display_name.localeCompare(right.display_name)
+    );
+}
+
+function didPrimaryRegimeChange(
+  row: RegimeSnapshot,
+  index: number,
+  rows: RegimeSnapshot[]
+): boolean {
+  const previousRow = rows[index + 1];
+  if (!previousRow) return false;
+  return getPrimaryRegimeCode(row) !== getPrimaryRegimeCode(previousRow);
+}
+
+function parseModelConfigJson(value: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch (error) {
+    throw new Error(
+      error instanceof Error ? `Invalid JSON: ${error.message}` : 'Invalid JSON config.'
+    );
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Config JSON must be a JSON object.');
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
+function MiniMetric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div className="rounded-2xl border border-mcm-walnut/15 bg-mcm-paper/75 px-4 py-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 truncate font-display text-lg text-foreground">{value}</div>
+      {detail ? <div className="mt-1 text-xs text-muted-foreground">{detail}</div> : null}
+    </div>
+  );
+}
+
 export function RegimeMonitorPage() {
   const queryClient = useQueryClient();
   const [selectedModelName, setSelectedModelName] = useState('default-regime');
+  const [isModelAdminOpen, setIsModelAdminOpen] = useState(false);
+  const [configJsonError, setConfigJsonError] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState({
     name: '',
     description: '',
@@ -134,7 +308,8 @@ export function RegimeMonitorPage() {
 
   const modelsQuery = useQuery({
     queryKey: ['regimes', 'models'],
-    queryFn: () => regimeApi.listModels()
+    queryFn: () => regimeApi.listModels(),
+    refetchInterval: REGIME_REFETCH_INTERVAL_MS
   });
 
   useEffect(() => {
@@ -147,33 +322,36 @@ export function RegimeMonitorPage() {
   const selectedModelDetailQuery = useQuery({
     queryKey: ['regimes', 'models', selectedModelName],
     queryFn: () => regimeApi.getModel(selectedModelName),
-    enabled: Boolean(selectedModelName)
+    enabled: Boolean(selectedModelName),
+    refetchInterval: REGIME_REFETCH_INTERVAL_MS
   });
 
   const currentQuery = useQuery({
     queryKey: ['regimes', 'current', selectedModelName],
     queryFn: () => regimeApi.getCurrent({ modelName: selectedModelName }),
-    enabled: Boolean(selectedModelName)
+    enabled: Boolean(selectedModelName),
+    refetchInterval: REGIME_REFETCH_INTERVAL_MS
   });
 
   const historyQuery = useQuery({
     queryKey: ['regimes', 'history', selectedModelName],
     queryFn: () => regimeApi.getHistory({ modelName: selectedModelName, limit: 24 }),
-    enabled: Boolean(selectedModelName)
+    enabled: Boolean(selectedModelName),
+    refetchInterval: REGIME_REFETCH_INTERVAL_MS
   });
 
   const createMutation = useMutation({
-    mutationFn: async () => {
-      const config = JSON.parse(createDraft.configJson);
-      return regimeApi.createModel({
+    mutationFn: (config: Record<string, unknown>) =>
+      regimeApi.createModel({
         name: createDraft.name.trim(),
         description: createDraft.description.trim(),
         config
-      });
-    },
+      }),
     onSuccess: async (payload) => {
       await queryClient.invalidateQueries({ queryKey: ['regimes'] });
       setSelectedModelName(payload.model.name);
+      setConfigJsonError(null);
+      setIsModelAdminOpen(false);
       setCreateDraft({
         name: '',
         description: '',
@@ -207,14 +385,42 @@ export function RegimeMonitorPage() {
   const currentSnapshot = currentQuery.data;
   const historyRows = historyQuery.data?.rows || [];
   const activeVersion = selectedModelDetailQuery.data?.activeRevision?.version;
-  const activationThreshold = selectedModelDetailQuery.data?.activeRevision?.config.activationThreshold;
+  const activationThreshold =
+    selectedModelDetailQuery.data?.activeRevision?.config.activationThreshold;
   const latestRevisionVersion = useMemo(() => {
     const revisions = selectedModelDetailQuery.data?.revisions || [];
     return revisions.length ? revisions[0].version : undefined;
   }, [selectedModelDetailQuery.data?.revisions]);
+  const sortedSignals = useMemo(
+    () => sortSignals(currentSnapshot?.signals ?? []),
+    [currentSnapshot?.signals]
+  );
+  const activeSignals = useMemo(() => getActiveSignals(currentSnapshot), [currentSnapshot]);
   const currentRegimeLabel = currentSnapshot
-    ? formatLabel(getPrimaryRegimeCode(currentSnapshot))
-    : 'Unavailable';
+    ? formatTitleLabel(getPrimaryRegimeCode(currentSnapshot))
+    : 'No Snapshot';
+  const matchedRule = getMatchedRule(currentSnapshot);
+  const freshness = getFreshness(currentSnapshot?.computed_at);
+  const isRefreshing =
+    modelsQuery.isFetching ||
+    selectedModelDetailQuery.isFetching ||
+    currentQuery.isFetching ||
+    historyQuery.isFetching;
+  const coreError = modelsQuery.error || selectedModelDetailQuery.error || currentQuery.error;
+
+  const refreshRegimeView = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['regimes'] });
+    toast.success('Regime monitor refreshed');
+  };
+
+  const submitCreateModel = () => {
+    setConfigJsonError(null);
+    try {
+      createMutation.mutate(parseModelConfigJson(createDraft.configJson));
+    } catch (error) {
+      setConfigJsonError(formatSystemStatusText(error));
+    }
+  };
 
   return (
     <div className="page-shell">
@@ -226,100 +432,142 @@ export function RegimeMonitorPage() {
             Regime Monitor
           </span>
         }
-        subtitle="Track the active gold regime model, inspect live signal activations and halt posture, and activate new model revisions without leaving the control plane."
-        actions={
-          <div className="w-full max-w-sm rounded-2xl border border-mcm-walnut/25 bg-mcm-paper/85 p-4">
+        subtitle="Desk-first regime oversight for active model posture, signal evidence, halt controls, and recent transitions."
+      />
+
+      <section className="mcm-panel p-4" aria-label="Regime monitor controls">
+        <div className="grid gap-3 lg:grid-cols-[minmax(16rem,1.25fr)_repeat(3,minmax(9rem,0.7fr))_auto] lg:items-end">
+          <div className="min-w-0">
             <Label htmlFor="regime-model-selector">Selected Model</Label>
             <select
               id="regime-model-selector"
               value={selectedModelName}
               onChange={(event) => setSelectedModelName(event.target.value)}
-              className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+              className="mt-2 h-10 w-full rounded-md border-2 border-input bg-background px-3 py-2 text-sm font-mono"
             >
-              {modelOptions.map((model) => (
-                <option key={model.name} value={model.name}>
-                  {model.name}
-                </option>
-              ))}
+              {modelOptions.length ? (
+                modelOptions.map((model) => (
+                  <option key={model.name} value={model.name}>
+                    {model.name}
+                  </option>
+                ))
+              ) : (
+                <option value={selectedModelName}>{selectedModelName}</option>
+              )}
             </select>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">Active v{activeVersion ?? 'n/a'}</Badge>
-              <Badge variant="outline">Latest v{latestRevisionVersion ?? 'n/a'}</Badge>
-            </div>
           </div>
-        }
-        metrics={[
-          {
-            label: 'Current Regime',
-            value: currentRegimeLabel,
-            detail: currentSnapshot
-              ? `${getActiveSignals(currentSnapshot).length} active signals in the current snapshot.`
-              : 'No current snapshot is available.'
-          },
-          {
-            label: 'Active Version',
-            value: activeVersion ? `v${activeVersion}` : 'n/a',
-            detail: 'Revision currently driving gold outputs.'
-          },
-          {
-            label: 'Latest Version',
-            value: latestRevisionVersion ? `v${latestRevisionVersion}` : 'n/a',
-            detail: 'Newest saved revision for the selected model.'
-          }
-        ]}
-      />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.95fr)]">
-        <div className="space-y-6">
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Card className="mcm-panel">
+          <MiniMetric label="Active Version" value={activeVersion ? `v${activeVersion}` : 'n/a'} />
+          <MiniMetric
+            label="Latest Version"
+            value={latestRevisionVersion ? `v${latestRevisionVersion}` : 'n/a'}
+          />
+          <MiniMetric label="Computed" value={formatTimestamp(currentSnapshot?.computed_at)} />
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              void refreshRegimeView();
+            }}
+            disabled={isRefreshing}
+            aria-label="Refresh regime view"
+          >
+            <RefreshCw className={isRefreshing ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </Button>
+        </div>
+      </section>
+
+      {coreError ? (
+        <StatePanel
+          tone="error"
+          title="Regime Monitor Unavailable"
+          message={formatSystemStatusText(coreError)}
+          className="mcm-panel border-destructive/30 bg-destructive/10"
+        />
+      ) : (
+        <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_25rem]">
+          <div className="min-w-0 space-y-6">
+            <Card className="mcm-panel overflow-hidden">
               <CardHeader className="border-b border-border/40">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Activity className="h-5 w-5 text-mcm-olive" />
-                  Current Regime
-                </CardTitle>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Activity className="h-5 w-5 text-mcm-olive" />
+                      Regime Verdict
+                    </CardTitle>
+                    <CardDescription>
+                      Primary model state, halt posture, and snapshot freshness.
+                    </CardDescription>
+                  </div>
+                  <Badge variant={freshness.tone}>
+                    <Clock3 className="h-3.5 w-3.5" />
+                    {freshness.label}
+                  </Badge>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-3 pt-6">
+              <CardContent className="pt-6">
                 {currentQuery.isLoading ? (
-                  <PageLoader text="Loading regime..." variant="panel" className="min-h-[8rem]" />
+                  <PageLoader text="Loading regime verdict..." variant="panel" />
                 ) : currentSnapshot ? (
-                  <>
-                    <Badge variant={regimeTone(currentSnapshot)} className="capitalize">
-                      {formatLabel(getPrimaryRegimeCode(currentSnapshot))}
-                    </Badge>
-                    <div className="space-y-1 text-sm">
-                      <div>
-                        Active regimes:{' '}
-                        <span className="font-medium capitalize">
-                          {currentSnapshot.active_regimes.length
-                            ? currentSnapshot.active_regimes.map((code) => formatLabel(code)).join(', ')
-                            : 'Unclassified'}
-                        </span>
+                  <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
+                    <div className="min-w-0 rounded-3xl border-2 border-mcm-walnut/30 bg-background/35 p-5">
+                      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                        Observed Regime
                       </div>
-                      <div>
-                        As Of:{' '}
-                        <span className="font-medium">
-                          {formatDate(currentSnapshot.as_of_date)}
-                        </span>
+                      <div
+                        className="mt-3 font-display text-4xl font-black leading-tight text-foreground"
+                        data-testid="regime-verdict"
+                      >
+                        {currentRegimeLabel}
                       </div>
-                      <div>
-                        Effective:{' '}
-                        <span className="font-medium">
-                          {formatDate(currentSnapshot.effective_from_date)}
-                        </span>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Badge variant={regimeTone(currentSnapshot)}>{currentRegimeLabel}</Badge>
+                        <Badge variant={currentSnapshot.halt_flag ? 'destructive' : 'outline'}>
+                          <ShieldAlert className="h-3.5 w-3.5" />
+                          {currentSnapshot.halt_flag ? 'Halt Active' : 'No Halt'}
+                        </Badge>
+                        <Badge variant="secondary">
+                          {activeSignals.length}{' '}
+                          {activeSignals.length === 1 ? 'Active Signal' : 'Active Signals'}
+                        </Badge>
                       </div>
-                      <div>
-                        Active signals:{' '}
-                        <span className="font-medium">{getActiveSignals(currentSnapshot).length}</span>
+                      <div className="mt-5 text-sm text-muted-foreground">
+                        Freshness: {freshness.detail}
                       </div>
                     </div>
-                  </>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <MiniMetric
+                        label="Active Regimes"
+                        value={
+                          currentSnapshot.active_regimes.length
+                            ? currentSnapshot.active_regimes.map(formatTitleLabel).join(', ')
+                            : 'Unclassified'
+                        }
+                      />
+                      <MiniMetric label="Matched Rule" value={matchedRule} />
+                      <MiniMetric label="As Of" value={formatDate(currentSnapshot.as_of_date)} />
+                      <MiniMetric
+                        label="Effective"
+                        value={formatDate(currentSnapshot.effective_from_date)}
+                      />
+                      <MiniMetric
+                        label="Activation Threshold"
+                        value={formatMetric(activationThreshold)}
+                      />
+                      <MiniMetric
+                        label="Halt Reason"
+                        value={currentSnapshot.halt_reason || 'n/a'}
+                      />
+                    </div>
+                  </div>
                 ) : (
                   <StatePanel
                     tone="empty"
                     title="No Regime Snapshot"
                     message="No regime snapshot is available yet for this model."
-                    className="rounded-xl p-4"
                   />
                 )}
               </CardContent>
@@ -327,42 +575,86 @@ export function RegimeMonitorPage() {
 
             <Card className="mcm-panel">
               <CardHeader className="border-b border-border/40">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Gauge className="h-5 w-5 text-mcm-rust" />
-                  Signal Deck
-                </CardTitle>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Gauge className="h-5 w-5 text-mcm-teal" />
+                      Signal Evidence
+                    </CardTitle>
+                    <CardDescription>
+                      Scores, thresholds, matched rules, and raw evidence values.
+                    </CardDescription>
+                  </div>
+                  <Badge variant="outline">{sortedSignals.length} signals</Badge>
+                </div>
               </CardHeader>
-              <CardContent className="grid gap-3 pt-6 text-sm">
-                {currentSnapshot?.signals.length ? (
-                  currentSnapshot.signals
-                    .slice()
-                    .sort((left, right) => Number(right.is_active) - Number(left.is_active) || right.score - left.score)
-                    .slice(0, 5)
-                    .map((signal) => (
-                      <div
-                        key={`${signal.regime_code}-${signal.display_name}`}
-                        className="rounded-[1.2rem] border border-mcm-walnut/18 bg-mcm-paper/85 p-3"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="font-medium text-foreground">{signal.display_name}</div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                              {formatLabel(signal.regime_code)}
+              <CardContent className="pt-6">
+                {currentQuery.isLoading ? (
+                  <PageLoader text="Loading signal evidence..." variant="panel" />
+                ) : sortedSignals.length ? (
+                  <div className="grid gap-3">
+                    {sortedSignals.map((signal) => {
+                      const evidenceEntries = getEvidenceEntries(signal);
+                      return (
+                        <article
+                          key={`${signal.regime_code}-${signal.display_name}`}
+                          className="rounded-2xl border-2 border-mcm-walnut/25 bg-mcm-paper/80 p-4"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-display text-xl text-foreground">
+                                {signal.display_name}
+                              </div>
+                              <div className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                                {formatTitleLabel(signal.regime_code)}
+                              </div>
                             </div>
+                            <Badge variant={signalTone(signal)}>
+                              {signal.is_active ? 'Active' : signal.signal_state}
+                            </Badge>
                           </div>
-                          <Badge variant={signal.is_active ? 'default' : 'outline'}>
-                            {signal.is_active ? 'Active' : signal.signal_state}
-                          </Badge>
-                        </div>
-                        <div className="mt-2 text-xs text-muted-foreground">
-                          Score {formatMetric(signal.score)} vs threshold {formatMetric(signal.activation_threshold)}
-                        </div>
-                      </div>
-                    ))
+
+                          <div className="mt-4 grid gap-3 md:grid-cols-3">
+                            <MiniMetric label="Score" value={formatMetric(signal.score)} />
+                            <MiniMetric
+                              label="Threshold"
+                              value={formatMetric(signal.activation_threshold)}
+                            />
+                            <MiniMetric
+                              label="Matched Rule"
+                              value={signal.matched_rule_id || 'n/a'}
+                            />
+                          </div>
+
+                          <div className="mt-4">
+                            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">
+                              Evidence
+                            </div>
+                            {evidenceEntries.length ? (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {evidenceEntries.map((entry) => (
+                                  <span
+                                    key={`${signal.regime_code}-${entry.key}`}
+                                    className="rounded-full border border-mcm-walnut/20 bg-background/45 px-3 py-1 font-mono text-xs text-foreground"
+                                  >
+                                    {entry.key}: {entry.value}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="mt-2 text-sm text-muted-foreground">
+                                No evidence payload was supplied for this signal.
+                              </div>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <StatePanel
                     tone="empty"
-                    title="No signal evidence"
+                    title="No Signal Evidence"
                     message="The current snapshot does not include any regime signal rows."
                   />
                 )}
@@ -372,208 +664,234 @@ export function RegimeMonitorPage() {
             <Card className="mcm-panel">
               <CardHeader className="border-b border-border/40">
                 <CardTitle className="flex items-center gap-2 text-lg">
-                  <AlertTriangle className="h-5 w-5 text-mcm-mustard" />
-                  Halt Overlay
+                  <Layers3 className="h-5 w-5 text-mcm-teal" />
+                  Regime Timeline
                 </CardTitle>
+                <CardDescription>
+                  Recent snapshots with visible transition and halt markers.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3 pt-6 text-sm">
-                <Badge variant={currentSnapshot?.halt_flag ? 'destructive' : 'outline'}>
-                  {currentSnapshot?.halt_flag ? 'Halt Active' : 'No Halt'}
-                </Badge>
-                <div>
-                  Reason:{' '}
-                  <span className="font-medium">{currentSnapshot?.halt_reason || 'n/a'}</span>
-                </div>
-                <div>
-                  Activation Threshold:{' '}
-                  <span className="font-medium">{formatMetric(activationThreshold)}</span>
-                </div>
-                <div>
-                  Matched Rule:{' '}
-                  <span className="font-medium">{getMatchedRule(currentSnapshot)}</span>
-                </div>
-                <div>
-                  Computed:{' '}
-                  <span className="font-medium">
-                    {formatTimestamp(currentSnapshot?.computed_at)}
-                  </span>
-                </div>
+              <CardContent className="pt-6">
+                {historyQuery.isLoading ? (
+                  <PageLoader text="Loading regime timeline..." variant="panel" />
+                ) : historyQuery.error ? (
+                  <StatePanel
+                    tone="error"
+                    title="History Unavailable"
+                    message={formatSystemStatusText(historyQuery.error)}
+                  />
+                ) : historyRows.length === 0 ? (
+                  <StatePanel
+                    tone="empty"
+                    title="No Regime History"
+                    message="No regime history is available for this model yet."
+                  />
+                ) : (
+                  <Table className="min-w-[820px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>As Of</TableHead>
+                        <TableHead>Effective</TableHead>
+                        <TableHead>Primary Regime</TableHead>
+                        <TableHead>Signals</TableHead>
+                        <TableHead>Rule</TableHead>
+                        <TableHead>Transition</TableHead>
+                        <TableHead className="text-right">Halt</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {historyRows.map((row, index) => {
+                        const transition = didPrimaryRegimeChange(row, index, historyRows);
+                        return (
+                          <TableRow
+                            key={`${row.model_name}-${row.model_version}-${row.as_of_date}`}
+                          >
+                            <TableCell>{formatDate(row.as_of_date)}</TableCell>
+                            <TableCell>{formatDate(row.effective_from_date)}</TableCell>
+                            <TableCell>
+                              <Badge variant={regimeTone(row)}>
+                                {formatTitleLabel(getPrimaryRegimeCode(row))}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{getActiveSignals(row).length}</TableCell>
+                            <TableCell>{getMatchedRule(row)}</TableCell>
+                            <TableCell>
+                              <Badge variant={transition ? 'secondary' : 'outline'}>
+                                {transition ? 'Transition' : 'Continuation'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant={row.halt_flag ? 'destructive' : 'outline'}>
+                                {row.halt_flag ? 'Halt' : 'Clear'}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </div>
 
-          <Card className="mcm-panel">
-            <CardHeader className="border-b border-border/40">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Layers3 className="h-5 w-5 text-mcm-teal" />
-                History
-              </CardTitle>
-              <CardDescription>
-                Recent active-regime snapshots for the selected model.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6">
-              {historyQuery.isLoading ? (
-                <PageLoader text="Loading history..." variant="panel" className="min-h-[10rem]" />
-              ) : historyRows.length === 0 ? (
-                <StatePanel
-                  tone="empty"
-                  title="No Regime History"
-                  message="No regime history is available for this model yet."
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>As Of</TableHead>
-                      <TableHead>Effective</TableHead>
-                      <TableHead>Active Regimes</TableHead>
-                      <TableHead>Signals</TableHead>
-                      <TableHead>Rule</TableHead>
-                      <TableHead className="text-right">Halt</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {historyRows.map((row) => (
-                      <TableRow key={`${row.model_name}-${row.model_version}-${row.as_of_date}`}>
-                        <TableCell>{formatDate(row.as_of_date)}</TableCell>
-                        <TableCell>{formatDate(row.effective_from_date)}</TableCell>
-                        <TableCell className="capitalize">
-                          {row.active_regimes.length
-                            ? row.active_regimes.map((code) => formatLabel(code)).join(', ')
-                            : 'Unclassified'}
-                        </TableCell>
-                        <TableCell>{getActiveSignals(row).length}</TableCell>
-                        <TableCell>{getMatchedRule(row)}</TableCell>
-                        <TableCell className="text-right">{row.halt_flag ? 'Yes' : 'No'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card className="mcm-panel">
-            <CardHeader className="border-b border-border/40">
-              <CardTitle className="text-lg">Create Model Revision</CardTitle>
-              <CardDescription>
-                Publish a new named regime model revision. Activation is separate so the monitor can
-                stage changes first.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-6">
-              <div className="grid gap-2">
-                <Label htmlFor="regime-create-name">Name</Label>
-                <Input
-                  id="regime-create-name"
-                  value={createDraft.name}
-                  onChange={(event) =>
-                    setCreateDraft((current) => ({ ...current, name: event.target.value }))
-                  }
-                  placeholder="e.g. default-regime"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="regime-create-description">Description</Label>
-                <Input
-                  id="regime-create-description"
-                  value={createDraft.description}
-                  onChange={(event) =>
-                    setCreateDraft((current) => ({ ...current, description: event.target.value }))
-                  }
-                  placeholder="Short description"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="regime-create-config">Config JSON</Label>
-                <Textarea
-                  id="regime-create-config"
-                  value={createDraft.configJson}
-                  onChange={(event) =>
-                    setCreateDraft((current) => ({ ...current, configJson: event.target.value }))
-                  }
-                  rows={14}
-                  className="font-mono text-xs"
-                />
-              </div>
-              <Button
-                className="w-full"
-                disabled={createMutation.isPending || !createDraft.name.trim()}
-                onClick={() => createMutation.mutate()}
-              >
-                {createMutation.isPending ? 'Saving…' : 'Save Model Revision'}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="mcm-panel">
-            <CardHeader className="border-b border-border/40">
-              <CardTitle className="text-lg">Model Revisions</CardTitle>
-              <CardDescription>
-                Activate the revision that should drive the current gold regime outputs.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6">
-              {selectedModelDetailQuery.isLoading ? (
-                <PageLoader text="Loading revisions..." variant="panel" className="min-h-[10rem]" />
-              ) : selectedModelDetailQuery.data?.revisions?.length ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Version</TableHead>
-                      <TableHead>Published</TableHead>
-                      <TableHead>Activated</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedModelDetailQuery.data.revisions.map((revision) => (
-                      <TableRow key={`${revision.name}-${revision.version}`}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">v{revision.version}</span>
-                            {revision.version === activeVersion && (
-                              <Badge variant="secondary">Active</Badge>
-                            )}
+          <aside className="space-y-6">
+            <Card className="mcm-panel">
+              <CardHeader className="border-b border-border/40">
+                <CardTitle className="text-lg">Model Revisions</CardTitle>
+                <CardDescription>
+                  Activate the revision that should drive current gold regime outputs.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 pt-6">
+                {selectedModelDetailQuery.isLoading ? (
+                  <PageLoader
+                    text="Loading revisions..."
+                    variant="panel"
+                    className="min-h-[10rem]"
+                  />
+                ) : selectedModelDetailQuery.data?.revisions?.length ? (
+                  selectedModelDetailQuery.data.revisions.map((revision) => (
+                    <div
+                      key={`${revision.name}-${revision.version}`}
+                      className="rounded-2xl border-2 border-mcm-walnut/25 bg-background/35 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="font-display text-xl">v{revision.version}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Published {formatTimestamp(revision.published_at)}
                           </div>
-                        </TableCell>
-                        <TableCell>{formatTimestamp(revision.published_at)}</TableCell>
-                        <TableCell>{formatTimestamp(revision.activated_at)}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={
-                              activateMutation.isPending || revision.version === activeVersion
-                            }
-                            onClick={() =>
-                              activateMutation.mutate({
-                                modelName: selectedModelName,
-                                version: revision.version
-                              })
-                            }
-                          >
-                            Activate
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Activated {formatTimestamp(revision.activated_at)}
+                          </div>
+                        </div>
+                        {revision.version === activeVersion ? (
+                          <Badge variant="secondary">Active</Badge>
+                        ) : null}
+                      </div>
+                      <Button
+                        className="mt-4 w-full"
+                        variant="outline"
+                        size="sm"
+                        disabled={activateMutation.isPending || revision.version === activeVersion}
+                        onClick={() =>
+                          activateMutation.mutate({
+                            modelName: selectedModelName,
+                            version: revision.version
+                          })
+                        }
+                      >
+                        Activate
+                      </Button>
+                    </div>
+                  ))
+                ) : (
+                  <StatePanel
+                    tone="empty"
+                    title="No Revisions Found"
+                    message="No revisions found for this model."
+                  />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="mcm-panel">
+              <CardHeader className="border-b border-border/40">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <SlidersHorizontal className="h-5 w-5 text-mcm-olive" />
+                      Model Admin
+                    </CardTitle>
+                    <CardDescription>
+                      Stage new revisions away from the monitoring flow.
+                    </CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-expanded={isModelAdminOpen}
+                    onClick={() => setIsModelAdminOpen((current) => !current)}
+                  >
+                    {isModelAdminOpen ? 'Hide' : 'Show'}
+                  </Button>
+                </div>
+              </CardHeader>
+              {isModelAdminOpen ? (
+                <CardContent className="space-y-4 pt-6">
+                  <div className="grid gap-2">
+                    <Label htmlFor="regime-create-name">Name</Label>
+                    <Input
+                      id="regime-create-name"
+                      value={createDraft.name}
+                      onChange={(event) =>
+                        setCreateDraft((current) => ({ ...current, name: event.target.value }))
+                      }
+                      placeholder="e.g. default-regime"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="regime-create-description">Description</Label>
+                    <Input
+                      id="regime-create-description"
+                      value={createDraft.description}
+                      onChange={(event) =>
+                        setCreateDraft((current) => ({
+                          ...current,
+                          description: event.target.value
+                        }))
+                      }
+                      placeholder="Short description"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="regime-create-config">Config JSON</Label>
+                    <Textarea
+                      id="regime-create-config"
+                      value={createDraft.configJson}
+                      onChange={(event) => {
+                        setConfigJsonError(null);
+                        setCreateDraft((current) => ({
+                          ...current,
+                          configJson: event.target.value
+                        }));
+                      }}
+                      rows={12}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  {configJsonError ? (
+                    <StatePanel
+                      tone="error"
+                      title="Invalid Config JSON"
+                      message={configJsonError}
+                      className="rounded-2xl p-4"
+                    />
+                  ) : null}
+                  <Button
+                    className="w-full"
+                    disabled={createMutation.isPending || !createDraft.name.trim()}
+                    onClick={submitCreateModel}
+                  >
+                    {createMutation.isPending ? 'Saving...' : 'Save Model Revision'}
+                  </Button>
+                </CardContent>
               ) : (
-                <StatePanel
-                  tone="empty"
-                  title="No Revisions Found"
-                  message="No revisions found for this model."
-                />
+                <CardContent className="pt-6">
+                  <StatePanel
+                    tone="info"
+                    title="Admin Collapsed"
+                    message="Open only when staging a new model revision. Activation controls remain visible above."
+                    className="rounded-2xl p-4"
+                  />
+                </CardContent>
               )}
-            </CardContent>
-          </Card>
+            </Card>
+          </aside>
         </div>
-      </div>
+      )}
     </div>
   );
 }
