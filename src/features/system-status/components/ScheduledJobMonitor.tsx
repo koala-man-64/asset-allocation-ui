@@ -346,7 +346,7 @@ export function ScheduledJobMonitor({
           .map((line) => {
             const formatted = formatSystemStatusText(line);
             // Preserve original if formatting stripped content
-            return formatted.length > 0 ? formatted : line;
+            return formatted.length > 0 ? formatted : String(line);
           });
 
         const firstError = anchoredRun?.error ?? null;

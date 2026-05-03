@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Cable, CheckCircle2, Search, ShieldAlert, Wallet } from 'lucide-react';
+import { Cable, CheckCircle2, Plus, Search, ShieldAlert, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -85,8 +85,13 @@ import type {
   BrokerAccountAlert,
   BrokerAccountConfiguration,
   BrokerAccountDetail,
+  BrokerAccountExecutionPosture,
+  BrokerAccountOnboardingCandidate,
+  BrokerAccountOnboardingEnvironment,
+  BrokerAccountOnboardingResponse,
   BrokerAccountSummary,
   BrokerSyncScope,
+  BrokerTradeReadiness,
   BrokerTradingPolicyUpdateRequest,
   BrokerAccountAllocationUpdateRequest,
   BrokerVendor
@@ -112,6 +117,8 @@ type AccountActionDialogPayload = {
   reason: string;
   scope: BrokerSyncScope;
 };
+
+type OnboardingStep = 'provider' | 'candidates' | 'setup' | 'review';
 
 type AccountMonitoringData = {
   tradeAccount: TradeAccountSummaryView | null;
@@ -167,6 +174,48 @@ const ACTION_REASON_PRESETS: Record<AccountActionDialogTarget['kind'], string[]>
     'Acknowledged pending broker follow-up.'
   ]
 };
+
+const ONBOARDING_PROVIDERS: Array<{ value: BrokerVendor; label: string }> = [
+  { value: 'alpaca', label: 'Alpaca' },
+  { value: 'etrade', label: 'E*TRADE' },
+  { value: 'schwab', label: 'Schwab' }
+];
+
+const ONBOARDING_ENVIRONMENTS: Array<{
+  value: BrokerAccountOnboardingEnvironment;
+  label: string;
+}> = [
+  { value: 'paper', label: 'Paper' },
+  { value: 'sandbox', label: 'Sandbox' },
+  { value: 'live', label: 'Live' }
+];
+
+const ONBOARDING_POSTURES: Array<{
+  value: BrokerAccountExecutionPosture;
+  label: string;
+  detail: string;
+}> = [
+  {
+    value: 'monitor_only',
+    label: 'Monitor only',
+    detail: 'Read-only monitoring, no preview, submit, or cancel.'
+  },
+  {
+    value: 'paper',
+    label: 'Paper',
+    detail: 'Paper execution posture for paper broker environments.'
+  },
+  {
+    value: 'sandbox',
+    label: 'Sandbox',
+    detail: 'Sandbox execution posture for broker sandbox environments.'
+  },
+  {
+    value: 'live',
+    label: 'Live',
+    detail: 'Live execution posture after backend live gates pass.'
+  }
+];
 
 function brokerLabel(broker: BrokerVendor): string {
   if (broker === 'alpaca') {
@@ -723,6 +772,511 @@ function AccountActionDialog({
           </Button>
           <Button type="button" disabled={submitting || !reasonValid} onClick={handleSubmit}>
             {actionDialogSubmitLabel(target)}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function onboardingStepIndex(step: OnboardingStep): number {
+  return {
+    provider: 1,
+    candidates: 2,
+    setup: 3,
+    review: 4
+  }[step];
+}
+
+function candidateStateVariant(candidate: BrokerAccountOnboardingCandidate) {
+  if (candidate.state === 'available' || candidate.state === 'disabled') {
+    return 'default';
+  }
+  if (candidate.state === 'blocked' || candidate.state === 'already_configured') {
+    return 'destructive';
+  }
+  return 'secondary';
+}
+
+function AccountOnboardingDialog({
+  open,
+  onOpenChange,
+  onSuccess
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: (response: BrokerAccountOnboardingResponse) => Promise<void>;
+}) {
+  const [step, setStep] = useState<OnboardingStep>('provider');
+  const [provider, setProvider] = useState<BrokerVendor>('alpaca');
+  const [environment, setEnvironment] = useState<BrokerAccountOnboardingEnvironment>('paper');
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState('');
+  const [readiness, setReadiness] = useState<BrokerTradeReadiness>('review');
+  const [executionPosture, setExecutionPosture] =
+    useState<BrokerAccountExecutionPosture>('monitor_only');
+  const [initialRefresh, setInitialRefresh] = useState(true);
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setStep('provider');
+      setProvider('alpaca');
+      setEnvironment('paper');
+      setSelectedCandidateId(null);
+      setDisplayName('');
+      setReadiness('review');
+      setExecutionPosture('monitor_only');
+      setInitialRefresh(true);
+      setReason('');
+      setReasonError(null);
+    }
+  }, [open]);
+
+  const candidatesQuery = useQuery({
+    queryKey: accountOperationsKeys.onboardingCandidates(provider, environment),
+    queryFn: ({ signal }) =>
+      accountOperationsApi.listOnboardingCandidates(provider, environment, signal),
+    enabled: open && step !== 'provider',
+    staleTime: 5000
+  });
+
+  const candidates = candidatesQuery.data?.candidates ?? [];
+  const selectedCandidate =
+    candidates.find((candidate) => candidate.candidateId === selectedCandidateId) ?? null;
+
+  const onboardMutation = useMutation({
+    mutationFn: (payload: {
+      candidate: BrokerAccountOnboardingCandidate;
+      displayName: string;
+      readiness: BrokerTradeReadiness;
+      executionPosture: BrokerAccountExecutionPosture;
+      initialRefresh: boolean;
+      reason: string;
+    }) =>
+      accountOperationsApi.onboardAccount({
+        candidateId: payload.candidate.candidateId,
+        provider: payload.candidate.provider,
+        environment: payload.candidate.environment,
+        displayName: payload.displayName,
+        readiness: payload.readiness,
+        executionPosture: payload.executionPosture,
+        initialRefresh: payload.initialRefresh,
+        reason: payload.reason
+      }),
+    onSuccess: async (response) => {
+      await onSuccess(response);
+      toast.success(response.reenabled ? 'Account re-enabled.' : 'Account onboarded.');
+      onOpenChange(false);
+    },
+    onError: (error) => {
+      toast.error(`Failed to onboard account: ${String(error)}`);
+    }
+  });
+
+  const selectCandidate = (candidate: BrokerAccountOnboardingCandidate) => {
+    if (!candidate.canOnboard) {
+      return;
+    }
+    setSelectedCandidateId(candidate.candidateId);
+    setDisplayName(candidate.displayName);
+    setReadiness('review');
+    setExecutionPosture('monitor_only');
+    setStep('setup');
+  };
+
+  const goBack = () => {
+    if (step === 'review') {
+      setStep('setup');
+    } else if (step === 'setup') {
+      setStep('candidates');
+    } else if (step === 'candidates') {
+      setStep('provider');
+    }
+  };
+
+  const submit = async () => {
+    if (!selectedCandidate) {
+      return;
+    }
+    const trimmedReason = reason.trim();
+    if (trimmedReason.length < 5) {
+      setReasonError('Enter an operator reason with at least 5 characters.');
+      return;
+    }
+    await onboardMutation.mutateAsync({
+      candidate: selectedCandidate,
+      displayName: displayName.trim(),
+      readiness,
+      executionPosture,
+      initialRefresh,
+      reason: trimmedReason
+    });
+  };
+
+  const primaryDisabled =
+    onboardMutation.isPending ||
+    (step === 'candidates' && (!selectedCandidate || !selectedCandidate.canOnboard)) ||
+    (step === 'setup' &&
+      (!selectedCandidate ||
+        !displayName.trim() ||
+        !selectedCandidate.allowedExecutionPostures.includes(executionPosture))) ||
+    (step === 'review' && reason.trim().length < 5);
+
+  const primaryLabel =
+    step === 'provider'
+      ? 'Discover Accounts'
+      : step === 'candidates'
+        ? 'Continue'
+        : step === 'setup'
+          ? 'Review'
+          : 'Onboard Account';
+
+  const handlePrimary = async () => {
+    if (step === 'provider') {
+      setSelectedCandidateId(null);
+      setStep('candidates');
+      return;
+    }
+    if (step === 'candidates') {
+      if (selectedCandidate?.canOnboard) {
+        setStep('setup');
+      }
+      return;
+    }
+    if (step === 'setup') {
+      setStep('review');
+      return;
+    }
+    await submit();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && onboardMutation.isPending) {
+          return;
+        }
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent className="max-h-[92vh] overflow-y-auto border-2 border-mcm-walnut bg-mcm-paper sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Add Account</DialogTitle>
+          <DialogDescription>
+            Discover broker accounts, choose an initial control posture, and seed account
+            monitoring without manual database changes.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-wrap gap-2">
+          {(['provider', 'candidates', 'setup', 'review'] as OnboardingStep[]).map((item) => (
+            <Badge key={item} variant={item === step ? 'default' : 'outline'}>
+              {onboardingStepIndex(item)}. {titleCase(item)}
+            </Badge>
+          ))}
+        </div>
+
+        {step === 'provider' ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label
+                htmlFor="onboarding-provider"
+                className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground"
+              >
+                Provider
+              </label>
+              <Select value={provider} onValueChange={(value) => setProvider(value as BrokerVendor)}>
+                <SelectTrigger id="onboarding-provider">
+                  <SelectValue placeholder="Provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ONBOARDING_PROVIDERS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="onboarding-environment"
+                className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground"
+              >
+                Environment
+              </label>
+              <Select
+                value={environment}
+                onValueChange={(value) =>
+                  setEnvironment(value as BrokerAccountOnboardingEnvironment)
+                }
+              >
+                <SelectTrigger id="onboarding-environment">
+                  <SelectValue placeholder="Environment" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ONBOARDING_ENVIRONMENTS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        ) : null}
+
+        {step === 'candidates' ? (
+          <div className="space-y-4">
+            {candidatesQuery.isLoading ? (
+              <PageLoader variant="panel" text="Discovering broker accounts..." />
+            ) : candidatesQuery.error ? (
+              <StatePanel
+                tone="error"
+                title="Discovery failed"
+                message={String(candidatesQuery.error)}
+              />
+            ) : candidatesQuery.data?.discoveryStatus !== 'completed' ? (
+              <StatePanel
+                tone="warning"
+                title="Provider prerequisite missing"
+                message={
+                  candidatesQuery.data?.message ||
+                  'The selected provider is not connected or configured for discovery.'
+                }
+                action={
+                  <Button asChild variant="outline">
+                    <Link to="/runtime-config">Runtime Config</Link>
+                  </Button>
+                }
+              />
+            ) : candidates.length === 0 ? (
+              <StatePanel
+                tone="empty"
+                title="No broker accounts discovered"
+                message="The provider returned no account candidates for the selected environment."
+              />
+            ) : (
+              <div className="grid gap-3">
+                {candidates.map((candidate) => (
+                  <button
+                    key={candidate.candidateId}
+                    type="button"
+                    disabled={!candidate.canOnboard}
+                    className={`rounded-[1.2rem] border p-4 text-left transition ${
+                      selectedCandidateId === candidate.candidateId
+                        ? 'border-mcm-teal bg-mcm-teal/10'
+                        : 'border-mcm-walnut/18 bg-mcm-cream/55'
+                    } ${candidate.canOnboard ? 'hover:border-mcm-teal' : 'cursor-not-allowed opacity-75'}`}
+                    onClick={() => {
+                      setSelectedCandidateId(candidate.candidateId);
+                      if (candidate.canOnboard) {
+                        setDisplayName(candidate.displayName);
+                        setExecutionPosture('monitor_only');
+                      }
+                    }}
+                    onDoubleClick={() => selectCandidate(candidate)}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium text-foreground">{candidate.displayName}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {candidate.suggestedAccountId} | {candidate.accountNumberMasked || 'masked id unavailable'}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline">{brokerLabel(candidate.provider)}</Badge>
+                        <Badge variant={environmentVariant(candidate.environment)}>
+                          {candidate.environment.toUpperCase()}
+                        </Badge>
+                        <Badge variant={candidateStateVariant(candidate)}>{candidate.state}</Badge>
+                      </div>
+                    </div>
+                    {candidate.stateReason ? (
+                      <div className="mt-3 text-sm text-muted-foreground">
+                        {candidate.stateReason}
+                      </div>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {candidate.allowedExecutionPostures.map((posture) => (
+                        <Badge key={posture} variant="secondary">
+                          {titleCase(posture)}
+                        </Badge>
+                      ))}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {step === 'setup' && selectedCandidate ? (
+          <div className="space-y-5">
+            <div className="grid gap-3 rounded-[1.2rem] border border-mcm-walnut/15 bg-mcm-cream/55 p-4 text-sm md:grid-cols-3">
+              <DetailSection label="Candidate" value={selectedCandidate.suggestedAccountId} />
+              <DetailSection
+                label="Broker"
+                value={`${brokerLabel(selectedCandidate.provider)} / ${selectedCandidate.environment.toUpperCase()}`}
+              />
+              <DetailSection
+                label="Identifier"
+                value={selectedCandidate.accountNumberMasked || 'Masked id unavailable'}
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label
+                  htmlFor="onboarding-display-name"
+                  className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground"
+                >
+                  Display Name
+                </label>
+                <Input
+                  id="onboarding-display-name"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="onboarding-readiness"
+                  className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground"
+                >
+                  Initial Readiness
+                </label>
+                <Select
+                  value={readiness}
+                  onValueChange={(value) => setReadiness(value as BrokerTradeReadiness)}
+                >
+                  <SelectTrigger id="onboarding-readiness">
+                    <SelectValue placeholder="Initial readiness" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="review">Review</SelectItem>
+                    <SelectItem value="ready">Ready</SelectItem>
+                    <SelectItem value="blocked">Blocked</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                Execution Posture
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {ONBOARDING_POSTURES.map((posture) => {
+                  const allowed = selectedCandidate.allowedExecutionPostures.includes(posture.value);
+                  const reason = selectedCandidate.blockedExecutionPostureReasons[posture.value];
+                  const postureDescription = allowed
+                    ? posture.detail
+                    : reason || 'Unavailable for this candidate.';
+                  return (
+                    <Button
+                      key={posture.value}
+                      type="button"
+                      variant={executionPosture === posture.value ? 'secondary' : 'outline'}
+                      disabled={!allowed}
+                      title={reason ?? undefined}
+                      aria-label={`${posture.label} ${postureDescription}`}
+                      className="h-auto justify-start whitespace-normal px-4 py-3 text-left"
+                      onClick={() => setExecutionPosture(posture.value)}
+                    >
+                      <span>
+                        <span className="block font-medium">{posture.label}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {postureDescription}
+                        </span>
+                      </span>
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <label className="flex items-start gap-3 rounded-[1.2rem] border border-mcm-walnut/15 bg-mcm-cream/55 p-4 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={initialRefresh}
+                onChange={(event) => setInitialRefresh(event.target.checked)}
+              />
+              <span>
+                <span className="block font-medium text-foreground">Run initial refresh</span>
+                <span className="block text-muted-foreground">
+                  Hydrates balances, positions, orders, and account freshness after the seed is
+                  created.
+                </span>
+              </span>
+            </label>
+          </div>
+        ) : null}
+
+        {step === 'review' && selectedCandidate ? (
+          <div className="space-y-5">
+            <div className="grid gap-3 md:grid-cols-2">
+              <DetailSection label="Account ID" value={selectedCandidate.suggestedAccountId} />
+              <DetailSection label="Display Name" value={displayName.trim()} />
+              <DetailSection label="Readiness" value={titleCase(readiness)} />
+              <DetailSection label="Execution Posture" value={titleCase(executionPosture)} />
+              <DetailSection label="Initial Refresh" value={initialRefresh ? 'Yes' : 'No'} />
+              <DetailSection
+                label="Provider"
+                value={`${brokerLabel(selectedCandidate.provider)} / ${selectedCandidate.environment.toUpperCase()}`}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="onboarding-reason"
+                className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground"
+              >
+                Operator Reason
+              </label>
+              <Textarea
+                id="onboarding-reason"
+                value={reason}
+                placeholder="Describe why this account is being enabled for monitoring and controls."
+                onChange={(event) => {
+                  setReason(event.target.value);
+                  if (event.target.value.trim().length >= 5) {
+                    setReasonError(null);
+                  }
+                }}
+              />
+              {reasonError ? <p className="text-sm text-destructive">{reasonError}</p> : null}
+            </div>
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={onboardMutation.isPending}
+            onClick={() => {
+              if (step === 'provider') {
+                onOpenChange(false);
+              } else {
+                goBack();
+              }
+            }}
+          >
+            {step === 'provider' ? 'Cancel' : 'Back'}
+          </Button>
+          <Button
+            type="button"
+            disabled={primaryDisabled || (step === 'candidates' && candidatesQuery.isLoading)}
+            onClick={() => void handlePrimary()}
+          >
+            {primaryLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1631,6 +2185,7 @@ export function AccountOperationsPage() {
   const [statusFilter, setStatusFilter] = useState<AccountStatusFilter>('all');
   const [scopeFilter, setScopeFilter] = useState<AccountBoardScope>('all');
   const [actionTarget, setActionTarget] = useState<AccountActionDialogTarget | null>(null);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
 
   const listQuery = useQuery({
     queryKey: accountOperationsKeys.list(),
@@ -1949,6 +2504,18 @@ export function AccountOperationsPage() {
     setConfigurationDirty(false);
   };
 
+  const handleOnboardingSuccess = async (response: BrokerAccountOnboardingResponse) => {
+    const accountId = response.account.accountId;
+    await Promise.all([
+      invalidateAccountViews(accountId),
+      queryClient.invalidateQueries({ queryKey: accountOperationsKeys.all() }),
+      queryClient.invalidateQueries({ queryKey: tradeDeskKeys.all() })
+    ]);
+    setSelectedAccountId(accountId);
+    setDetailTab('overview');
+    setConfigurationDirty(false);
+  };
+
   const handleSaveTradingPolicy = async (
     payload: BrokerTradingPolicyUpdateRequest
   ): Promise<BrokerAccountConfiguration> => {
@@ -2077,12 +2644,18 @@ export function AccountOperationsPage() {
                   </p>
                 ) : null}
               </div>
-              <Badge variant="outline">
-                {hasActiveFilters
-                  ? `${sortedSnapshots.length}/${accounts.length}`
-                  : sortedSnapshots.length}{' '}
-                accounts
-              </Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" size="sm" onClick={() => setOnboardingOpen(true)}>
+                  <Plus className="mr-2 size-4" />
+                  Add Account
+                </Button>
+                <Badge variant="outline">
+                  {hasActiveFilters
+                    ? `${sortedSnapshots.length}/${accounts.length}`
+                    : sortedSnapshots.length}{' '}
+                  accounts
+                </Badge>
+              </div>
             </div>
 
             <AccountBoardControls
@@ -2103,7 +2676,13 @@ export function AccountOperationsPage() {
               <StatePanel
                 tone="empty"
                 title="No configured accounts"
-                message="Add enabled broker account rows to populate the board and start monitoring trade readiness."
+                message="Discover a connected broker account and seed it into account monitoring without manual SQL."
+                action={
+                  <Button type="button" onClick={() => setOnboardingOpen(true)}>
+                    <Plus className="mr-2 size-4" />
+                    Add Account
+                  </Button>
+                }
               />
             ) : !sortedSnapshots.length ? (
               <StatePanel
@@ -2198,6 +2777,12 @@ export function AccountOperationsPage() {
         submitting={actionMutationBusy}
         onCancel={() => setActionTarget(null)}
         onSubmit={submitAccountAction}
+      />
+
+      <AccountOnboardingDialog
+        open={onboardingOpen}
+        onOpenChange={setOnboardingOpen}
+        onSuccess={handleOnboardingSuccess}
       />
     </div>
   );

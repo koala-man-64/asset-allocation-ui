@@ -150,4 +150,35 @@ describe('accountOperationsApi', () => {
       }
     );
   });
+
+  it('uses broker account endpoints for onboarding discovery and create', async () => {
+    mockedRequest.mockResolvedValue({});
+    const payload: Parameters<typeof accountOperationsApi.onboardAccount>[0] = {
+      candidateId: 'alpaca:paper:123',
+      provider: 'alpaca',
+      environment: 'paper',
+      displayName: 'Alpaca Paper',
+      readiness: 'review',
+      executionPosture: 'paper',
+      initialRefresh: true,
+      reason: 'Create monitored paper account.'
+    };
+
+    await accountOperationsApi.listOnboardingCandidates('alpaca', 'paper');
+    await accountOperationsApi.onboardAccount(payload);
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(
+      1,
+      '/broker-accounts/onboarding/candidates',
+      {
+        params: { provider: 'alpaca', environment: 'paper' },
+        signal: undefined
+      }
+    );
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, '/broker-accounts/onboarding', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal: undefined
+    });
+  });
 });

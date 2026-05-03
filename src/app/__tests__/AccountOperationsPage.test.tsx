@@ -18,6 +18,8 @@ import type {
   BrokerAccountConfiguration,
   BrokerAccountDetail,
   BrokerAccountListResponse,
+  BrokerAccountOnboardingCandidateListResponse,
+  BrokerAccountOnboardingResponse,
   BrokerAccountSummary
 } from '@/types/brokerAccounts';
 import type { TradeOrder, TradePosition } from '@asset-allocation/contracts';
@@ -27,6 +29,8 @@ vi.mock('@/services/accountOperationsApi', () => ({
     listAccounts: vi.fn(),
     getAccountDetail: vi.fn(),
     getConfiguration: vi.fn(),
+    listOnboardingCandidates: vi.fn(),
+    onboardAccount: vi.fn(),
     reconnectAccount: vi.fn(),
     setSyncPaused: vi.fn(),
     refreshAccount: vi.fn(),
@@ -42,6 +46,12 @@ vi.mock('@/services/accountOperationsApi', () => ({
       'account-operations',
       'configuration',
       accountId ?? 'none'
+    ],
+    onboardingCandidates: (provider: string | null, environment: string | null) => [
+      'account-operations',
+      'onboarding-candidates',
+      provider ?? 'none',
+      environment ?? 'none'
     ]
   }
 }));
@@ -217,6 +227,79 @@ const healthyAccount: BrokerAccountSummary = {
 
 const listResponse: BrokerAccountListResponse = {
   accounts: [healthyAccount, warningAccount, disconnectedAccount],
+  generatedAt: '2026-04-20T13:50:00Z'
+};
+
+const onboardingCandidatesResponse: BrokerAccountOnboardingCandidateListResponse = {
+  candidates: [
+    {
+      candidateId: 'alpaca:paper:123',
+      provider: 'alpaca',
+      environment: 'paper',
+      suggestedAccountId: 'alpaca-paper',
+      displayName: 'Alpaca Paper',
+      accountNumberMasked: '***6789',
+      baseCurrency: 'USD',
+      state: 'available',
+      stateReason: null,
+      existingAccountId: null,
+      allowedExecutionPostures: ['monitor_only', 'paper'],
+      blockedExecutionPostureReasons: {
+        live: 'Live posture requires environment=live.'
+      },
+      canOnboard: true
+    }
+  ],
+  discoveryStatus: 'completed',
+  message: '',
+  generatedAt: '2026-04-20T13:50:00Z'
+};
+
+const onboardedAccount: BrokerAccountSummary = {
+  accountId: 'alpaca-paper',
+  broker: 'alpaca',
+  name: 'Alpaca Paper',
+  accountNumberMasked: '***6789',
+  baseCurrency: 'USD',
+  overallStatus: 'warning',
+  tradeReadiness: 'review',
+  tradeReadinessReason: 'Seeded through broker onboarding; refresh required.',
+  highestAlertSeverity: null,
+  connectionHealth: {
+    overallStatus: 'warning',
+    authStatus: 'authenticated',
+    connectionState: 'degraded',
+    syncStatus: 'never_synced',
+    lastCheckedAt: '2026-04-20T13:50:00Z',
+    lastSuccessfulSyncAt: null,
+    lastFailedSyncAt: null,
+    authExpiresAt: null,
+    staleReason: 'Seeded through broker onboarding; initial refresh pending.',
+    failureMessage: null,
+    syncPaused: false
+  },
+  equity: 0,
+  cash: 0,
+  buyingPower: 0,
+  openPositionCount: 0,
+  openOrderCount: 0,
+  lastSyncedAt: null,
+  snapshotAsOf: '2026-04-20T13:50:00Z',
+  activePortfolioName: null,
+  strategyLabel: null,
+  configurationVersion: null,
+  allocationSummary: null,
+  alertCount: 0
+};
+
+const onboardingResponse: BrokerAccountOnboardingResponse = {
+  account: onboardedAccount,
+  configuration: null,
+  created: true,
+  reenabled: false,
+  refreshAction: null,
+  audit: null,
+  message: 'Broker account onboarded.',
   generatedAt: '2026-04-20T13:50:00Z'
 };
 
@@ -716,6 +799,10 @@ describe('AccountOperationsPage', () => {
     vi.mocked(accountOperationsApi.listAccounts).mockResolvedValue(listResponse);
     vi.mocked(accountOperationsApi.getAccountDetail).mockResolvedValue(detailResponse);
     vi.mocked(accountOperationsApi.getConfiguration).mockResolvedValue(configurationResponse);
+    vi.mocked(accountOperationsApi.listOnboardingCandidates).mockResolvedValue(
+      onboardingCandidatesResponse
+    );
+    vi.mocked(accountOperationsApi.onboardAccount).mockResolvedValue(onboardingResponse);
     vi.mocked(accountOperationsApi.refreshAccount).mockResolvedValue(
       buildActionResponse('refresh')
     );
@@ -1118,6 +1205,108 @@ describe('AccountOperationsPage', () => {
     renderWithProviders(<AccountOperationsPage />);
 
     expect(await screen.findByText(/no configured accounts/i)).toBeInTheDocument();
+  });
+
+  it('onboards a discovered broker account from the empty state and renders it on the board', async () => {
+    vi.mocked(accountOperationsApi.listAccounts)
+      .mockResolvedValueOnce({
+        accounts: [],
+        generatedAt: '2026-04-20T13:50:00Z'
+      })
+      .mockResolvedValue({
+        accounts: [onboardedAccount],
+        generatedAt: '2026-04-20T13:51:00Z'
+      });
+    vi.mocked(accountOperationsApi.getAccountDetail).mockResolvedValue({
+      ...detailResponse,
+      account: onboardedAccount,
+      accountType: 'paper',
+      tradingBlocked: false,
+      tradingBlockedReason: null,
+      alerts: [],
+      syncRuns: [],
+      recentActivity: []
+    });
+    vi.mocked(tradeDeskApi.listAccounts).mockResolvedValue({
+      accounts: [],
+      generatedAt: '2026-04-20T13:50:00Z'
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/no configured accounts/i)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /add account/i })[0]);
+    await user.click(await screen.findByRole('button', { name: /discover accounts/i }));
+
+    await user.click(await screen.findByText('Alpaca Paper'));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: /paper paper execution posture/i }));
+    await user.click(screen.getByRole('button', { name: 'Review' }));
+    await user.type(
+      screen.getByLabelText(/operator reason/i),
+      'Create monitored paper account.'
+    );
+    await user.click(screen.getByRole('button', { name: /onboard account/i }));
+
+    await waitFor(() => {
+      expect(accountOperationsApi.onboardAccount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          candidateId: 'alpaca:paper:123',
+          provider: 'alpaca',
+          environment: 'paper',
+          displayName: 'Alpaca Paper',
+          readiness: 'review',
+          executionPosture: 'paper',
+          initialRefresh: true,
+          reason: 'Create monitored paper account.'
+        })
+      );
+    });
+    expect(await screen.findByTestId('account-card-alpaca-paper')).toBeInTheDocument();
+    expect(toast.success).toHaveBeenCalledWith('Account onboarded.');
+  });
+
+  it('does not allow an already configured discovered account to be added again', async () => {
+    vi.mocked(accountOperationsApi.listOnboardingCandidates).mockResolvedValue({
+      ...onboardingCandidatesResponse,
+      candidates: [
+        {
+          ...onboardingCandidatesResponse.candidates[0],
+          state: 'already_configured',
+          stateReason: 'Account is already configured.',
+          canOnboard: false
+        }
+      ]
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /add account/i }));
+    await user.click(await screen.findByRole('button', { name: /discover accounts/i }));
+
+    expect(await screen.findByText(/account is already configured/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    expect(accountOperationsApi.onboardAccount).not.toHaveBeenCalled();
+  });
+
+  it('shows blocked execution postures with explicit reasons during onboarding setup', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /add account/i }));
+    await user.click(await screen.findByRole('button', { name: /discover accounts/i }));
+    await user.click(await screen.findByText('Alpaca Paper'));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    const liveButton = screen.getByRole('button', {
+      name: /live live posture requires environment=live/i
+    });
+    expect(liveButton).toBeDisabled();
+    expect(liveButton).toHaveAttribute('title', 'Live posture requires environment=live.');
   });
 
   it('shows an unavailable panel when the account list request fails', async () => {
