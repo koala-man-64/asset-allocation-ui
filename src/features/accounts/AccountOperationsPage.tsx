@@ -86,14 +86,16 @@ import type {
   BrokerAccountConfiguration,
   BrokerAccountDetail,
   BrokerAccountExecutionPosture,
+  BrokerAccountAllocationUpdateRequest,
+  BrokerHealthTone,
   BrokerAccountOnboardingCandidate,
   BrokerAccountOnboardingEnvironment,
   BrokerAccountOnboardingResponse,
   BrokerAccountSummary,
+  BrokerSyncStatus,
   BrokerSyncScope,
   BrokerTradeReadiness,
   BrokerTradingPolicyUpdateRequest,
-  BrokerAccountAllocationUpdateRequest,
   BrokerVendor
 } from '@/types/brokerAccounts';
 import type { TradeDataFreshness, TradeOrder, TradePosition } from '@asset-allocation/contracts';
@@ -146,6 +148,131 @@ const EMPTY_TRADE_ACCOUNTS: readonly TradeAccountSummaryView[] = [];
 const EMPTY_POSITIONS: readonly TradePosition[] = [];
 const EMPTY_ORDERS: readonly TradeOrder[] = [];
 const EMPTY_BLOTTER_ROWS: readonly TradeBlotterRow[] = [];
+
+function tradeSyncStatus(account: TradeAccountSummaryView): BrokerSyncStatus {
+  const states = [
+    account.freshness.balancesState,
+    account.freshness.positionsState,
+    account.freshness.ordersState
+  ];
+
+  if (states.every((state) => state === 'fresh')) {
+    return 'fresh';
+  }
+
+  if (states.some((state) => state === 'stale')) {
+    return 'stale';
+  }
+
+  return 'never_synced';
+}
+
+function tradeOverallStatus(
+  account: TradeAccountSummaryView,
+  syncStatus: BrokerSyncStatus
+): BrokerHealthTone {
+  if (
+    account.readiness === 'blocked' ||
+    account.killSwitchActive ||
+    !account.capabilities.canReadAccount
+  ) {
+    return 'critical';
+  }
+
+  if (
+    account.readiness === 'review' ||
+    account.capabilities.readOnly ||
+    syncStatus !== 'fresh' ||
+    account.unresolvedAlertCount > 0
+  ) {
+    return 'warning';
+  }
+
+  return 'healthy';
+}
+
+function tradeConnectionHealth(
+  account: TradeAccountSummaryView,
+  syncStatus: BrokerSyncStatus,
+  overallStatus: BrokerHealthTone
+): BrokerAccountSummary['connectionHealth'] {
+  const canReadAccount = account.capabilities.canReadAccount;
+  const lastObservedAt = account.snapshotAsOf ?? account.lastSyncedAt ?? null;
+  const failureMessage = !canReadAccount
+    ? account.capabilities.unsupportedReason ||
+      account.readinessReason ||
+      'Trade account cannot be read.'
+    : account.readiness === 'blocked' || account.killSwitchActive
+      ? account.readinessReason || 'Account trading is blocked.'
+      : null;
+
+  return {
+    overallStatus,
+    authStatus: canReadAccount ? 'authenticated' : 'not_connected',
+    connectionState: !canReadAccount
+      ? 'disconnected'
+      : syncStatus === 'fresh'
+        ? 'connected'
+        : 'degraded',
+    syncStatus,
+    lastCheckedAt: lastObservedAt,
+    lastSuccessfulSyncAt:
+      syncStatus === 'fresh' || syncStatus === 'stale' ? account.lastSyncedAt ?? null : null,
+    lastFailedSyncAt: null,
+    authExpiresAt: null,
+    staleReason: syncStatus === 'stale' ? account.freshness.staleReason ?? null : null,
+    failureMessage,
+    syncPaused: false
+  };
+}
+
+function brokerSummaryFromTradeAccount(account: TradeAccountSummaryView): BrokerAccountSummary {
+  const syncStatus = tradeSyncStatus(account);
+  const overallStatus = tradeOverallStatus(account, syncStatus);
+
+  return {
+    accountId: account.accountId,
+    broker: account.provider,
+    name: account.name,
+    accountNumberMasked: account.accountNumberMasked,
+    baseCurrency: account.baseCurrency,
+    overallStatus,
+    tradeReadiness: account.readiness,
+    tradeReadinessReason: account.readinessReason,
+    highestAlertSeverity: account.unresolvedAlertCount > 0 ? 'warning' : null,
+    connectionHealth: tradeConnectionHealth(account, syncStatus, overallStatus),
+    equity: account.equity,
+    cash: account.cash,
+    buyingPower: account.buyingPower,
+    openPositionCount: account.positionCount,
+    openOrderCount: account.openOrderCount,
+    lastSyncedAt: account.lastSyncedAt,
+    snapshotAsOf: account.snapshotAsOf,
+    activePortfolioName: null,
+    strategyLabel: null,
+    configurationVersion: account.policyVersion ?? null,
+    allocationSummary: null,
+    alertCount: account.unresolvedAlertCount
+  };
+}
+
+function populateExistingTradeAccounts(
+  brokerAccounts: readonly BrokerAccountSummary[],
+  tradeAccounts: readonly TradeAccountSummaryView[]
+): readonly BrokerAccountSummary[] {
+  if (!tradeAccounts.length) {
+    return brokerAccounts;
+  }
+
+  const knownAccountIds = new Set(brokerAccounts.map((account) => account.accountId));
+  const missingBrokerAccounts = tradeAccounts
+    .filter((account) => !knownAccountIds.has(account.accountId))
+    .map(brokerSummaryFromTradeAccount);
+
+  return missingBrokerAccounts.length
+    ? [...brokerAccounts, ...missingBrokerAccounts]
+    : brokerAccounts;
+}
 
 const ACTION_REASON_PRESETS: Record<AccountActionDialogTarget['kind'], string[]> = {
   refresh: [
@@ -2206,8 +2333,12 @@ export function AccountOperationsPage() {
     refetchOnWindowFocus: true
   });
 
-  const accounts = listQuery.data?.accounts ?? EMPTY_ACCOUNTS;
+  const brokerAccounts = listQuery.data?.accounts ?? EMPTY_ACCOUNTS;
   const tradeAccounts = tradeAccountsQuery.data?.accounts ?? EMPTY_TRADE_ACCOUNTS;
+  const accounts = useMemo(
+    () => populateExistingTradeAccounts(brokerAccounts, tradeAccounts),
+    [brokerAccounts, tradeAccounts]
+  );
   const tradeAccountsById = useMemo(
     () => new Map(tradeAccounts.map((account) => [account.accountId, account])),
     [tradeAccounts]
@@ -2581,7 +2712,7 @@ export function AccountOperationsPage() {
     }
   };
 
-  if (listQuery.isLoading) {
+  if (listQuery.isLoading || (brokerAccounts.length === 0 && tradeAccountsQuery.isLoading)) {
     return <PageLoader text="Loading account operations board..." />;
   }
 

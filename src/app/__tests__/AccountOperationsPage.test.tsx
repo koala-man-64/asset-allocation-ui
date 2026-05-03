@@ -1201,10 +1201,29 @@ describe('AccountOperationsPage', () => {
       accounts: [],
       generatedAt: '2026-04-20T13:50:00Z'
     });
+    vi.mocked(tradeDeskApi.listAccounts).mockResolvedValue({
+      accounts: [],
+      generatedAt: '2026-04-20T13:50:00Z'
+    });
 
     renderWithProviders(<AccountOperationsPage />);
 
     expect(await screen.findByText(/no configured accounts/i)).toBeInTheDocument();
+  });
+
+  it('populates existing trade accounts when broker account rows are missing', async () => {
+    vi.mocked(accountOperationsApi.listAccounts).mockResolvedValue({
+      accounts: [],
+      generatedAt: '2026-04-20T13:50:00Z'
+    });
+
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByTestId('account-card-acct-alpaca-1')).toBeInTheDocument();
+    expect(screen.getByTestId('account-card-acct-etrade-1')).toBeInTheDocument();
+    expect(screen.getByTestId('account-card-acct-schwab-1')).toBeInTheDocument();
+    expect(screen.queryByText(/no configured accounts/i)).not.toBeInTheDocument();
+    expect(accountOperationsApi.onboardAccount).not.toHaveBeenCalled();
   });
 
   it('onboards a discovered broker account from the empty state and renders it on the board', async () => {
