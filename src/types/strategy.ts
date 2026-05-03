@@ -10,7 +10,6 @@ import type {
   UniverseSource,
   UniverseValue
 } from '@asset-allocation/contracts';
-import type { StrategyRiskPolicy } from '@/types/strategyAnalytics';
 
 export type {
   ExitRule,
@@ -37,6 +36,43 @@ export type {
 
 export type UniverseConditionOperator = ContractUniverseConditionOperator;
 export type RegimePolicyWithVersion = RegimePolicy & { modelVersion?: number | null };
+
+export type StrategyRiskPolicyScope = 'strategy' | 'sleeve';
+export type StrategyRiskStopLossBasis = 'strategy_nav_drawdown' | 'sleeve_nav_drawdown';
+export type StrategyRiskTakeProfitBasis = 'strategy_nav_gain' | 'sleeve_nav_gain';
+export type StrategyRiskStopLossAction = 'reduce_exposure' | 'liquidate' | 'freeze_buys';
+export type StrategyRiskTakeProfitAction = 'reduce_exposure' | 'rebalance_to_target';
+
+export interface StrategyRiskStopLossPolicy {
+  id: string;
+  enabled: boolean;
+  basis: StrategyRiskStopLossBasis;
+  thresholdPct: number;
+  action: StrategyRiskStopLossAction;
+  reductionPct?: number | null;
+}
+
+export interface StrategyRiskTakeProfitPolicy {
+  id: string;
+  enabled: boolean;
+  basis: StrategyRiskTakeProfitBasis;
+  thresholdPct: number;
+  action: StrategyRiskTakeProfitAction;
+  reductionPct?: number | null;
+}
+
+export interface StrategyRiskReentryPolicy {
+  cooldownBars: number;
+  requireApproval: boolean;
+}
+
+export interface StrategyRiskPolicy {
+  enabled: boolean;
+  scope: StrategyRiskPolicyScope;
+  stopLoss?: StrategyRiskStopLossPolicy | null;
+  takeProfit?: StrategyRiskTakeProfitPolicy | null;
+  reentry: StrategyRiskReentryPolicy;
+}
 
 export type UniverseGroupOperator = 'and' | 'or';
 export type StrategyConfigWithRiskPolicy = StrategyConfig & {

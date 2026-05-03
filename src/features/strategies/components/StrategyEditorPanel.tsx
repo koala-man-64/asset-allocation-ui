@@ -14,8 +14,7 @@ import {
 } from '@/app/components/ui/table';
 import { cn } from '@/app/components/ui/utils';
 import type { RunRecordResponse } from '@/services/backtestApi';
-import type { StrategyDetail, StrategySummary } from '@/types/strategy';
-import type { StrategyRiskPolicy } from '@/types/strategyAnalytics';
+import type { StrategyDetail, StrategyRiskPolicy, StrategySummary } from '@/types/strategy';
 import {
   describeRegimePolicy,
   describeStrategyExecution,
@@ -49,18 +48,15 @@ function formatRatio(value?: number | null): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function riskValue(policy: StrategyRiskPolicy | null | undefined, key: keyof StrategyRiskPolicy): string {
-  const value = policy?.[key];
-  if (typeof value !== 'number') {
+function formatRiskLabel(value?: string | null): string {
+  return value ? value.replaceAll('_', ' ') : 'Unset';
+}
+
+function riskPolicyState(policy: StrategyRiskPolicy | null | undefined): string {
+  if (!policy) {
     return 'Unset';
   }
-  return key === 'maxTradeNotionalBaseCcy'
-    ? new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        maximumFractionDigits: 0
-      }).format(value)
-    : formatRatio(value);
+  return policy.enabled ? 'Enabled' : 'Disabled';
 }
 
 function formatVersion(version?: number | null): string {
@@ -157,7 +153,8 @@ export function StrategyEditorPanel({
             </p>
             <h2 className="font-display text-xl text-foreground">Configuration Workspace</h2>
             <p className="text-sm text-muted-foreground">
-              Strategy assembly pins reusable library revisions. Edit library objects from the configuration hub; edit strategy pins here.
+              Strategy assembly pins reusable library revisions. Edit library objects from the
+              configuration hub; edit strategy pins here.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -191,7 +188,9 @@ export function StrategyEditorPanel({
 
       <div className="space-y-6 p-6">
         {!selectedStrategyName ? (
-          <EmptySection>Select a strategy from the library or create a new one to begin.</EmptySection>
+          <EmptySection>
+            Select a strategy from the library or create a new one to begin.
+          </EmptySection>
         ) : isLoading ? (
           <PageLoader text="Loading strategy workspace..." className="h-80" />
         ) : errorMessage ? (
@@ -264,9 +263,12 @@ export function StrategyEditorPanel({
             <section className="space-y-4 rounded-[2rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                 <div>
-                  <h4 className="font-display text-lg text-foreground">Pinned Configuration Revisions</h4>
+                  <h4 className="font-display text-lg text-foreground">
+                    Pinned Configuration Revisions
+                  </h4>
                   <p className="text-sm text-muted-foreground">
-                    These pins define the library revisions used to resolve the immutable strategy snapshot.
+                    These pins define the library revisions used to resolve the immutable strategy
+                    snapshot.
                   </p>
                 </div>
                 <Button variant="secondary" onClick={onEditStrategy}>
@@ -348,13 +350,43 @@ export function StrategyEditorPanel({
                 </div>
                 {riskPolicy ? (
                   <div className="grid gap-3 md:grid-cols-2">
-                    <PanelTile label="Gross" value={riskValue(riskPolicy, 'grossExposureLimit')} detail="Gross exposure ceiling." />
-                    <PanelTile label="Single Name" value={riskValue(riskPolicy, 'singleNameMaxWeight')} detail="Maximum issuer concentration." />
-                    <PanelTile label="Turnover" value={riskValue(riskPolicy, 'turnoverBudget')} detail="Desk turnover budget." />
-                    <PanelTile label="Trade Notional" value={riskValue(riskPolicy, 'maxTradeNotionalBaseCcy')} detail="Per-trade liquidity guardrail." />
+                    <PanelTile
+                      label="State"
+                      value={riskPolicyState(riskPolicy)}
+                      detail={`Scope: ${formatRiskLabel(riskPolicy.scope)}.`}
+                    />
+                    <PanelTile
+                      label="Stop Loss"
+                      value={
+                        riskPolicy.stopLoss?.enabled
+                          ? formatRatio(riskPolicy.stopLoss.thresholdPct)
+                          : 'Disabled'
+                      }
+                      detail={`Action: ${formatRiskLabel(riskPolicy.stopLoss?.action)}.`}
+                    />
+                    <PanelTile
+                      label="Take Profit"
+                      value={
+                        riskPolicy.takeProfit?.enabled
+                          ? formatRatio(riskPolicy.takeProfit.thresholdPct)
+                          : 'Disabled'
+                      }
+                      detail={`Action: ${formatRiskLabel(riskPolicy.takeProfit?.action)}.`}
+                    />
+                    <PanelTile
+                      label="Reentry"
+                      value={`${riskPolicy.reentry.cooldownBars} bars`}
+                      detail={
+                        riskPolicy.reentry.requireApproval
+                          ? 'Manual approval required.'
+                          : 'Automatic reentry allowed.'
+                      }
+                    />
                   </div>
                 ) : (
-                  <EmptySection>No risk policy snapshot is attached to this strategy revision.</EmptySection>
+                  <EmptySection>
+                    No risk policy snapshot is attached to this strategy revision.
+                  </EmptySection>
                 )}
               </div>
             </section>
@@ -364,7 +396,8 @@ export function StrategyEditorPanel({
                 <div>
                   <h4 className="font-display text-lg text-foreground">Recent Backtest Runs</h4>
                   <p className="text-sm text-muted-foreground">
-                    Historical runs stay tied to their strategy revision and resolved config snapshot.
+                    Historical runs stay tied to their strategy revision and resolved config
+                    snapshot.
                   </p>
                 </div>
                 <Badge variant="secondary">{recentRuns.length} runs</Badge>
@@ -389,7 +422,9 @@ export function StrategyEditorPanel({
                     <TableBody>
                       {recentRuns.map((run) => (
                         <TableRow key={run.run_id}>
-                          <TableCell className="font-medium">{run.run_name || run.run_id}</TableCell>
+                          <TableCell className="font-medium">
+                            {run.run_name || run.run_id}
+                          </TableCell>
                           <TableCell>{`${run.start_date || 'Unknown'} to ${run.end_date || 'Unknown'}`}</TableCell>
                           <TableCell>
                             <Badge

@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle
 } from '@/app/components/ui/card';
+import { Checkbox } from '@/app/components/ui/checkbox';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import {
@@ -27,10 +28,10 @@ import {
   SelectValue
 } from '@/app/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
-import { Textarea } from '@/app/components/ui/textarea';
 import { cn } from '@/app/components/ui/utils';
 import { RankingConfigPage } from '@/features/rankings/RankingConfigPage';
 import {
+  buildDefaultRiskPolicy,
   buildExitRule,
   EXIT_RULE_OPTIONS,
   getNextRuleId,
@@ -52,9 +53,13 @@ import type {
   ExitRuleType,
   IntrabarConflictPolicy,
   RegimePolicyConfigDetail,
-  RiskPolicyConfigDetail
+  RiskPolicyConfigDetail,
+  StrategyRiskPolicy,
+  StrategyRiskStopLossAction,
+  StrategyRiskStopLossBasis,
+  StrategyRiskTakeProfitAction,
+  StrategyRiskTakeProfitBasis
 } from '@/types/strategy';
-import type { StrategyRiskPolicy } from '@/types/strategyAnalytics';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 const CONFIG_TABS = ['universe', 'ranking', 'regime-policy', 'risk-policy', 'exit-rules'] as const;
@@ -68,22 +73,31 @@ const TAB_LABELS: Record<ConfigTab, string> = {
   'exit-rules': 'Exit Rules'
 };
 
-const DEFAULT_RISK_POLICY: StrategyRiskPolicy = {
-  grossExposureLimit: null,
-  netExposureLimit: null,
-  singleNameMaxWeight: null,
-  sectorMaxWeight: null,
-  turnoverBudget: null,
-  maxDrawdownLimit: null,
-  liquidityParticipationRate: null,
-  maxTradeNotionalBaseCcy: null,
-  notes: ''
-};
-
 const DEFAULT_EXIT_RULE_SET: ExitRuleSetConfig = {
   intrabarConflictPolicy: 'stop_first',
   exits: []
 };
+
+const STOP_LOSS_BASIS_OPTIONS: Array<{ value: StrategyRiskStopLossBasis; label: string }> = [
+  { value: 'strategy_nav_drawdown', label: 'Strategy NAV Drawdown' },
+  { value: 'sleeve_nav_drawdown', label: 'Sleeve NAV Drawdown' }
+];
+
+const STOP_LOSS_ACTION_OPTIONS: Array<{ value: StrategyRiskStopLossAction; label: string }> = [
+  { value: 'reduce_exposure', label: 'Reduce Exposure' },
+  { value: 'liquidate', label: 'Liquidate' },
+  { value: 'freeze_buys', label: 'Freeze Buys' }
+];
+
+const TAKE_PROFIT_BASIS_OPTIONS: Array<{ value: StrategyRiskTakeProfitBasis; label: string }> = [
+  { value: 'strategy_nav_gain', label: 'Strategy NAV Gain' },
+  { value: 'sleeve_nav_gain', label: 'Sleeve NAV Gain' }
+];
+
+const TAKE_PROFIT_ACTION_OPTIONS: Array<{ value: StrategyRiskTakeProfitAction; label: string }> = [
+  { value: 'reduce_exposure', label: 'Reduce Exposure' },
+  { value: 'rebalance_to_target', label: 'Rebalance To Target' }
+];
 
 function isConfigTab(value: string | null): value is ConfigTab {
   return CONFIG_TABS.includes(value as ConfigTab);
@@ -115,35 +129,24 @@ function validateName(name: string): string | null {
 }
 
 function validateRiskPolicy(policy: StrategyRiskPolicy): string | null {
-  const nonNegativeFields: Array<keyof StrategyRiskPolicy> = [
-    'grossExposureLimit',
-    'netExposureLimit',
-    'singleNameMaxWeight',
-    'sectorMaxWeight',
-    'turnoverBudget',
-    'maxDrawdownLimit',
-    'liquidityParticipationRate',
-    'maxTradeNotionalBaseCcy'
+  const ratioChecks: Array<[string, number | null | undefined]> = [
+    ['stop-loss threshold', policy.stopLoss?.thresholdPct],
+    ['stop-loss reduction', policy.stopLoss?.reductionPct],
+    ['take-profit threshold', policy.takeProfit?.thresholdPct],
+    ['take-profit reduction', policy.takeProfit?.reductionPct]
   ];
 
-  for (const key of nonNegativeFields) {
-    const value = policy[key];
-    if (typeof value === 'number' && value < 0) {
-      return `${key} must be nonnegative.`;
+  for (const [label, value] of ratioChecks) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+    if (value < 0 || value > 1) {
+      return `${label} must be entered as a ratio between 0 and 1.`;
     }
   }
 
-  const ratioFields: Array<keyof StrategyRiskPolicy> = [
-    'singleNameMaxWeight',
-    'sectorMaxWeight',
-    'maxDrawdownLimit',
-    'liquidityParticipationRate'
-  ];
-  for (const key of ratioFields) {
-    const value = policy[key];
-    if (typeof value === 'number' && value > 1) {
-      return `${key} must be entered as a ratio between 0 and 1.`;
-    }
+  if (!Number.isInteger(policy.reentry.cooldownBars) || policy.reentry.cooldownBars < 0) {
+    return 'Reentry cooldown bars must be a nonnegative integer.';
   }
 
   return null;
@@ -164,7 +167,15 @@ function validateExitRuleSet(config: ExitRuleSetConfig): string | null {
   return null;
 }
 
-function LibraryList<T extends { name: string; description?: string; version: number; archived?: boolean; updatedAt?: string | null }>({
+function LibraryList<
+  T extends {
+    name: string;
+    description?: string;
+    version: number;
+    archived?: boolean;
+    updatedAt?: string | null;
+  }
+>({
   title,
   items,
   selectedName,
@@ -335,7 +346,8 @@ function RegimePolicyPanel() {
       }));
       toast.success(`Regime policy ${draft.policy.name} saved`);
     },
-    onError: (error) => toast.error(`Failed to save regime policy: ${formatSystemStatusText(error)}`)
+    onError: (error) =>
+      toast.error(`Failed to save regime policy: ${formatSystemStatusText(error)}`)
   });
 
   const archiveMutation = useMutation({
@@ -349,7 +361,8 @@ function RegimePolicyPanel() {
       createDraft();
       toast.success(`Regime policy ${name} archived`);
     },
-    onError: (error) => toast.error(`Failed to archive regime policy: ${formatSystemStatusText(error)}`)
+    onError: (error) =>
+      toast.error(`Failed to archive regime policy: ${formatSystemStatusText(error)}`)
   });
 
   const config = draft.activeRevision?.config || {
@@ -376,7 +389,9 @@ function RegimePolicyPanel() {
         <CardHeader className="border-b border-border/60">
           <div>
             <CardTitle className="text-lg font-semibold">Regime Policy Editor</CardTitle>
-            <CardDescription>Reference a published regime model revision. Mode is observe-only for this release.</CardDescription>
+            <CardDescription>
+              Reference a published regime model revision. Mode is observe-only for this release.
+            </CardDescription>
           </div>
           <CardAction>
             <Badge variant="outline">v{draft.policy.version || 1}</Badge>
@@ -503,7 +518,7 @@ function RiskPolicyPanel() {
       name: '',
       version: 1,
       description: '',
-      config: { policy: DEFAULT_RISK_POLICY }
+      config: { policy: buildDefaultRiskPolicy() }
     },
     revisions: []
   });
@@ -538,23 +553,23 @@ function RiskPolicyPanel() {
         name: '',
         version: 1,
         description: '',
-        config: { policy: DEFAULT_RISK_POLICY }
+        config: { policy: buildDefaultRiskPolicy() }
       },
       revisions: []
     });
   };
 
-  const policy = draft.activeRevision?.config.policy || DEFAULT_RISK_POLICY;
-  const setPolicyField = (key: keyof StrategyRiskPolicy, value: string | number | null) => {
+  const policy = draft.activeRevision?.config.policy || buildDefaultRiskPolicy();
+  const stopLoss = policy.stopLoss || buildDefaultRiskPolicy().stopLoss;
+  const takeProfit = policy.takeProfit || buildDefaultRiskPolicy().takeProfit;
+
+  const updatePolicy = (updater: (current: StrategyRiskPolicy) => StrategyRiskPolicy) => {
     setDraft((current) => ({
       ...current,
       activeRevision: {
         ...(current.activeRevision || { name: current.policy.name, version: 1 }),
         config: {
-          policy: {
-            ...policy,
-            [key]: value
-          }
+          policy: updater(current.activeRevision?.config.policy || buildDefaultRiskPolicy())
         }
       }
     }));
@@ -574,7 +589,7 @@ function RiskPolicyPanel() {
       return riskPolicyApi.saveRiskPolicy({
         name: draft.policy.name.trim(),
         description: draft.policy.description || '',
-        config: { policy: { ...policy, notes: policy.notes || '' } }
+        config: { policy }
       });
     },
     onSuccess: async (result) => {
@@ -602,19 +617,9 @@ function RiskPolicyPanel() {
       createDraft();
       toast.success(`Risk policy ${name} archived`);
     },
-    onError: (error) => toast.error(`Failed to archive risk policy: ${formatSystemStatusText(error)}`)
+    onError: (error) =>
+      toast.error(`Failed to archive risk policy: ${formatSystemStatusText(error)}`)
   });
-
-  const riskFields: Array<{ key: keyof StrategyRiskPolicy; label: string; step: string }> = [
-    { key: 'grossExposureLimit', label: 'Gross Exposure Limit', step: '0.01' },
-    { key: 'netExposureLimit', label: 'Net Exposure Limit', step: '0.01' },
-    { key: 'singleNameMaxWeight', label: 'Single Name Max Weight', step: '0.01' },
-    { key: 'sectorMaxWeight', label: 'Sector Max Weight', step: '0.01' },
-    { key: 'turnoverBudget', label: 'Turnover Budget', step: '0.01' },
-    { key: 'maxDrawdownLimit', label: 'Max Drawdown Limit', step: '0.01' },
-    { key: 'liquidityParticipationRate', label: 'Liquidity Participation Rate', step: '0.01' },
-    { key: 'maxTradeNotionalBaseCcy', label: 'Max Trade Notional', step: '1' }
-  ];
 
   return (
     <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
@@ -634,7 +639,9 @@ function RiskPolicyPanel() {
         <CardHeader className="border-b border-border/60">
           <div>
             <CardTitle className="text-lg font-semibold">Risk Policy Editor</CardTitle>
-            <CardDescription>Publish reusable StrategyRiskPolicy payloads that strategies pin by version.</CardDescription>
+            <CardDescription>
+              Publish reusable StrategyRiskPolicy payloads that strategies pin by version.
+            </CardDescription>
           </div>
           <CardAction>
             <Badge variant="outline">v{draft.policy.version || 1}</Badge>
@@ -677,30 +684,357 @@ function RiskPolicyPanel() {
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {riskFields.map((field) => (
-                  <div key={field.key} className="grid gap-2">
-                    <Label htmlFor={`risk-policy-${field.key}`}>{field.label}</Label>
-                    <Input
-                      id={`risk-policy-${field.key}`}
-                      type="number"
-                      min={0}
-                      step={field.step}
-                      value={typeof policy[field.key] === 'number' ? String(policy[field.key]) : ''}
-                      onChange={(event) => setPolicyField(field.key, normalizeNumber(event.target.value))}
-                    />
-                  </div>
-                ))}
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="flex items-center gap-3 rounded-lg border border-border/60 bg-background px-3 py-2 text-sm">
+                  <Checkbox
+                    checked={policy.enabled}
+                    onCheckedChange={(checked) =>
+                      updatePolicy((current) => ({ ...current, enabled: Boolean(checked) }))
+                    }
+                  />
+                  <span>Enabled</span>
+                </label>
+                <div className="grid gap-2 md:col-span-2">
+                  <Label htmlFor="risk-policy-scope">Scope</Label>
+                  <Select
+                    value={policy.scope}
+                    onValueChange={(value) =>
+                      updatePolicy((current) => ({
+                        ...current,
+                        scope: value as StrategyRiskPolicy['scope']
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="risk-policy-scope">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="strategy">Strategy</SelectItem>
+                      <SelectItem value="sleeve">Sleeve</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="risk-policy-notes">Notes</Label>
-                <Textarea
-                  id="risk-policy-notes"
-                  value={policy.notes || ''}
-                  onChange={(event) => setPolicyField('notes', event.target.value)}
-                  placeholder="Record limit rationale, review cadence, or known desk exceptions."
-                />
+              {stopLoss ? (
+                <div className="rounded-lg border border-border/60 bg-background p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Stop Loss</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Drawdown guardrail applied at the selected policy scope.
+                      </p>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={stopLoss.enabled}
+                        onCheckedChange={(checked) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            stopLoss: {
+                              ...(current.stopLoss || stopLoss),
+                              enabled: Boolean(checked)
+                            }
+                          }))
+                        }
+                      />
+                      <span>Enabled</span>
+                    </label>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                    <div className="grid gap-2 xl:col-span-2">
+                      <Label htmlFor="risk-policy-stop-id">Rule Id</Label>
+                      <Input
+                        id="risk-policy-stop-id"
+                        value={stopLoss.id}
+                        onChange={(event) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            stopLoss: {
+                              ...(current.stopLoss || stopLoss),
+                              id: event.target.value
+                            }
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-policy-stop-basis">Basis</Label>
+                      <Select
+                        value={stopLoss.basis}
+                        onValueChange={(value) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            stopLoss: {
+                              ...(current.stopLoss || stopLoss),
+                              basis: value as StrategyRiskStopLossBasis
+                            }
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="risk-policy-stop-basis">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {STOP_LOSS_BASIS_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-policy-stop-threshold">Threshold</Label>
+                      <Input
+                        id="risk-policy-stop-threshold"
+                        type="number"
+                        min={0}
+                        max={1}
+                        step="0.01"
+                        value={String(stopLoss.thresholdPct)}
+                        onChange={(event) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            stopLoss: {
+                              ...(current.stopLoss || stopLoss),
+                              thresholdPct: normalizeNumber(event.target.value) ?? 0
+                            }
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-policy-stop-action">Action</Label>
+                      <Select
+                        value={stopLoss.action}
+                        onValueChange={(value) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            stopLoss: {
+                              ...(current.stopLoss || stopLoss),
+                              action: value as StrategyRiskStopLossAction
+                            }
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="risk-policy-stop-action">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {STOP_LOSS_ACTION_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-policy-stop-reduction">Reduction</Label>
+                      <Input
+                        id="risk-policy-stop-reduction"
+                        type="number"
+                        min={0}
+                        max={1}
+                        step="0.01"
+                        value={
+                          typeof stopLoss.reductionPct === 'number'
+                            ? String(stopLoss.reductionPct)
+                            : ''
+                        }
+                        onChange={(event) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            stopLoss: {
+                              ...(current.stopLoss || stopLoss),
+                              reductionPct: normalizeNumber(event.target.value)
+                            }
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {takeProfit ? (
+                <div className="rounded-lg border border-border/60 bg-background p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Take Profit</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Gain guardrail applied at the selected policy scope.
+                      </p>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={takeProfit.enabled}
+                        onCheckedChange={(checked) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            takeProfit: {
+                              ...(current.takeProfit || takeProfit),
+                              enabled: Boolean(checked)
+                            }
+                          }))
+                        }
+                      />
+                      <span>Enabled</span>
+                    </label>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                    <div className="grid gap-2 xl:col-span-2">
+                      <Label htmlFor="risk-policy-profit-id">Rule Id</Label>
+                      <Input
+                        id="risk-policy-profit-id"
+                        value={takeProfit.id}
+                        onChange={(event) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            takeProfit: {
+                              ...(current.takeProfit || takeProfit),
+                              id: event.target.value
+                            }
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-policy-profit-basis">Basis</Label>
+                      <Select
+                        value={takeProfit.basis}
+                        onValueChange={(value) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            takeProfit: {
+                              ...(current.takeProfit || takeProfit),
+                              basis: value as StrategyRiskTakeProfitBasis
+                            }
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="risk-policy-profit-basis">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TAKE_PROFIT_BASIS_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-policy-profit-threshold">Threshold</Label>
+                      <Input
+                        id="risk-policy-profit-threshold"
+                        type="number"
+                        min={0}
+                        max={1}
+                        step="0.01"
+                        value={String(takeProfit.thresholdPct)}
+                        onChange={(event) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            takeProfit: {
+                              ...(current.takeProfit || takeProfit),
+                              thresholdPct: normalizeNumber(event.target.value) ?? 0
+                            }
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-policy-profit-action">Action</Label>
+                      <Select
+                        value={takeProfit.action}
+                        onValueChange={(value) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            takeProfit: {
+                              ...(current.takeProfit || takeProfit),
+                              action: value as StrategyRiskTakeProfitAction
+                            }
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="risk-policy-profit-action">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TAKE_PROFIT_ACTION_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="risk-policy-profit-reduction">Reduction</Label>
+                      <Input
+                        id="risk-policy-profit-reduction"
+                        type="number"
+                        min={0}
+                        max={1}
+                        step="0.01"
+                        value={
+                          typeof takeProfit.reductionPct === 'number'
+                            ? String(takeProfit.reductionPct)
+                            : ''
+                        }
+                        onChange={(event) =>
+                          updatePolicy((current) => ({
+                            ...current,
+                            takeProfit: {
+                              ...(current.takeProfit || takeProfit),
+                              reductionPct: normalizeNumber(event.target.value)
+                            }
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="grid gap-4 rounded-lg border border-border/60 bg-background p-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="risk-policy-cooldown">Reentry Cooldown Bars</Label>
+                  <Input
+                    id="risk-policy-cooldown"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={String(policy.reentry.cooldownBars)}
+                    onChange={(event) =>
+                      updatePolicy((current) => ({
+                        ...current,
+                        reentry: {
+                          ...current.reentry,
+                          cooldownBars: normalizeNumber(event.target.value) ?? 0
+                        }
+                      }))
+                    }
+                  />
+                </div>
+                <label className="flex items-center gap-3 self-end rounded-lg border border-border/60 bg-card px-3 py-2 text-sm">
+                  <Checkbox
+                    checked={policy.reentry.requireApproval}
+                    onCheckedChange={(checked) =>
+                      updatePolicy((current) => ({
+                        ...current,
+                        reentry: {
+                          ...current.reentry,
+                          requireApproval: Boolean(checked)
+                        }
+                      }))
+                    }
+                  />
+                  <span>Require Approval For Reentry</span>
+                </label>
               </div>
 
               <div className="flex flex-wrap justify-between gap-3 border-t border-border/60 pt-5">
@@ -853,7 +1187,8 @@ function ExitRuleSetPanel() {
       }));
       toast.success(`Exit rule set ${draft.ruleSet.name} saved`);
     },
-    onError: (error) => toast.error(`Failed to save exit rule set: ${formatSystemStatusText(error)}`)
+    onError: (error) =>
+      toast.error(`Failed to save exit rule set: ${formatSystemStatusText(error)}`)
   });
 
   const archiveMutation = useMutation({
@@ -866,7 +1201,8 @@ function ExitRuleSetPanel() {
       createDraft();
       toast.success(`Exit rule set ${name} archived`);
     },
-    onError: (error) => toast.error(`Failed to archive exit rule set: ${formatSystemStatusText(error)}`)
+    onError: (error) =>
+      toast.error(`Failed to archive exit rule set: ${formatSystemStatusText(error)}`)
   });
 
   return (
@@ -887,7 +1223,9 @@ function ExitRuleSetPanel() {
         <CardHeader className="border-b border-border/60">
           <div>
             <CardTitle className="text-lg font-semibold">Exit Rule Set Editor</CardTitle>
-            <CardDescription>Maintain ordered exit rules and their intrabar conflict policy as one pinned object.</CardDescription>
+            <CardDescription>
+              Maintain ordered exit rules and their intrabar conflict policy as one pinned object.
+            </CardDescription>
           </div>
           <CardAction>
             <Badge variant="outline">v{draft.ruleSet.version || 1}</Badge>
@@ -978,7 +1316,11 @@ function ExitRuleSetPanel() {
               </div>
 
               {config.exits.length === 0 ? (
-                <StatePanel tone="empty" title="No Exit Rules" message="Add a rule before attaching this set to a strategy." />
+                <StatePanel
+                  tone="empty"
+                  title="No Exit Rules"
+                  message="Add a rule before attaching this set to a strategy."
+                />
               ) : (
                 <div className="space-y-4">
                   {config.exits.map((rule, index) => {
@@ -1020,7 +1362,9 @@ function ExitRuleSetPanel() {
                             <Input
                               id={`exit-rule-id-${index}`}
                               value={rule.id}
-                              onChange={(event) => updateRule(index, { ...rule, id: event.target.value })}
+                              onChange={(event) =>
+                                updateRule(index, { ...rule, id: event.target.value })
+                              }
                             />
                           </div>
                           <div className="flex gap-2">
@@ -1115,14 +1459,19 @@ function ExitRuleSetPanel() {
                             </Select>
                           </div>
                           <div className="grid gap-2">
-                            <Label htmlFor={`exit-rule-value-${index}`}>{getRuleValueLabel(ruleType)}</Label>
+                            <Label htmlFor={`exit-rule-value-${index}`}>
+                              {getRuleValueLabel(ruleType)}
+                            </Label>
                             <Input
                               id={`exit-rule-value-${index}`}
                               type="number"
                               step={ruleType === 'time_stop' ? 1 : 0.01}
                               value={typeof rule.value === 'number' ? String(rule.value) : ''}
                               onChange={(event) =>
-                                updateRule(index, { ...rule, value: normalizeNumber(event.target.value) ?? undefined })
+                                updateRule(index, {
+                                  ...rule,
+                                  value: normalizeNumber(event.target.value) ?? undefined
+                                })
                               }
                             />
                           </div>
@@ -1132,7 +1481,10 @@ function ExitRuleSetPanel() {
                               id={`exit-rule-atr-${index}`}
                               value={rule.atrColumn || ''}
                               onChange={(event) =>
-                                updateRule(index, { ...rule, atrColumn: event.target.value || undefined })
+                                updateRule(index, {
+                                  ...rule,
+                                  atrColumn: event.target.value || undefined
+                                })
                               }
                               disabled={ruleType !== 'trailing_stop_atr'}
                             />

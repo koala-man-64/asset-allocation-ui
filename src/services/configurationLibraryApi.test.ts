@@ -4,6 +4,7 @@ import { exitRuleSetApi } from '@/services/exitRuleSetApi';
 import { regimePolicyApi } from '@/services/regimePolicyApi';
 import { request } from '@/services/apiService';
 import { riskPolicyApi } from '@/services/riskPolicyApi';
+import type { RiskPolicyConfigUpsertRequest } from '@/types/strategy';
 
 vi.mock('@/services/apiService', () => ({
   request: vi.fn()
@@ -42,11 +43,9 @@ describe('configuration library APIs', () => {
     await riskPolicyApi.archiveRiskPolicy('risk/a');
     await exitRuleSetApi.getExitRuleSetDetail('exit/a');
 
-    expect(mockedRequest).toHaveBeenNthCalledWith(
-      1,
-      '/regime-policies/regime%2Fa/revisions/4',
-      { signal: undefined }
-    );
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/regime-policies/regime%2Fa/revisions/4', {
+      signal: undefined
+    });
     expect(mockedRequest).toHaveBeenNthCalledWith(2, '/risk-policies/risk%2Fa', {
       method: 'DELETE',
       signal: undefined
@@ -58,10 +57,28 @@ describe('configuration library APIs', () => {
 
   it('posts save payloads through control-plane APIs', async () => {
     mockedRequest.mockResolvedValue({ status: 'success', message: 'ok', version: 1 });
-    const riskPayload = {
+    const riskPayload: RiskPolicyConfigUpsertRequest = {
       name: 'balanced-risk',
       description: '',
-      config: { policy: { notes: '', grossExposureLimit: 1.2 } }
+      config: {
+        policy: {
+          enabled: true,
+          scope: 'strategy',
+          stopLoss: {
+            id: 'strategy-stop-loss',
+            enabled: true,
+            basis: 'strategy_nav_drawdown',
+            thresholdPct: 0.1,
+            action: 'reduce_exposure',
+            reductionPct: 0.5
+          },
+          takeProfit: null,
+          reentry: {
+            cooldownBars: 5,
+            requireApproval: false
+          }
+        }
+      }
     };
 
     await riskPolicyApi.saveRiskPolicy(riskPayload);

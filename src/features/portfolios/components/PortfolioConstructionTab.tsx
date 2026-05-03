@@ -33,7 +33,6 @@ import type {
   PortfolioSleeveDefinition
 } from '@/types/portfolio';
 import type { StrategySummary } from '@/types/strategy';
-import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 import { PortfolioStrategyPicker } from './PortfolioStrategyPicker';
 
@@ -140,15 +139,7 @@ function WeightBalanceMeter({
   );
 }
 
-function MetricTile({
-  label,
-  value,
-  detail
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function MetricTile({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-2xl border border-mcm-walnut/12 bg-mcm-paper/70 p-3">
       <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
@@ -234,7 +225,9 @@ function SleeveCard({
           <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
             Sleeve {sleeveIndex + 1}
           </div>
-          <h3 className="mt-2 font-display text-xl">{sleeve.label || `Sleeve ${sleeveIndex + 1}`}</h3>
+          <h3 className="mt-2 font-display text-xl">
+            {sleeve.label || `Sleeve ${sleeveIndex + 1}`}
+          </h3>
           <p className="mt-1 text-sm text-muted-foreground">{strategySummary}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -294,7 +287,9 @@ function SleeveCard({
               <Input
                 id={`sleeve-status-${sleeve.sleeveId}`}
                 value={sleeve.status}
-                onChange={(event) => onChange(updateSleeveField(sleeve, 'status', event.target.value))}
+                onChange={(event) =>
+                  onChange(updateSleeveField(sleeve, 'status', event.target.value))
+                }
               />
             </div>
             <NumberInput
@@ -382,7 +377,11 @@ function SleeveCard({
             </div>
             <div className="mt-4">
               {backtestRunsQuery.isLoading || backtestSummaryQuery.isLoading ? (
-                <PageLoader text="Loading backtest summary..." variant="panel" className="min-h-[7rem]" />
+                <PageLoader
+                  text="Loading backtest summary..."
+                  variant="panel"
+                  className="min-h-[7rem]"
+                />
               ) : latestRunId && backtestSummaryQuery.data ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   <MetricTile
@@ -454,7 +453,12 @@ function NumberInput({
   return (
     <div className="grid gap-2">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type="number" value={value} onChange={(event) => onChange(event.target.value)} />
+      <Input
+        id={id}
+        type="number"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </div>
   );
 }
@@ -477,13 +481,7 @@ function PreviewPanel({
   }
 
   if (previewError) {
-    return (
-      <StatePanel
-        tone="error"
-        title="Preview Unavailable"
-        message={previewError}
-      />
-    );
+    return <StatePanel tone="error" title="Preview Unavailable" message={previewError} />;
   }
 
   if (!preview) {
@@ -572,20 +570,34 @@ function PreviewPanel({
                           {allocation.strategyName} v{allocation.strategyVersion}
                         </div>
                       </div>
-                      <Badge variant={statusBadgeVariant(allocation.status)}>{allocation.status}</Badge>
+                      <Badge variant={statusBadgeVariant(allocation.status)}>
+                        {allocation.status}
+                      </Badge>
                     </div>
                     <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
                       <div>
-                        Target <span className="font-medium text-foreground">{formatPercent(allocation.targetWeightPct)}</span>
+                        Target{' '}
+                        <span className="font-medium text-foreground">
+                          {formatPercent(allocation.targetWeightPct)}
+                        </span>
                       </div>
                       <div>
-                        Projected <span className="font-medium text-foreground">{formatPercent(allocation.projectedWeightPct)}</span>
+                        Projected{' '}
+                        <span className="font-medium text-foreground">
+                          {formatPercent(allocation.projectedWeightPct)}
+                        </span>
                       </div>
                       <div>
-                        Sleeve gross <span className="font-medium text-foreground">{formatPercent(allocation.projectedGrossExposurePct)}</span>
+                        Sleeve gross{' '}
+                        <span className="font-medium text-foreground">
+                          {formatPercent(allocation.projectedGrossExposurePct)}
+                        </span>
                       </div>
                       <div>
-                        Turnover <span className="font-medium text-foreground">{formatPercent(allocation.projectedTurnoverPct)}</span>
+                        Turnover{' '}
+                        <span className="font-medium text-foreground">
+                          {formatPercent(allocation.projectedTurnoverPct)}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -630,7 +642,9 @@ function PreviewPanel({
                           <TableCell>{trade.sleeveId}</TableCell>
                           <TableCell>{trade.symbol}</TableCell>
                           <TableCell className="uppercase">{trade.side}</TableCell>
-                          <TableCell className="text-right">{formatNumber(trade.quantity, 0)}</TableCell>
+                          <TableCell className="text-right">
+                            {formatNumber(trade.quantity, 0)}
+                          </TableCell>
                           <TableCell className="text-right">
                             {formatCurrency(trade.estimatedPrice, baseCurrency)}
                           </TableCell>
@@ -673,7 +687,8 @@ export function PortfolioConstructionTab({
   const groupedSections = [
     {
       title: 'Exposure Limits',
-      description: 'Gross and net caps define the draft exposure envelope before any sleeve-level overrides.',
+      description:
+        'Gross and net caps define the draft exposure envelope before any sleeve-level overrides.',
       fields: (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <NumberInput
@@ -715,7 +730,8 @@ export function PortfolioConstructionTab({
     },
     {
       title: 'Concentration Limits',
-      description: 'Concentration caps constrain single-name and sector load before the rebalance proposal can clear.',
+      description:
+        'Concentration caps constrain single-name and sector load before the rebalance proposal can clear.',
       fields: (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <NumberInput
@@ -757,7 +773,8 @@ export function PortfolioConstructionTab({
     },
     {
       title: 'Turnover / Drift Controls',
-      description: 'Turnover budget and drift threshold determine when the desk should rebalance versus tolerate deviation.',
+      description:
+        'Turnover budget and drift threshold determine when the desk should rebalance versus tolerate deviation.',
       fields: (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <NumberInput
@@ -799,7 +816,8 @@ export function PortfolioConstructionTab({
     },
     {
       title: 'Execution Controls',
-      description: 'Execution policy bounds participation, notional size, and staging cadence for the rebalance implementation.',
+      description:
+        'Execution policy bounds participation, notional size, and staging cadence for the rebalance implementation.',
       fields: (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <NumberInput
@@ -858,7 +876,8 @@ export function PortfolioConstructionTab({
     },
     {
       title: 'Overlay Controls',
-      description: 'Overlay models control regime interpretation, risk policy, and halt handling at the workspace level.',
+      description:
+        'Overlay models control regime interpretation, risk policy, and halt handling at the workspace level.',
       fields: (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div className="grid gap-2">
@@ -933,7 +952,8 @@ export function PortfolioConstructionTab({
             </div>
             <h2 className="mt-2 font-display text-2xl">Portfolio builder</h2>
             <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-              Define the account shell, sleeve mix, benchmark, and operator notes before running a preview or publishing a rebalance candidate.
+              Define the account shell, sleeve mix, benchmark, and operator notes before running a
+              preview or publishing a rebalance candidate.
             </p>
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1023,7 +1043,8 @@ export function PortfolioConstructionTab({
                     ...current,
                     config: {
                       ...current.config,
-                      rebalanceCadence: event.target.value as PortfolioDetail['config']['rebalanceCadence']
+                      rebalanceCadence: event.target
+                        .value as PortfolioDetail['config']['rebalanceCadence']
                     }
                   }))
                 }
@@ -1087,7 +1108,10 @@ export function PortfolioConstructionTab({
                 ...current,
                 config: {
                   ...current.config,
-                  sleeves: [...current.config.sleeves, buildEmptyPortfolioSleeve(current.config.sleeves.length)]
+                  sleeves: [
+                    ...current.config.sleeves,
+                    buildEmptyPortfolioSleeve(current.config.sleeves.length)
+                  ]
                 }
               }))
             }
@@ -1096,11 +1120,7 @@ export function PortfolioConstructionTab({
           </Button>
         </div>
         {strategiesError ? (
-          <StatePanel
-            tone="error"
-            title="Strategy Catalog Unavailable"
-            message={strategiesError}
-          />
+          <StatePanel tone="error" title="Strategy Catalog Unavailable" message={strategiesError} />
         ) : null}
         {draft.config.sleeves.map((sleeve, index) => (
           <SleeveCard
