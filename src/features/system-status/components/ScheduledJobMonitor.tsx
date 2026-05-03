@@ -346,7 +346,7 @@ export function ScheduledJobMonitor({
           .map((line) => {
             const formatted = formatSystemStatusText(line);
             // Preserve original if formatting stripped content
-            return formatted.length > 0 ? formatted : line;
+            return formatted.length > 0 ? formatted : String(line);
           });
 
         const firstError = anchoredRun?.error ?? null;
@@ -392,12 +392,11 @@ export function ScheduledJobMonitor({
         return;
       }
 
-      const incoming = detail.lines
-        .map((line) => {
-          const formatted = formatSystemStatusText(line.message);
-          // Preserve original if formatting stripped content
-          return formatted.length > 0 ? formatted : line.message;
-        });
+      const incoming = detail.lines.map((line) => {
+        const formatted = formatSystemStatusText(line.message);
+        // Preserve original if formatting stripped content
+        return formatted.length > 0 ? formatted : line.message;
+      });
 
       if (incoming.length === 0) {
         return;
@@ -539,7 +538,9 @@ export function ScheduledJobMonitor({
                                 <div className="flex items-center gap-2">
                                   <span className="font-medium text-sm">{job.displayName}</span>
                                   {(() => {
-                                    const portalLink = job.jobName ? getJobPortalLink(job.jobName) : '';
+                                    const portalLink = job.jobName
+                                      ? getJobPortalLink(job.jobName)
+                                      : '';
                                     if (!portalLink) return null;
 
                                     const runStatus = job.effectiveStatus
@@ -670,7 +671,9 @@ export function ScheduledJobMonitor({
                                       size="icon"
                                       className="h-7 w-7"
                                       disabled={
-                                        !job.jobName || Boolean(triggeringJob) || Boolean(jobControl)
+                                        !job.jobName ||
+                                        Boolean(triggeringJob) ||
+                                        Boolean(jobControl)
                                       }
                                       onClick={() => {
                                         if (!job.jobName) return;
