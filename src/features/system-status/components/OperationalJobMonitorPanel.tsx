@@ -1,4 +1,3 @@
-import { useMemo, useState } from 'react';
 import {
   Activity,
   ExternalLink,
@@ -12,7 +11,6 @@ import {
   Workflow
 } from 'lucide-react';
 
-import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import {
   Table,
@@ -34,15 +32,12 @@ import {
   getStatusIcon
 } from '@/features/system-status/lib/SystemStatusHelpers';
 import {
-  OPERATIONAL_JOB_CATEGORIES,
   OPERATIONAL_JOB_CATEGORY_LABELS,
   type OperationalJobCategory,
   type OperationalJobTarget
 } from '@/features/system-status/lib/operationalJobs';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
 import { useJobTrigger } from '@/hooks/useJobTrigger';
-
-type CategoryFilter = 'all' | OperationalJobCategory;
 
 const CATEGORY_ICON: Record<OperationalJobCategory, typeof Activity> = {
   backtest: TestTubeDiagonal,
@@ -64,10 +59,6 @@ const CATEGORY_TONE: Record<OperationalJobCategory, string> = {
   'other-operational': 'border-mcm-walnut/25 bg-mcm-paper text-mcm-walnut'
 };
 
-function pluralize(count: number, singular: string, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
 function formatOptionalTimestamp(value?: string | null): string {
   if (!value) return '-';
   return `${formatTimestamp(value)} ago`;
@@ -88,37 +79,6 @@ function CategoryBadge({ category }: { category: OperationalJobCategory }) {
   );
 }
 
-function SummaryTile({
-  label,
-  value,
-  detail,
-  tone = 'neutral'
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  tone?: 'neutral' | 'good' | 'watch' | 'risk';
-}) {
-  const toneClass =
-    tone === 'risk'
-      ? 'border-destructive/50 bg-destructive/10'
-      : tone === 'watch'
-        ? 'border-mcm-mustard/55 bg-mcm-mustard/12'
-        : tone === 'good'
-          ? 'border-mcm-teal/35 bg-mcm-teal/10'
-          : 'border-mcm-walnut/14 bg-mcm-paper/70';
-
-  return (
-    <div className={cn('rounded-[1rem] border px-4 py-3', toneClass)}>
-      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-1 font-display text-xl text-foreground">{value}</div>
-      <div className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</div>
-    </div>
-  );
-}
-
 export function OperationalJobMonitorPanel({
   jobs,
   onRefresh,
@@ -130,32 +90,8 @@ export function OperationalJobMonitorPanel({
   isRefreshing?: boolean;
   isFetching?: boolean;
 }) {
-  const [activeCategory, setActiveCategory] = useState<CategoryFilter>('all');
   const { triggeringJob, triggerJob } = useJobTrigger();
   const { jobControl, setJobSuspended } = useJobSuspend();
-
-  const categoryCounts = useMemo(() => {
-    const counts = new Map<OperationalJobCategory, number>();
-    for (const category of OPERATIONAL_JOB_CATEGORIES) {
-      counts.set(category, 0);
-    }
-    for (const job of jobs) {
-      counts.set(job.category, (counts.get(job.category) || 0) + 1);
-    }
-    return counts;
-  }, [jobs]);
-
-  const filteredJobs = useMemo(() => {
-    if (activeCategory === 'all') return jobs;
-    return jobs.filter((job) => job.category === activeCategory);
-  }, [activeCategory, jobs]);
-
-  const runningJobs = jobs.filter(
-    (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'running'
-  ).length;
-  const failedJobs = jobs.filter(
-    (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'failed'
-  ).length;
 
   const handleRefresh = () => {
     void onRefresh?.();
@@ -199,64 +135,6 @@ export function OperationalJobMonitorPanel({
         </div>
       </div>
 
-      <div className="grid gap-4 p-6 md:grid-cols-3">
-        <SummaryTile
-          label="Tracked Jobs"
-          value={String(jobs.length)}
-          detail={`${pluralize(runningJobs, 'job')} running across non-domain compute.`}
-          tone={runningJobs > 0 ? 'watch' : 'neutral'}
-        />
-        <SummaryTile
-          label="Failure Risk"
-          value={String(failedJobs)}
-          detail={
-            failedJobs > 0
-              ? 'At least one operational job needs attention.'
-              : 'No failed operational job telemetry is visible.'
-          }
-          tone={failedJobs > 0 ? 'risk' : 'good'}
-        />
-        <SummaryTile
-          label="Classifier"
-          value="Local v1"
-          detail="Derived from the expected catalog, domain mappings, job type, and job naming."
-        />
-      </div>
-
-      <div className="flex flex-wrap gap-2 border-y border-border/40 bg-mcm-cream/35 px-6 py-4">
-        <Button
-          type="button"
-          variant={activeCategory === 'all' ? 'default' : 'outline'}
-          size="sm"
-          aria-pressed={activeCategory === 'all'}
-          onClick={() => setActiveCategory('all')}
-        >
-          All
-          <Badge variant="secondary" className="px-2 py-0 text-[9px]">
-            {jobs.length}
-          </Badge>
-        </Button>
-        {OPERATIONAL_JOB_CATEGORIES.map((category) => {
-          const Icon = CATEGORY_ICON[category];
-          return (
-            <Button
-              key={category}
-              type="button"
-              variant={activeCategory === category ? 'default' : 'outline'}
-              size="sm"
-              aria-pressed={activeCategory === category}
-              onClick={() => setActiveCategory(category)}
-            >
-              <Icon className="h-4 w-4" />
-              {OPERATIONAL_JOB_CATEGORY_LABELS[category]}
-              <Badge variant="secondary" className="px-2 py-0 text-[9px]">
-                {categoryCounts.get(category) || 0}
-              </Badge>
-            </Button>
-          );
-        })}
-      </div>
-
       {jobs.length === 0 ? (
         <div className="p-6">
           <div className="rounded-[1.2rem] border border-dashed border-mcm-walnut/30 bg-mcm-paper/70 p-6 text-sm text-muted-foreground">
@@ -281,7 +159,7 @@ export function OperationalJobMonitorPanel({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredJobs.map((job) => {
+                {jobs.map((job) => {
                   const status = effectiveJobStatus(job.recentStatus, job.runningState);
                   const isRunning = status === 'running';
                   const isBusy =
@@ -383,17 +261,6 @@ export function OperationalJobMonitorPanel({
                     </TableRow>
                   );
                 })}
-
-                {filteredJobs.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="py-6 text-center text-sm text-muted-foreground"
-                    >
-                      No operational jobs match this category filter.
-                    </TableCell>
-                  </TableRow>
-                )}
               </TableBody>
             </Table>
           </div>

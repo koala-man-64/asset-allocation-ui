@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
 import { renderWithProviders } from '@/test/utils';
 import { OperationalJobMonitorPanel } from '@/features/system-status/components/OperationalJobMonitorPanel';
@@ -102,7 +101,7 @@ describe('OperationalJobMonitorPanel', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders operational job categories without the run queue or embedded console stream', () => {
+  it('renders the operational job table without summary tiles or category filter controls', () => {
     renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
 
     expect(
@@ -116,32 +115,13 @@ describe('OperationalJobMonitorPanel', () => {
     expect(screen.getByRole('row', { name: /symbol-cleanup-job/i })).toBeInTheDocument();
     expect(screen.queryByText('Backtest Run Queue')).not.toBeInTheDocument();
     expect(screen.queryByText('Operational Console Stream')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tracked Jobs')).not.toBeInTheDocument();
+    expect(screen.queryByText('Failure Risk')).not.toBeInTheDocument();
+    expect(screen.queryByText('Classifier')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /All/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rankings/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Intraday Monitoring/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /View logs for/i })).not.toBeInTheDocument();
-  });
-
-  it('filters by category', async () => {
-    const user = userEvent.setup();
-    renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
-
-    await user.click(screen.getByRole('button', { name: /Rankings/i }));
-
-    expect(screen.queryByRole('row', { name: /aca-job-backtest-runner/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('row', { name: /aca-job-ranking-materialize/i })).toBeInTheDocument();
-
-    expect(screen.queryByRole('row', { name: /aca-job-regime-refresh/i })).not.toBeInTheDocument();
-  });
-
-  it('filters seeded intraday jobs as a dedicated operational category', async () => {
-    const user = userEvent.setup();
-    renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
-
-    await user.click(screen.getByRole('button', { name: /Intraday Monitoring/i }));
-
-    expect(screen.queryByRole('row', { name: /aca-job-backtest-runner/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('row', { name: /intraday-monitor-job/i })).toBeInTheDocument();
-    expect(screen.getByRole('row', { name: /intraday-market-refresh-job/i })).toBeInTheDocument();
-
-    expect(screen.queryByRole('row', { name: /results-reconcile-job/i })).not.toBeInTheDocument();
   });
 
   it('runs stopped jobs and stops running managed jobs', () => {
