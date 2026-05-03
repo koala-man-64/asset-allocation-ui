@@ -19,9 +19,11 @@ test('strategies workspace owns editor, explorer, hidden legacy nav, and analyti
   await expect(page.getByRole('link', { name: 'Universe Configurations' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Ranking Configurations' })).toHaveCount(0);
 
-  await expect(page.getByRole('heading', { name: 'Universe Configuration' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Ranking Configuration' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Risk Configuration' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Configuration Workspace' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Pinned Configuration Revisions' })).toBeVisible();
+  await expect(page.getByText('large-cap-quality')).toBeVisible();
+  await expect(page.getByText('quality-momentum')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Resolved Risk' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Current Allocations' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Trade History' })).toBeVisible();
   await expect(page.getByText('Core Paper Portfolio').first()).toBeVisible();
