@@ -42,6 +42,7 @@ import {
 } from '@/features/strategies/lib/strategyDraft';
 import { UniverseConfigPage } from '@/features/universes/UniverseConfigPage';
 import { exitRuleSetApi } from '@/services/exitRuleSetApi';
+import { rebalancePolicyApi } from '@/services/rebalancePolicyApi';
 import { regimePolicyApi } from '@/services/regimePolicyApi';
 import { riskPolicyApi } from '@/services/riskPolicyApi';
 import type {
@@ -52,6 +53,8 @@ import type {
   ExitRuleSetSummary,
   ExitRuleType,
   IntrabarConflictPolicy,
+  RebalancePolicy,
+  RebalancePolicyDetail,
   RegimePolicyConfigDetail,
   RiskPolicyConfigDetail,
   StrategyRiskPolicy,
@@ -62,12 +65,13 @@ import type {
 } from '@/types/strategy';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
-const CONFIG_TABS = ['universe', 'ranking', 'regime-policy', 'risk-policy', 'exit-rules'] as const;
+const CONFIG_TABS = ['universe', 'ranking', 'rebalance-policy', 'regime-policy', 'risk-policy', 'exit-rules'] as const;
 type ConfigTab = (typeof CONFIG_TABS)[number];
 
 const TAB_LABELS: Record<ConfigTab, string> = {
   universe: 'Universe',
   ranking: 'Ranking',
+  'rebalance-policy': 'Rebalance Policy',
   'regime-policy': 'Regime Policy',
   'risk-policy': 'Risk Policy',
   'exit-rules': 'Exit Rules'
@@ -76,6 +80,24 @@ const TAB_LABELS: Record<ConfigTab, string> = {
 const DEFAULT_EXIT_RULE_SET: ExitRuleSetConfig = {
   intrabarConflictPolicy: 'stop_first',
   exits: []
+};
+
+const DEFAULT_REBALANCE_POLICY: RebalancePolicy = {
+  frequency: 'every_bar',
+  executionTiming: 'next_bar_open',
+  cadence: 'monthly',
+  dayRule: 'last_trading_day',
+  anchor: 'next_open',
+  tradeDelayBars: 0,
+  driftThresholdBps: null,
+  maxTurnoverPerRebalance: null,
+  intervalBars: null,
+  driftThresholdPct: null,
+  minTradeNotional: 0,
+  cashBufferPct: 0,
+  maxTurnoverPct: null,
+  allowPartialRebalance: true,
+  closeRemovedPositions: true
 };
 
 const STOP_LOSS_BASIS_OPTIONS: Array<{ value: StrategyRiskStopLossBasis; label: string }> = [
@@ -161,6 +183,9 @@ function validateExitRuleSet(config: ExitRuleSetConfig): string | null {
     }
     if (ids.has(id)) {
       return `Exit rule id '${id}' is duplicated.`;
+    }
+    if (rule.type === 'rank_decay' && (!rule.rankThreshold || rule.rankThreshold < 1)) {
+      return 'Rank decay exits require a positive rank threshold.';
     }
     ids.add(id);
   }
@@ -499,6 +524,311 @@ function RegimePolicyPanel() {
                 >
                   <Save className="h-4 w-4" />
                   {saveMutation.isPending ? 'Saving...' : 'Save Regime Policy'}
+                </Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function RebalancePolicyPanel() {
+  const queryClient = useQueryClient();
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [draft, setDraft] = useState<RebalancePolicyDetail>({
+    policy: { name: '', description: '', version: 1 },
+    activeRevision: {
+      name: '',
+      version: 1,
+      description: '',
+      config: DEFAULT_REBALANCE_POLICY
+    },
+    revisions: []
+  });
+
+  const listQuery = useQuery({
+    queryKey: ['rebalance-policies'],
+    queryFn: ({ signal }) => rebalancePolicyApi.listRebalancePolicies(signal)
+  });
+  const detailQuery = useQuery({
+    queryKey: ['rebalance-policies', 'detail', selectedName],
+    queryFn: ({ signal }) => rebalancePolicyApi.getRebalancePolicyDetail(String(selectedName), signal),
+    enabled: Boolean(selectedName)
+  });
+
+  useEffect(() => {
+    if (!selectedName && listQuery.data?.length) {
+      setSelectedName(listQuery.data[0].name);
+    }
+  }, [listQuery.data, selectedName]);
+
+  useEffect(() => {
+    if (detailQuery.data) {
+      setDraft(detailQuery.data);
+    }
+  }, [detailQuery.data]);
+
+  const createDraft = () => {
+    setSelectedName(null);
+    setDraft({
+      policy: { name: '', description: '', version: 1 },
+      activeRevision: {
+        name: '',
+        version: 1,
+        description: '',
+        config: DEFAULT_REBALANCE_POLICY
+      },
+      revisions: []
+    });
+  };
+
+  const config = draft.activeRevision?.config || DEFAULT_REBALANCE_POLICY;
+  const setConfig = (patch: Partial<RebalancePolicy>) => {
+    setDraft((current) => ({
+      ...current,
+      activeRevision: {
+        ...(current.activeRevision || { name: current.policy.name, version: 1, description: '' }),
+        config: {
+          ...DEFAULT_REBALANCE_POLICY,
+          ...config,
+          ...patch
+        }
+      }
+    }));
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const nameError = validateName(draft.policy.name);
+      if (nameError) {
+        throw new Error(nameError);
+      }
+      if (!config.cadence || !config.dayRule || !config.anchor) {
+        throw new Error('Cadence, day rule, and anchor are required.');
+      }
+      if (config.maxTurnoverPerRebalance !== null && config.maxTurnoverPerRebalance !== undefined) {
+        if (config.maxTurnoverPerRebalance < 0 || config.maxTurnoverPerRebalance > 1) {
+          throw new Error('Max turnover per rebalance must be a ratio between 0 and 1.');
+        }
+      }
+
+      return rebalancePolicyApi.saveRebalancePolicy({
+        name: draft.policy.name.trim(),
+        description: draft.policy.description || '',
+        config: {
+          ...DEFAULT_REBALANCE_POLICY,
+          ...config
+        }
+      });
+    },
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['rebalance-policies'] }),
+        queryClient.invalidateQueries({ queryKey: ['strategies'] })
+      ]);
+      setSelectedName(draft.policy.name.trim());
+      setDraft((current) => ({
+        ...current,
+        policy: { ...current.policy, version: result.version }
+      }));
+      toast.success(`Rebalance policy ${draft.policy.name} saved`);
+    },
+    onError: (error) =>
+      toast.error(`Failed to save rebalance policy: ${formatSystemStatusText(error)}`)
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: (name: string) => rebalancePolicyApi.archiveRebalancePolicy(name),
+    onSuccess: async (_, name) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['rebalance-policies'] }),
+        queryClient.invalidateQueries({ queryKey: ['strategies'] })
+      ]);
+      setSelectedName(null);
+      createDraft();
+      toast.success(`Rebalance policy ${name} archived`);
+    },
+    onError: (error) =>
+      toast.error(`Failed to archive rebalance policy: ${formatSystemStatusText(error)}`)
+  });
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+      <LibraryList
+        title="Rebalance Policy Library"
+        items={listQuery.data || []}
+        selectedName={selectedName}
+        isLoading={listQuery.isLoading}
+        error={listQuery.error}
+        emptyTitle="No Rebalance Policies"
+        emptyMessage="Create reusable monthly or quarterly rebalance policies for backtest grids."
+        onCreate={createDraft}
+        onSelect={setSelectedName}
+      />
+
+      <Card className="mcm-panel border border-border/60 bg-card shadow-sm">
+        <CardHeader className="border-b border-border/60">
+          <div>
+            <CardTitle className="text-lg font-semibold">Rebalance Policy Editor</CardTitle>
+            <CardDescription>
+              Define reusable calendar cadence, signal anchor, execution delay, drift, and turnover controls.
+            </CardDescription>
+          </div>
+          <CardAction>
+            <Badge variant="outline">v{draft.policy.version || 1}</Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="space-y-5 pt-6">
+          {detailQuery.isLoading && selectedName ? (
+            <PageLoader text="Loading rebalance policy..." variant="panel" />
+          ) : (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="rebalance-policy-name">Policy Name</Label>
+                  <Input
+                    id="rebalance-policy-name"
+                    readOnly={Boolean(selectedName)}
+                    value={draft.policy.name}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        policy: { ...current.policy, name: event.target.value }
+                      }))
+                    }
+                    placeholder="e.g. monthly_last_trading_day"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="rebalance-policy-description">Description</Label>
+                  <Input
+                    id="rebalance-policy-description"
+                    value={draft.policy.description || ''}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        policy: { ...current.policy, description: event.target.value }
+                      }))
+                    }
+                    placeholder="Describe the rebalance use case."
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="rebalance-policy-cadence">Cadence</Label>
+                  <Select
+                    value={config.cadence || 'monthly'}
+                    onValueChange={(value) =>
+                      setConfig({ cadence: value as RebalancePolicy['cadence'] })
+                    }
+                  >
+                    <SelectTrigger id="rebalance-policy-cadence">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="rebalance-policy-day-rule">Day Rule</Label>
+                  <Select
+                    value={config.dayRule || 'last_trading_day'}
+                    onValueChange={(value) =>
+                      setConfig({ dayRule: value as RebalancePolicy['dayRule'] })
+                    }
+                  >
+                    <SelectTrigger id="rebalance-policy-day-rule">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="first_trading_day">First Trading Day</SelectItem>
+                      <SelectItem value="last_trading_day">Last Trading Day</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="rebalance-policy-anchor">Anchor</Label>
+                  <Select
+                    value={config.anchor || 'next_open'}
+                    onValueChange={(value) =>
+                      setConfig({ anchor: value as RebalancePolicy['anchor'] })
+                    }
+                  >
+                    <SelectTrigger id="rebalance-policy-anchor">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="close">Close Signal</SelectItem>
+                      <SelectItem value="next_open">Next Open</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="rebalance-policy-delay">Trade Delay Bars</Label>
+                  <Input
+                    id="rebalance-policy-delay"
+                    type="number"
+                    min={0}
+                    value={config.tradeDelayBars ?? 0}
+                    onChange={(event) =>
+                      setConfig({ tradeDelayBars: normalizeNumber(event.target.value) ?? 0 })
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="rebalance-policy-drift">Drift Threshold Bps</Label>
+                  <Input
+                    id="rebalance-policy-drift"
+                    type="number"
+                    min={0}
+                    value={config.driftThresholdBps ?? ''}
+                    onChange={(event) =>
+                      setConfig({ driftThresholdBps: normalizeNumber(event.target.value) })
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="rebalance-policy-turnover">Max Turnover</Label>
+                  <Input
+                    id="rebalance-policy-turnover"
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={config.maxTurnoverPerRebalance ?? ''}
+                    onChange={(event) =>
+                      setConfig({ maxTurnoverPerRebalance: normalizeNumber(event.target.value) })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap justify-between gap-3 border-t border-border/60 pt-5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => selectedName && archiveMutation.mutate(selectedName)}
+                  disabled={!selectedName || archiveMutation.isPending}
+                >
+                  <Archive className="h-4 w-4" />
+                  {archiveMutation.isPending ? 'Archiving...' : 'Archive'}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => saveMutation.mutate()}
+                  disabled={saveMutation.isPending}
+                >
+                  <Save className="h-4 w-4" />
+                  {saveMutation.isPending ? 'Saving...' : 'Save Rebalance Policy'}
                 </Button>
               </div>
             </>
@@ -1439,6 +1769,7 @@ function ExitRuleSetPanel() {
                             <Label htmlFor={`exit-rule-price-field-${index}`}>Price Field</Label>
                             <Select
                               value={rule.priceField || 'close'}
+                              disabled={ruleType === 'rank_decay'}
                               onValueChange={(value) =>
                                 updateRule(index, {
                                   ...rule,
@@ -1465,13 +1796,31 @@ function ExitRuleSetPanel() {
                             <Input
                               id={`exit-rule-value-${index}`}
                               type="number"
-                              step={ruleType === 'time_stop' ? 1 : 0.01}
-                              value={typeof rule.value === 'number' ? String(rule.value) : ''}
+                              step={ruleType === 'time_stop' || ruleType === 'rank_decay' ? 1 : 0.01}
+                              value={
+                                ruleType === 'rank_decay'
+                                  ? typeof rule.rankThreshold === 'number'
+                                    ? String(rule.rankThreshold)
+                                    : ''
+                                  : typeof rule.value === 'number'
+                                    ? String(rule.value)
+                                    : ''
+                              }
                               onChange={(event) =>
-                                updateRule(index, {
-                                  ...rule,
-                                  value: normalizeNumber(event.target.value) ?? undefined
-                                })
+                                updateRule(
+                                  index,
+                                  ruleType === 'rank_decay'
+                                    ? {
+                                        ...rule,
+                                        rankThreshold:
+                                          normalizeNumber(event.target.value) ?? undefined,
+                                        value: undefined
+                                      }
+                                    : {
+                                        ...rule,
+                                        value: normalizeNumber(event.target.value) ?? undefined
+                                      }
+                                )
                               }
                             />
                           </div>
@@ -1563,7 +1912,7 @@ export function StrategyConfigurationHubPage() {
       <PageHero
         kicker="Strategy Setup"
         title="Configuration Library"
-        subtitle="Maintain reusable universe, ranking, regime, risk, and exit definitions as versioned library objects. Strategies pin exact revisions and only move when explicitly repinned."
+        subtitle="Maintain reusable universe, ranking, rebalance, regime, risk, and exit definitions as versioned library objects. Strategies pin exact revisions and only move when explicitly repinned."
         actions={
           <Button asChild variant="outline">
             <Link to="/strategies">
@@ -1591,6 +1940,9 @@ export function StrategyConfigurationHubPage() {
         </TabsContent>
         <TabsContent value="ranking">
           <RankingConfigPage embedded />
+        </TabsContent>
+        <TabsContent value="rebalance-policy">
+          <RebalancePolicyPanel />
         </TabsContent>
         <TabsContent value="regime-policy">
           <RegimePolicyPanel />

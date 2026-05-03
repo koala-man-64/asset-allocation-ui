@@ -18,6 +18,7 @@ import {
   formatRuleType,
   formatStrategyTimestamp,
   formatStrategyType,
+  getStrategyComponentPin,
   summarizeExitRule
 } from '@/features/strategies/lib/strategySummary';
 
@@ -72,6 +73,24 @@ export function StrategyDossier({
   recentTradesError,
   recentTradesRunId
 }: StrategyDossierProps) {
+  const universePin = strategy
+    ? getStrategyComponentPin(
+        strategy,
+        'universe',
+        strategy.config.universeConfigName,
+        strategy.config.universeConfigVersion
+      )
+    : {};
+  const rankingPin = strategy
+    ? getStrategyComponentPin(
+        strategy,
+        'ranking',
+        strategy.config.rankingSchemaName,
+        strategy.config.rankingSchemaVersion
+      )
+    : {};
+  const rebalancePin = strategy ? getStrategyComponentPin(strategy, 'rebalance') : {};
+
   return (
     <section className="mcm-panel flex min-h-[680px] flex-col overflow-hidden">
       <div className="border-b border-border/40 px-6 py-5">
@@ -145,17 +164,32 @@ export function StrategyDossier({
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <DossierTile
                 label="Universe"
-                value={strategy.config.universeConfigName || 'Not assigned'}
+                value={universePin.name || 'Not assigned'}
                 detail={
-                  strategy.config.universe
+                  strategy.config.componentRefs?.universe
+                    ? `Pinned ${universePin.version ? `v${universePin.version}` : 'without version'} through componentRefs.`
+                    : strategy.config.universe
                     ? 'This record still carries a legacy embedded universe payload.'
                     : 'Linked universe definition used for symbol eligibility.'
                 }
               />
               <DossierTile
                 label="Ranking"
-                value={strategy.config.rankingSchemaName || 'Not attached'}
-                detail="Linked ranking schema used during materialization and selection."
+                value={rankingPin.name || 'Not attached'}
+                detail={
+                  strategy.config.componentRefs?.ranking
+                    ? `Pinned ${rankingPin.version ? `v${rankingPin.version}` : 'without version'} through componentRefs.`
+                    : 'Linked ranking schema used during materialization and selection.'
+                }
+              />
+              <DossierTile
+                label="Rebalance Policy"
+                value={rebalancePin.name || 'Not pinned'}
+                detail={
+                  strategy.config.componentRefs?.rebalance
+                    ? `Pinned ${rebalancePin.version ? `v${rebalancePin.version}` : 'without version'} through componentRefs.`
+                    : `Legacy rebalance field: ${strategy.config.rebalance}.`
+                }
               />
               <DossierTile
                 label="Selection"

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { exitRuleSetApi } from '@/services/exitRuleSetApi';
+import { rebalancePolicyApi } from '@/services/rebalancePolicyApi';
 import { regimePolicyApi } from '@/services/regimePolicyApi';
 import { request } from '@/services/apiService';
 import { riskPolicyApi } from '@/services/riskPolicyApi';
@@ -21,19 +22,24 @@ describe('configuration library APIs', () => {
     mockedRequest
       .mockResolvedValueOnce({ policies: [{ name: 'regime', version: 1 }] })
       .mockResolvedValueOnce({ policies: [{ name: 'risk', version: 2 }] })
+      .mockResolvedValueOnce({ policies: [{ name: 'monthly-last', version: 1 }] })
       .mockResolvedValueOnce({ ruleSets: [{ name: 'exits', version: 3 }] });
 
     await expect(regimePolicyApi.listRegimePolicies()).resolves.toEqual([
       { name: 'regime', version: 1 }
     ]);
     await expect(riskPolicyApi.listRiskPolicies()).resolves.toEqual([{ name: 'risk', version: 2 }]);
+    await expect(rebalancePolicyApi.listRebalancePolicies()).resolves.toEqual([
+      { name: 'monthly-last', version: 1 }
+    ]);
     await expect(exitRuleSetApi.listExitRuleSets()).resolves.toEqual([
       { name: 'exits', version: 3 }
     ]);
 
     expect(mockedRequest).toHaveBeenNthCalledWith(1, '/regime-policies', { signal: undefined });
     expect(mockedRequest).toHaveBeenNthCalledWith(2, '/risk-policies', { signal: undefined });
-    expect(mockedRequest).toHaveBeenNthCalledWith(3, '/exit-rule-sets', { signal: undefined });
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, '/rebalance-policies', { signal: undefined });
+    expect(mockedRequest).toHaveBeenNthCalledWith(4, '/exit-rule-sets', { signal: undefined });
   });
 
   it('uses revision-aware detail and archive endpoints', async () => {
@@ -41,6 +47,7 @@ describe('configuration library APIs', () => {
 
     await regimePolicyApi.getRegimePolicyRevision('regime/a', 4);
     await riskPolicyApi.archiveRiskPolicy('risk/a');
+    await rebalancePolicyApi.getRebalancePolicyRevision('monthly/a', 2);
     await exitRuleSetApi.getExitRuleSetDetail('exit/a');
 
     expect(mockedRequest).toHaveBeenNthCalledWith(1, '/regime-policies/regime%2Fa/revisions/4', {
@@ -50,7 +57,10 @@ describe('configuration library APIs', () => {
       method: 'DELETE',
       signal: undefined
     });
-    expect(mockedRequest).toHaveBeenNthCalledWith(3, '/exit-rule-sets/exit%2Fa/detail', {
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, '/rebalance-policies/monthly%2Fa/revisions/2', {
+      signal: undefined
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(4, '/exit-rule-sets/exit%2Fa/detail', {
       signal: undefined
     });
   });
@@ -82,10 +92,46 @@ describe('configuration library APIs', () => {
     };
 
     await riskPolicyApi.saveRiskPolicy(riskPayload);
+    await rebalancePolicyApi.saveRebalancePolicy({
+      name: 'monthly-last-trading-day',
+      description: '',
+      config: {
+        frequency: 'every_bar',
+        executionTiming: 'next_bar_open',
+        cadence: 'monthly',
+        dayRule: 'last_trading_day',
+        anchor: 'next_open',
+        tradeDelayBars: 0,
+        minTradeNotional: 0,
+        cashBufferPct: 0,
+        allowPartialRebalance: true,
+        closeRemovedPositions: true
+      }
+    });
 
-    expect(mockedRequest).toHaveBeenCalledWith('/risk-policies', {
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/risk-policies', {
       method: 'POST',
       body: JSON.stringify(riskPayload),
+      signal: undefined
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, '/rebalance-policies', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'monthly-last-trading-day',
+        description: '',
+        config: {
+          frequency: 'every_bar',
+          executionTiming: 'next_bar_open',
+          cadence: 'monthly',
+          dayRule: 'last_trading_day',
+          anchor: 'next_open',
+          tradeDelayBars: 0,
+          minTradeNotional: 0,
+          cashBufferPct: 0,
+          allowPartialRebalance: true,
+          closeRemovedPositions: true
+        }
+      }),
       signal: undefined
     });
   });

@@ -1,10 +1,12 @@
 import type {
+  ConfigReference,
   ExitRule,
   ExitRulePriceField,
   ExitRuleType,
   IntrabarConflictPolicy,
   RegimePolicyWithVersion,
   RegimePolicyMode,
+  StrategyComponentRefs,
   StrategyRiskPolicy,
   StrategyDetail
 } from '@/types/strategy';
@@ -18,7 +20,8 @@ export const EXIT_RULE_OPTIONS: Array<{ value: ExitRuleType; label: string }> = 
   { value: 'take_profit_fixed', label: 'Fixed Take Profit' },
   { value: 'trailing_stop_pct', label: 'Trailing Stop %' },
   { value: 'trailing_stop_atr', label: 'Trailing Stop ATR' },
-  { value: 'time_stop', label: 'Time Stop' }
+  { value: 'time_stop', label: 'Time Stop' },
+  { value: 'rank_decay', label: 'Rank Decay' }
 ];
 
 export const PRICE_FIELD_OPTIONS: Array<{ value: ExitRulePriceField; label: string }> = [
@@ -69,6 +72,77 @@ const DEFAULT_RISK_POLICY: StrategyRiskPolicy = {
   }
 };
 
+type ComponentRefKey = keyof StrategyComponentRefs;
+
+function buildConfigReference(name?: string | null, version?: number | null): ConfigReference | undefined {
+  const normalizedName = String(name || '').trim();
+  if (!normalizedName || !version || version < 1) {
+    return undefined;
+  }
+  return { name: normalizedName, version };
+}
+
+function setRef(
+  refs: StrategyComponentRefs,
+  key: ComponentRefKey,
+  ref: ConfigReference | undefined
+): StrategyComponentRefs {
+  if (!ref) {
+    const next = { ...refs };
+    delete next[key];
+    return next;
+  }
+  return { ...refs, [key]: ref };
+}
+
+export function normalizeStrategyComponentRefs(
+  config: StrategyDetail['config']
+): StrategyDetail['config'] {
+  let refs: StrategyComponentRefs = { ...(config.componentRefs || {}) };
+
+  refs = setRef(
+    refs,
+    'universe',
+    refs.universe || buildConfigReference(config.universeConfigName, config.universeConfigVersion)
+  );
+  refs = setRef(
+    refs,
+    'ranking',
+    refs.ranking || buildConfigReference(config.rankingSchemaName, config.rankingSchemaVersion)
+  );
+  refs = setRef(
+    refs,
+    'regimePolicy',
+    refs.regimePolicy ||
+      buildConfigReference(config.regimePolicyConfigName, config.regimePolicyConfigVersion)
+  );
+  refs = setRef(
+    refs,
+    'riskPolicy',
+    refs.riskPolicy || buildConfigReference(config.riskPolicyName, config.riskPolicyVersion)
+  );
+  refs = setRef(
+    refs,
+    'exitPolicy',
+    refs.exitPolicy || buildConfigReference(config.exitRuleSetName, config.exitRuleSetVersion)
+  );
+
+  return {
+    ...config,
+    componentRefs: refs,
+    universeConfigName: refs.universe?.name ?? config.universeConfigName,
+    universeConfigVersion: refs.universe?.version ?? config.universeConfigVersion,
+    rankingSchemaName: refs.ranking?.name ?? config.rankingSchemaName,
+    rankingSchemaVersion: refs.ranking?.version ?? config.rankingSchemaVersion,
+    regimePolicyConfigName: refs.regimePolicy?.name ?? config.regimePolicyConfigName,
+    regimePolicyConfigVersion: refs.regimePolicy?.version ?? config.regimePolicyConfigVersion,
+    riskPolicyName: refs.riskPolicy?.name ?? config.riskPolicyName,
+    riskPolicyVersion: refs.riskPolicy?.version ?? config.riskPolicyVersion,
+    exitRuleSetName: refs.exitPolicy?.name ?? config.exitRuleSetName,
+    exitRuleSetVersion: refs.exitPolicy?.version ?? config.exitRuleSetVersion
+  };
+}
+
 export function buildDefaultRegimePolicy(): RegimePolicyWithVersion {
   return { ...DEFAULT_REGIME_POLICY };
 }
@@ -118,6 +192,7 @@ export function buildEmptyStrategy(): StrategyDetail {
     type: 'configured',
     description: '',
     config: {
+      componentRefs: {},
       universeConfigName: undefined,
       universeConfigVersion: undefined,
       rankingSchemaName: undefined,
@@ -147,14 +222,17 @@ export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): Str
   const base = buildEmptyStrategy();
   const incomingPolicy = strategy.config.regimePolicy;
   const incomingRiskPolicy = strategy.config.riskPolicy || strategy.config.strategyRiskPolicy;
+  const normalizedRefsConfig = normalizeStrategyComponentRefs({
+    ...base.config,
+    ...strategy.config
+  });
   const normalizedRiskPolicy = normalizeRiskPolicy(incomingRiskPolicy);
 
   return {
     ...base,
     ...strategy,
     config: {
-      ...base.config,
-      ...strategy.config,
+      ...normalizedRefsConfig,
       regimePolicy: incomingPolicy
         ? {
             ...buildDefaultRegimePolicy(),
@@ -259,6 +337,14 @@ export function buildExitRule(
     };
   }
 
+  if (type === 'rank_decay') {
+    return {
+      ...baseRule,
+      rankThreshold: 50,
+      ...overrides
+    };
+  }
+
   return {
     ...baseRule,
     value: 40,
@@ -268,6 +354,10 @@ export function buildExitRule(
 }
 
 export function getRuleValueLabel(type: ExitRuleType): string {
+  if (type === 'rank_decay') {
+    return 'Rank Threshold';
+  }
+
   if (type === 'time_stop') {
     return 'Bars';
   }

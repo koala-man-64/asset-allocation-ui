@@ -21,6 +21,7 @@ import {
   describeStrategySelection,
   formatStrategyTimestamp,
   formatStrategyType,
+  getStrategyComponentPin,
   summarizeExitStack
 } from '@/features/strategies/lib/strategySummary';
 
@@ -137,6 +138,47 @@ export function StrategyEditorPanel({
   onDeleteStrategy
 }: StrategyEditorPanelProps) {
   const riskPolicy = strategy?.config.strategyRiskPolicy || strategy?.config.riskPolicy || null;
+  const universePin = strategy
+    ? getStrategyComponentPin(
+        strategy,
+        'universe',
+        strategy.config.universeConfigName,
+        strategy.config.universeConfigVersion
+      )
+    : {};
+  const rankingPin = strategy
+    ? getStrategyComponentPin(
+        strategy,
+        'ranking',
+        strategy.config.rankingSchemaName,
+        strategy.config.rankingSchemaVersion
+      )
+    : {};
+  const rebalancePin = strategy ? getStrategyComponentPin(strategy, 'rebalance') : {};
+  const regimePin = strategy
+    ? getStrategyComponentPin(
+        strategy,
+        'regimePolicy',
+        strategy.config.regimePolicyConfigName,
+        strategy.config.regimePolicyConfigVersion
+      )
+    : {};
+  const riskPin = strategy
+    ? getStrategyComponentPin(
+        strategy,
+        'riskPolicy',
+        strategy.config.riskPolicyName,
+        strategy.config.riskPolicyVersion
+      )
+    : {};
+  const exitPin = strategy
+    ? getStrategyComponentPin(
+        strategy,
+        'exitPolicy',
+        strategy.config.exitRuleSetName,
+        strategy.config.exitRuleSetVersion
+      )
+    : {};
 
   return (
     <section
@@ -280,36 +322,43 @@ export function StrategyEditorPanel({
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <PinnedConfigCard
                   label="Universe"
-                  name={strategy.config.universeConfigName}
-                  version={strategy.config.universeConfigVersion}
+                  name={universePin.name}
+                  version={universePin.version}
                   detail="Eligibility universe pinned for this strategy revision."
                   tab="universe"
                 />
                 <PinnedConfigCard
                   label="Ranking"
-                  name={strategy.config.rankingSchemaName}
-                  version={strategy.config.rankingSchemaVersion}
+                  name={rankingPin.name}
+                  version={rankingPin.version}
                   detail="Ranking schema revision used for scoring and materialization."
                   tab="ranking"
                 />
                 <PinnedConfigCard
+                  label="Rebalance Policy"
+                  name={rebalancePin.name}
+                  version={rebalancePin.version}
+                  detail="Reusable cadence and execution policy resolved for backtests."
+                  tab="rebalance-policy"
+                />
+                <PinnedConfigCard
                   label="Regime Policy"
-                  name={strategy.config.regimePolicyConfigName}
-                  version={strategy.config.regimePolicyConfigVersion}
+                  name={regimePin.name}
+                  version={regimePin.version}
                   detail="Regime policy revision resolved into the snapshot."
                   tab="regime-policy"
                 />
                 <PinnedConfigCard
                   label="Risk Policy"
-                  name={strategy.config.riskPolicyName}
-                  version={strategy.config.riskPolicyVersion}
+                  name={riskPin.name}
+                  version={riskPin.version}
                   detail="Risk limits resolved into the snapshot."
                   tab="risk-policy"
                 />
                 <PinnedConfigCard
                   label="Exit Rule Set"
-                  name={strategy.config.exitRuleSetName}
-                  version={strategy.config.exitRuleSetVersion}
+                  name={exitPin.name}
+                  version={exitPin.version}
                   detail="Ordered exit rule revision resolved into the snapshot."
                   tab="exit-rules"
                 />

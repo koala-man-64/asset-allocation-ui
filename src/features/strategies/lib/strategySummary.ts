@@ -39,6 +39,10 @@ export function formatRuleType(value: string): string {
 }
 
 export function summarizeExitRule(rule: ExitRule): string {
+  if (rule.type === 'rank_decay') {
+    return `exit below rank ${String(rule.rankThreshold ?? '')}`;
+  }
+
   if (rule.type === 'time_stop') {
     return `${String(rule.value ?? '')} bars on close`;
   }
@@ -74,6 +78,19 @@ export function describeRegimePolicy(strategy: StrategyDetail): string {
   }
 
   return [policy.modelName, policy.mode.replaceAll('_', ' ')].filter(Boolean).join(' | ');
+}
+
+export function getStrategyComponentPin(
+  strategy: StrategyDetail,
+  key: keyof NonNullable<StrategyDetail['config']['componentRefs']>,
+  legacyName?: string | null,
+  legacyVersion?: number | null
+): { name?: string | null; version?: number | null } {
+  const ref = strategy.config.componentRefs?.[key];
+  return {
+    name: ref?.name ?? legacyName,
+    version: ref?.version ?? legacyVersion
+  };
 }
 
 export function getStrategySearchText(strategy: StrategySummary): string {

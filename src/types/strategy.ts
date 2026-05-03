@@ -4,14 +4,18 @@ import type {
   ExitRule,
   IntrabarConflictPolicy,
   RankingSchemaConfig,
+  RebalancePolicy,
   RegimePolicy,
   StrategyConfig,
+  StrategyComponentRefs,
   UniverseConditionOperator as ContractUniverseConditionOperator,
   UniverseSource,
   UniverseValue
 } from '@asset-allocation/contracts';
 
 export type {
+  ConfigIdentity,
+  ConfigReference,
   ExitRule,
   ExitRuleAction,
   ExitRulePriceField,
@@ -26,10 +30,18 @@ export type {
   RankingSchemaConfig,
   RankingTransform,
   RankingTransformType,
+  RebalancePolicy,
+  RebalancePolicyPreset,
   RegimeCode,
   RegimePolicy,
   RegimePolicyMode,
+  ReusableConfigIntendedUse,
+  ReusableConfigStatus,
+  ReusableRebalanceAnchor,
+  ReusableRebalanceCadence,
+  ReusableRebalanceDayRule,
   StrategyConfig,
+  StrategyComponentRefs,
   UniverseSource,
   UniverseValue
 } from '@asset-allocation/contracts';
@@ -76,6 +88,7 @@ export interface StrategyRiskPolicy {
 
 export type UniverseGroupOperator = 'and' | 'or';
 export type StrategyConfigWithRiskPolicy = StrategyConfig & {
+  componentRefs?: StrategyComponentRefs | null;
   universeConfigVersion?: number | null;
   rankingSchemaVersion?: number | null;
   regimePolicyConfigName?: string | null;
@@ -87,6 +100,7 @@ export type StrategyConfigWithRiskPolicy = StrategyConfig & {
   regimePolicy?: RegimePolicyWithVersion | null;
   riskPolicy?: StrategyRiskPolicy | null;
   strategyRiskPolicy?: StrategyRiskPolicy | null;
+  rebalancePolicy?: RebalancePolicy | null;
 };
 
 export interface ConfigSaveResponse {
@@ -110,13 +124,20 @@ export interface ConfigRevisionSummary<ConfigShape> {
   createdBy?: string | null;
 }
 
+export interface ReusableConfigMetadata {
+  status?: 'draft' | 'active' | 'deprecated';
+  intendedUse?: 'research' | 'validation' | 'production_candidate';
+  thesis?: string;
+  whatToMonitor?: string[];
+}
+
 export interface RegimePolicyConfig {
   modelName: string;
   modelVersion?: number | null;
   mode: 'observe_only';
 }
 
-export interface RegimePolicyConfigSummary {
+export interface RegimePolicyConfigSummary extends ReusableConfigMetadata {
   name: string;
   description?: string;
   version: number;
@@ -136,7 +157,7 @@ export interface RegimePolicyConfigDetail {
   revisions: RegimePolicyConfigRevision[];
 }
 
-export interface RegimePolicyConfigUpsertRequest {
+export interface RegimePolicyConfigUpsertRequest extends ReusableConfigMetadata {
   name: string;
   description?: string;
   config: RegimePolicyConfig;
@@ -146,7 +167,7 @@ export interface RiskPolicyConfig {
   policy: StrategyRiskPolicy;
 }
 
-export interface RiskPolicyConfigSummary {
+export interface RiskPolicyConfigSummary extends ReusableConfigMetadata {
   name: string;
   description?: string;
   version: number;
@@ -163,7 +184,7 @@ export interface RiskPolicyConfigDetail {
   revisions: RiskPolicyConfigRevision[];
 }
 
-export interface RiskPolicyConfigUpsertRequest {
+export interface RiskPolicyConfigUpsertRequest extends ReusableConfigMetadata {
   name: string;
   description?: string;
   config: RiskPolicyConfig;
@@ -174,7 +195,7 @@ export interface ExitRuleSetConfig {
   exits: ExitRule[];
 }
 
-export interface ExitRuleSetSummary {
+export interface ExitRuleSetSummary extends ReusableConfigMetadata {
   name: string;
   description?: string;
   version: number;
@@ -192,10 +213,38 @@ export interface ExitRuleSetDetail {
   revisions: ExitRuleSetRevision[];
 }
 
-export interface ExitRuleSetUpsertRequest {
+export interface ExitRuleSetUpsertRequest extends ReusableConfigMetadata {
   name: string;
   description?: string;
   config: ExitRuleSetConfig;
+}
+
+export type RebalancePolicyConfig = RebalancePolicy;
+
+export interface RebalancePolicySummary extends ReusableConfigMetadata {
+  name: string;
+  description?: string;
+  version: number;
+  archived?: boolean;
+  usageCount?: number;
+  cadence?: RebalancePolicy['cadence'];
+  dayRule?: RebalancePolicy['dayRule'];
+  anchor?: RebalancePolicy['anchor'];
+  updatedAt?: string | null;
+}
+
+export type RebalancePolicyRevision = ConfigRevisionSummary<RebalancePolicyConfig>;
+
+export interface RebalancePolicyDetail {
+  policy: RebalancePolicySummary;
+  activeRevision?: RebalancePolicyRevision | null;
+  revisions: RebalancePolicyRevision[];
+}
+
+export interface RebalancePolicyUpsertRequest extends ReusableConfigMetadata {
+  name: string;
+  description?: string;
+  config: RebalancePolicyConfig | { policy: RebalancePolicyConfig };
 }
 
 export type JobCategory = 'data-pipeline' | 'strategy-compute' | 'operational-support';

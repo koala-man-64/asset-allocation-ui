@@ -30,6 +30,7 @@ import { Switch } from '@/app/components/ui/switch';
 import { Textarea } from '@/app/components/ui/textarea';
 import { exitRuleSetApi } from '@/services/exitRuleSetApi';
 import { rankingApi } from '@/services/rankingApi';
+import { rebalancePolicyApi } from '@/services/rebalancePolicyApi';
 import { regimePolicyApi } from '@/services/regimePolicyApi';
 import { riskPolicyApi } from '@/services/riskPolicyApi';
 import { strategyApi } from '@/services/strategyApi';
@@ -37,12 +38,19 @@ import { universeApi } from '@/services/universeApi';
 import type {
   ExitRuleSetSummary,
   RankingSchemaSummary,
+  RebalancePolicySummary,
   RegimePolicyConfigSummary,
   RiskPolicyConfigSummary,
   StrategyDetail,
+  StrategyComponentRefs,
   UniverseConfigSummary
 } from '@/types/strategy';
-import { buildEmptyStrategy, buildStrategyDraft, type StrategyEditorMode } from '@/features/strategies/lib/strategyDraft';
+import {
+  buildEmptyStrategy,
+  buildStrategyDraft,
+  normalizeStrategyComponentRefs,
+  type StrategyEditorMode
+} from '@/features/strategies/lib/strategyDraft';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 interface StrategyEditorWorkspaceProps {
@@ -58,6 +66,7 @@ interface StrategyEditorWorkspaceProps {
 type ConfigSummary =
   | UniverseConfigSummary
   | RankingSchemaSummary
+  | RebalancePolicySummary
   | RegimePolicyConfigSummary
   | RiskPolicyConfigSummary
   | ExitRuleSetSummary;
@@ -100,6 +109,10 @@ function getLatestVersion(items: ConfigSummary[] | undefined, name?: string | nu
 
 function formatVersion(version?: number | null): string {
   return typeof version === 'number' && Number.isFinite(version) ? `v${version}` : 'Unpinned';
+}
+
+function getPinnedRef(refs: StrategyComponentRefs | null | undefined, key: keyof StrategyComponentRefs) {
+  return refs?.[key] || null;
 }
 
 function VersionPinSelector({
@@ -237,6 +250,10 @@ export function StrategyEditorWorkspace({
     queryKey: ['risk-policies'],
     queryFn: ({ signal }) => riskPolicyApi.listRiskPolicies(signal)
   });
+  const rebalancePoliciesQuery = useQuery({
+    queryKey: ['rebalance-policies'],
+    queryFn: ({ signal }) => rebalancePolicyApi.listRebalancePolicies(signal)
+  });
   const exitRuleSetsQuery = useQuery({
     queryKey: ['exit-rule-sets'],
     queryFn: ({ signal }) => exitRuleSetApi.listExitRuleSets(signal)
@@ -283,19 +300,28 @@ export function StrategyEditorWorkspace({
 
   const watchedType = watch('type');
   const watchedRebalance = watch('config.rebalance');
+  const watchedComponentRefs = watch('config.componentRefs');
   const watchedLongOnly = watch('config.longOnly');
   const draftName = watch('name');
 
-  const watchedUniverseName = watch('config.universeConfigName');
-  const watchedUniverseVersion = watch('config.universeConfigVersion');
-  const watchedRankingName = watch('config.rankingSchemaName');
-  const watchedRankingVersion = watch('config.rankingSchemaVersion');
-  const watchedRegimeName = watch('config.regimePolicyConfigName');
-  const watchedRegimeVersion = watch('config.regimePolicyConfigVersion');
-  const watchedRiskName = watch('config.riskPolicyName');
-  const watchedRiskVersion = watch('config.riskPolicyVersion');
-  const watchedExitName = watch('config.exitRuleSetName');
-  const watchedExitVersion = watch('config.exitRuleSetVersion');
+  const watchedUniverseRef = getPinnedRef(watchedComponentRefs, 'universe');
+  const watchedRankingRef = getPinnedRef(watchedComponentRefs, 'ranking');
+  const watchedRebalanceRef = getPinnedRef(watchedComponentRefs, 'rebalance');
+  const watchedRegimeRef = getPinnedRef(watchedComponentRefs, 'regimePolicy');
+  const watchedRiskRef = getPinnedRef(watchedComponentRefs, 'riskPolicy');
+  const watchedExitRef = getPinnedRef(watchedComponentRefs, 'exitPolicy');
+  const watchedUniverseName = watchedUniverseRef?.name ?? watch('config.universeConfigName');
+  const watchedUniverseVersion = watchedUniverseRef?.version ?? watch('config.universeConfigVersion');
+  const watchedRankingName = watchedRankingRef?.name ?? watch('config.rankingSchemaName');
+  const watchedRankingVersion = watchedRankingRef?.version ?? watch('config.rankingSchemaVersion');
+  const watchedRebalanceName = watchedRebalanceRef?.name ?? null;
+  const watchedRebalanceVersion = watchedRebalanceRef?.version ?? null;
+  const watchedRegimeName = watchedRegimeRef?.name ?? watch('config.regimePolicyConfigName');
+  const watchedRegimeVersion = watchedRegimeRef?.version ?? watch('config.regimePolicyConfigVersion');
+  const watchedRiskName = watchedRiskRef?.name ?? watch('config.riskPolicyName');
+  const watchedRiskVersion = watchedRiskRef?.version ?? watch('config.riskPolicyVersion');
+  const watchedExitName = watchedExitRef?.name ?? watch('config.exitRuleSetName');
+  const watchedExitVersion = watchedExitRef?.version ?? watch('config.exitRuleSetVersion');
 
   const headerBadge = useMemo(() => {
     if (mode === 'create') {
@@ -307,8 +333,25 @@ export function StrategyEditorWorkspace({
     return 'Saved record';
   }, [mode]);
 
+  const setComponentRef = (
+    key: keyof StrategyComponentRefs,
+    name: string | undefined,
+    version: number | null | undefined
+  ) => {
+    const currentRefs = getValues('config.componentRefs') || {};
+    setValue(
+      'config.componentRefs',
+      {
+        ...currentRefs,
+        [key]: name && version ? { name, version } : undefined
+      },
+      { shouldDirty: true, shouldTouch: true }
+    );
+  };
+
   const setUniversePin = (name: string | undefined) => {
     const version = getLatestVersion(universeConfigsQuery.data, name);
+    setComponentRef('universe', name, version);
     setValue('config.universeConfigName', name, { shouldDirty: true, shouldTouch: true });
     setValue('config.universeConfigVersion', version ?? undefined, {
       shouldDirty: true,
@@ -318,6 +361,7 @@ export function StrategyEditorWorkspace({
 
   const setRankingPin = (name: string | undefined) => {
     const version = getLatestVersion(rankingSchemasQuery.data, name);
+    setComponentRef('ranking', name, version);
     setValue('config.rankingSchemaName', name, { shouldDirty: true, shouldTouch: true });
     setValue('config.rankingSchemaVersion', version ?? undefined, {
       shouldDirty: true,
@@ -327,6 +371,7 @@ export function StrategyEditorWorkspace({
 
   const setRegimePin = (name: string | undefined) => {
     const version = getLatestVersion(regimePoliciesQuery.data, name);
+    setComponentRef('regimePolicy', name, version);
     setValue('config.regimePolicyConfigName', name, { shouldDirty: true, shouldTouch: true });
     setValue('config.regimePolicyConfigVersion', version ?? undefined, {
       shouldDirty: true,
@@ -337,6 +382,7 @@ export function StrategyEditorWorkspace({
 
   const setRiskPin = (name: string | undefined) => {
     const version = getLatestVersion(riskPoliciesQuery.data, name);
+    setComponentRef('riskPolicy', name, version);
     setValue('config.riskPolicyName', name, { shouldDirty: true, shouldTouch: true });
     setValue('config.riskPolicyVersion', version ?? undefined, {
       shouldDirty: true,
@@ -348,6 +394,7 @@ export function StrategyEditorWorkspace({
 
   const setExitPin = (name: string | undefined) => {
     const version = getLatestVersion(exitRuleSetsQuery.data, name);
+    setComponentRef('exitPolicy', name, version);
     setValue('config.exitRuleSetName', name, { shouldDirty: true, shouldTouch: true });
     setValue('config.exitRuleSetVersion', version ?? undefined, {
       shouldDirty: true,
@@ -356,8 +403,17 @@ export function StrategyEditorWorkspace({
     setValue('config.exits', [], { shouldDirty: true, shouldTouch: true });
   };
 
+  const setRebalancePin = (name: string | undefined) => {
+    const version = getLatestVersion(rebalancePoliciesQuery.data, name);
+    setComponentRef('rebalance', name, version);
+    setValue('config.rebalancePolicy', undefined, { shouldDirty: true, shouldTouch: true });
+  };
+
   const onSubmit = (data: StrategyDetail) => {
-    saveMutation.mutate(data);
+    saveMutation.mutate({
+      ...data,
+      config: normalizeStrategyComponentRefs(data.config)
+    });
   };
 
   const discardChanges = () => {
@@ -523,15 +579,17 @@ export function StrategyEditorWorkspace({
                     isLoading={universeConfigsQuery.isLoading}
                     error={universeConfigsQuery.error}
                     onNameChange={setUniversePin}
-                    onVersionChange={(version) =>
+                    onVersionChange={(version) => {
+                      setComponentRef('universe', watchedUniverseName || undefined, version);
                       setValue('config.universeConfigVersion', version, {
                         shouldDirty: true,
                         shouldTouch: true
-                      })
-                    }
+                      });
+                    }}
                     onRepinLatest={() => {
                       const version = getLatestVersion(universeConfigsQuery.data, watchedUniverseName);
                       if (version) {
+                        setComponentRef('universe', watchedUniverseName || undefined, version);
                         setValue('config.universeConfigVersion', version, {
                           shouldDirty: true,
                           shouldTouch: true
@@ -549,15 +607,17 @@ export function StrategyEditorWorkspace({
                     isLoading={rankingSchemasQuery.isLoading}
                     error={rankingSchemasQuery.error}
                     onNameChange={setRankingPin}
-                    onVersionChange={(version) =>
+                    onVersionChange={(version) => {
+                      setComponentRef('ranking', watchedRankingName || undefined, version);
                       setValue('config.rankingSchemaVersion', version, {
                         shouldDirty: true,
                         shouldTouch: true
-                      })
-                    }
+                      });
+                    }}
                     onRepinLatest={() => {
                       const version = getLatestVersion(rankingSchemasQuery.data, watchedRankingName);
                       if (version) {
+                        setComponentRef('ranking', watchedRankingName || undefined, version);
                         setValue('config.rankingSchemaVersion', version, {
                           shouldDirty: true,
                           shouldTouch: true
@@ -575,19 +635,41 @@ export function StrategyEditorWorkspace({
                     isLoading={regimePoliciesQuery.isLoading}
                     error={regimePoliciesQuery.error}
                     onNameChange={setRegimePin}
-                    onVersionChange={(version) =>
+                    onVersionChange={(version) => {
+                      setComponentRef('regimePolicy', watchedRegimeName || undefined, version);
                       setValue('config.regimePolicyConfigVersion', version, {
                         shouldDirty: true,
                         shouldTouch: true
-                      })
-                    }
+                      });
+                    }}
                     onRepinLatest={() => {
                       const version = getLatestVersion(regimePoliciesQuery.data, watchedRegimeName);
                       if (version) {
+                        setComponentRef('regimePolicy', watchedRegimeName || undefined, version);
                         setValue('config.regimePolicyConfigVersion', version, {
                           shouldDirty: true,
                           shouldTouch: true
                         });
+                      }
+                    }}
+                  />
+
+                  <VersionPinSelector
+                    label="Rebalance Policy"
+                    tab="rebalance-policy"
+                    items={rebalancePoliciesQuery.data || []}
+                    selectedName={watchedRebalanceName}
+                    selectedVersion={watchedRebalanceVersion}
+                    isLoading={rebalancePoliciesQuery.isLoading}
+                    error={rebalancePoliciesQuery.error}
+                    onNameChange={setRebalancePin}
+                    onVersionChange={(version) => {
+                      setComponentRef('rebalance', watchedRebalanceName || undefined, version);
+                    }}
+                    onRepinLatest={() => {
+                      const version = getLatestVersion(rebalancePoliciesQuery.data, watchedRebalanceName);
+                      if (version) {
+                        setComponentRef('rebalance', watchedRebalanceName || undefined, version);
                       }
                     }}
                   />
@@ -601,15 +683,17 @@ export function StrategyEditorWorkspace({
                     isLoading={riskPoliciesQuery.isLoading}
                     error={riskPoliciesQuery.error}
                     onNameChange={setRiskPin}
-                    onVersionChange={(version) =>
+                    onVersionChange={(version) => {
+                      setComponentRef('riskPolicy', watchedRiskName || undefined, version);
                       setValue('config.riskPolicyVersion', version, {
                         shouldDirty: true,
                         shouldTouch: true
-                      })
-                    }
+                      });
+                    }}
                     onRepinLatest={() => {
                       const version = getLatestVersion(riskPoliciesQuery.data, watchedRiskName);
                       if (version) {
+                        setComponentRef('riskPolicy', watchedRiskName || undefined, version);
                         setValue('config.riskPolicyVersion', version, {
                           shouldDirty: true,
                           shouldTouch: true
@@ -628,15 +712,17 @@ export function StrategyEditorWorkspace({
                       isLoading={exitRuleSetsQuery.isLoading}
                       error={exitRuleSetsQuery.error}
                       onNameChange={setExitPin}
-                      onVersionChange={(version) =>
+                      onVersionChange={(version) => {
+                        setComponentRef('exitPolicy', watchedExitName || undefined, version);
                         setValue('config.exitRuleSetVersion', version, {
                           shouldDirty: true,
                           shouldTouch: true
-                        })
-                      }
+                        });
+                      }}
                       onRepinLatest={() => {
                         const version = getLatestVersion(exitRuleSetsQuery.data, watchedExitName);
                         if (version) {
+                          setComponentRef('exitPolicy', watchedExitName || undefined, version);
                           setValue('config.exitRuleSetVersion', version, {
                             shouldDirty: true,
                             shouldTouch: true

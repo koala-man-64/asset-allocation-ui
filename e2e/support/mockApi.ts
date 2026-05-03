@@ -310,8 +310,18 @@ const strategyDetails = {
     output_table_name: 'quality_trend_daily',
     updated_at: NOW,
     config: {
+      componentRefs: {
+        universe: { name: 'large-cap-quality', version: 1 },
+        ranking: { name: 'quality-momentum', version: 1 },
+        rebalance: { name: 'monthly_last_trading_day', version: 1 },
+        regimePolicy: { name: 'observe_only_default', version: 1 },
+        riskPolicy: { name: 'balanced_long_only', version: 1 },
+        exitPolicy: { name: 'rebalance_only', version: 1 }
+      },
       universeConfigName: 'large-cap-quality',
+      universeConfigVersion: 1,
       rankingSchemaName: 'quality-momentum',
+      rankingSchemaVersion: 1,
       rebalance: 'weekly',
       longOnly: true,
       topN: 25,
@@ -340,8 +350,16 @@ const strategyDetails = {
     output_table_name: 'defensive_value_daily',
     updated_at: '2026-04-17T14:30:00Z',
     config: {
+      componentRefs: {
+        universe: { name: 'large-cap-quality', version: 1 },
+        ranking: { name: 'quality-momentum', version: 1 },
+        rebalance: { name: 'monthly_last_trading_day', version: 1 },
+        exitPolicy: { name: 'rank_decay_exit', version: 1 }
+      },
       universeConfigName: 'large-cap-quality',
+      universeConfigVersion: 1,
       rankingSchemaName: 'quality-momentum',
+      rankingSchemaVersion: 1,
       rebalance: 'monthly',
       longOnly: true,
       topN: 20,

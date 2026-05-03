@@ -6,6 +6,7 @@ import { buildDefaultRiskPolicy } from '@/features/strategies/lib/strategyDraft'
 import { backtestApi } from '@/services/backtestApi';
 import { exitRuleSetApi } from '@/services/exitRuleSetApi';
 import { rankingApi } from '@/services/rankingApi';
+import { rebalancePolicyApi } from '@/services/rebalancePolicyApi';
 import { regimePolicyApi } from '@/services/regimePolicyApi';
 import { riskPolicyApi } from '@/services/riskPolicyApi';
 import { strategyApi } from '@/services/strategyApi';
@@ -49,6 +50,12 @@ vi.mock('@/services/rankingApi', () => ({
 vi.mock('@/services/regimePolicyApi', () => ({
   regimePolicyApi: {
     listRegimePolicies: vi.fn()
+  }
+}));
+
+vi.mock('@/services/rebalancePolicyApi', () => ({
+  rebalancePolicyApi: {
+    listRebalancePolicies: vi.fn()
   }
 }));
 
@@ -249,6 +256,7 @@ describe('StrategyConfigPage', () => {
       submitted_at: '2026-03-08T00:00:00Z'
     });
     (regimePolicyApi.listRegimePolicies as Mock).mockResolvedValue([]);
+    (rebalancePolicyApi.listRebalancePolicies as Mock).mockResolvedValue([]);
     (riskPolicyApi.listRiskPolicies as Mock).mockResolvedValue([]);
     (exitRuleSetApi.listExitRuleSets as Mock).mockResolvedValue([]);
     (strategyApi.getUniverseCatalog as Mock).mockResolvedValue({
