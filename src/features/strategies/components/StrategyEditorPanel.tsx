@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { CopyPlus, PencilLine, Play, Plus, Save, ShieldCheck, Trash2 } from 'lucide-react';
+import { CopyPlus, ExternalLink, PencilLine, Play, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+
+import { PageLoader } from '@/app/components/common/PageLoader';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
-import { PageLoader } from '@/app/components/common/PageLoader';
 import {
   Table,
   TableBody,
@@ -13,36 +12,9 @@ import {
   TableHeader,
   TableRow
 } from '@/app/components/ui/table';
-import { rankingApi } from '@/services/rankingApi';
-import { universeApi } from '@/services/universeApi';
+import { cn } from '@/app/components/ui/utils';
 import type { RunRecordResponse } from '@/services/backtestApi';
-import type {
-  RankingCatalogColumn,
-  RankingFactor,
-  RankingGroup,
-  RankingSchemaDetail,
-  RankingTransform,
-  StrategyDetail,
-  StrategySummary,
-  UniverseDefinition
-} from '@/types/strategy';
-import type { StrategyRiskPolicy } from '@/types/strategyAnalytics';
-import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
-import { RankingGroupOverview } from '@/features/rankings/components/RankingGroupOverview';
-import { RankingGroupWorkspace } from '@/features/rankings/components/RankingGroupWorkspace';
-import { RankingSchemaBasics } from '@/features/rankings/components/RankingSchemaBasics';
-import { RankingTransformSequenceEditor } from '@/features/rankings/components/RankingTransformSequenceEditor';
-import {
-  buildEmptyFactor,
-  buildEmptyGroup,
-  clampIndex,
-  cloneFactor,
-  cloneGroup,
-  countFactors,
-  moveItem,
-  serializeSchemaDetail
-} from '@/features/rankings/components/rankingEditorUtils';
-import { UniverseRuleBuilder } from '@/features/universes/components/UniverseRuleBuilder';
+import type { StrategyDetail, StrategyRiskPolicy, StrategySummary } from '@/types/strategy';
 import {
   describeRegimePolicy,
   describeStrategyExecution,
@@ -51,8 +23,6 @@ import {
   formatStrategyType,
   summarizeExitStack
 } from '@/features/strategies/lib/strategySummary';
-import { toast } from 'sonner';
-import { cn } from '@/app/components/ui/utils';
 
 interface StrategyEditorPanelProps {
   selectedStrategyName: string | null;
@@ -75,26 +45,22 @@ function formatRatio(value?: number | null): string {
   if (value === undefined || value === null) {
     return 'Unset';
   }
-
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function riskValue(
-  policy: StrategyRiskPolicy | null | undefined,
-  key: keyof StrategyRiskPolicy
-): string {
-  const value = policy?.[key];
-  if (typeof value === 'number') {
-    return key === 'maxTradeNotionalBaseCcy'
-      ? new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-          maximumFractionDigits: 0
-        }).format(value)
-      : formatRatio(value);
-  }
+function formatRiskLabel(value?: string | null): string {
+  return value ? value.replaceAll('_', ' ') : 'Unset';
+}
 
-  return 'Unset';
+function riskPolicyState(policy: StrategyRiskPolicy | null | undefined): string {
+  if (!policy) {
+    return 'Unset';
+  }
+  return policy.enabled ? 'Enabled' : 'Disabled';
+}
+
+function formatVersion(version?: number | null): string {
+  return typeof version === 'number' && Number.isFinite(version) ? `v${version}` : 'Unpinned';
 }
 
 function PanelTile({ label, value, detail }: { label: string; value: string; detail: string }) {
@@ -117,6 +83,43 @@ function EmptySection({ children }: { children: string }) {
   );
 }
 
+function PinnedConfigCard({
+  label,
+  name,
+  version,
+  detail,
+  tab
+}: {
+  label: string;
+  name?: string | null;
+  version?: number | null;
+  detail: string;
+  tab: string;
+}) {
+  return (
+    <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+            {label}
+          </div>
+          <div className="mt-2 truncate font-mono text-sm font-semibold text-foreground">
+            {name || 'Not pinned'}
+          </div>
+        </div>
+        <Badge variant={name ? 'secondary' : 'outline'}>{formatVersion(version)}</Badge>
+      </div>
+      <p className="mt-3 text-sm text-muted-foreground">{detail}</p>
+      <Button asChild type="button" variant="ghost" size="sm" className="mt-3 px-0">
+        <Link to={`/strategy-configurations?tab=${tab}`}>
+          <ExternalLink className="h-4 w-4" />
+          Open Library
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
 export function StrategyEditorPanel({
   selectedStrategyName,
   selectedStrategy,
@@ -133,302 +136,7 @@ export function StrategyEditorPanel({
   onOpenBacktest,
   onDeleteStrategy
 }: StrategyEditorPanelProps) {
-  const queryClient = useQueryClient();
-  const universeName = strategy?.config.universeConfigName || null;
-  const rankingName = strategy?.config.rankingSchemaName || null;
-  const [universeDraft, setUniverseDraft] = useState<UniverseDefinition | null>(null);
-  const [rankingDraft, setRankingDraft] = useState<RankingSchemaDetail | null>(null);
-  const [universeBaseline, setUniverseBaseline] = useState('');
-  const [rankingBaseline, setRankingBaseline] = useState('');
-  const [activeGroupIndex, setActiveGroupIndex] = useState(0);
-  const [activeFactorIndex, setActiveFactorIndex] = useState(0);
-
-  const universeDetailQuery = useQuery({
-    queryKey: ['universe-configs', 'detail', universeName],
-    queryFn: ({ signal }) => universeApi.getUniverseConfigDetail(String(universeName), signal),
-    enabled: Boolean(universeName)
-  });
-
-  const rankingDetailQuery = useQuery({
-    queryKey: ['ranking-schemas', 'detail', rankingName],
-    queryFn: ({ signal }) => rankingApi.getRankingSchemaDetail(String(rankingName), signal),
-    enabled: Boolean(rankingName)
-  });
-
-  const rankingCatalogQuery = useQuery({
-    queryKey: ['ranking-catalog'],
-    queryFn: ({ signal }) => rankingApi.getRankingCatalog(signal),
-    enabled: Boolean(rankingName)
-  });
-
-  const universeConfigsQuery = useQuery({
-    queryKey: ['universe-configs'],
-    queryFn: ({ signal }) => universeApi.listUniverseConfigs(signal),
-    enabled: Boolean(rankingName)
-  });
-
-  useEffect(() => {
-    if (!universeDetailQuery.data) {
-      setUniverseDraft(null);
-      setUniverseBaseline('');
-      return;
-    }
-
-    const snapshot = JSON.stringify(universeDetailQuery.data.config);
-    setUniverseDraft(universeDetailQuery.data.config);
-    setUniverseBaseline(snapshot);
-  }, [universeDetailQuery.data]);
-
-  useEffect(() => {
-    if (!rankingDetailQuery.data) {
-      setRankingDraft(null);
-      setRankingBaseline('');
-      return;
-    }
-
-    setRankingDraft(rankingDetailQuery.data);
-    setRankingBaseline(serializeSchemaDetail(rankingDetailQuery.data));
-    setActiveGroupIndex(0);
-    setActiveFactorIndex(0);
-  }, [rankingDetailQuery.data]);
-
-  useEffect(() => {
-    const activeGroup = rankingDraft?.config.groups[activeGroupIndex] || null;
-    setActiveFactorIndex((current) => clampIndex(current, activeGroup?.factors.length || 0));
-  }, [activeGroupIndex, rankingDraft?.config.groups]);
-
-  const universeDirty = universeDraft ? JSON.stringify(universeDraft) !== universeBaseline : false;
-  const rankingDirty = rankingDraft
-    ? serializeSchemaDetail(rankingDraft) !== rankingBaseline
-    : false;
-
-  const rankingCatalog = rankingCatalogQuery.data;
-  const catalogByTable = useMemo(() => {
-    const tableMap = new Map<string, RankingCatalogColumn[]>();
-    rankingCatalog?.tables.forEach((table) => {
-      tableMap.set(table.name, table.columns);
-    });
-    return tableMap;
-  }, [rankingCatalog]);
-  const tableNames = rankingCatalog?.tables.map((table) => table.name) || [];
-  const activeGroup = rankingDraft?.config.groups[activeGroupIndex] || null;
-  const factorCount = rankingDraft ? countFactors(rankingDraft.config.groups) : 0;
-
-  const saveUniverseMutation = useMutation({
-    mutationFn: () => {
-      if (!universeDetailQuery.data || !universeDraft) {
-        throw new Error('Select a universe configuration before saving.');
-      }
-
-      return universeApi.saveUniverseConfig({
-        name: universeDetailQuery.data.name,
-        description: universeDetailQuery.data.description,
-        config: universeDraft
-      });
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['universe-configs'] }),
-        queryClient.invalidateQueries({ queryKey: ['universe-configs', 'detail', universeName] })
-      ]);
-      setUniverseBaseline(universeDraft ? JSON.stringify(universeDraft) : '');
-      toast.success(`Universe ${universeName} saved`);
-    },
-    onError: (error) => {
-      toast.error(`Failed to save universe: ${formatSystemStatusText(error)}`);
-    }
-  });
-
-  const saveRankingMutation = useMutation({
-    mutationFn: () => {
-      if (!rankingDraft) {
-        throw new Error('Select a ranking configuration before saving.');
-      }
-
-      return rankingApi.saveRankingSchema({
-        name: rankingDraft.name,
-        description: rankingDraft.description,
-        config: rankingDraft.config
-      });
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['ranking-schemas'] }),
-        queryClient.invalidateQueries({ queryKey: ['ranking-schemas', 'detail', rankingName] })
-      ]);
-      setRankingBaseline(rankingDraft ? serializeSchemaDetail(rankingDraft) : '');
-      toast.success(`Ranking ${rankingName} saved`);
-    },
-    onError: (error) => {
-      toast.error(`Failed to save ranking: ${formatSystemStatusText(error)}`);
-    }
-  });
-
-  const updateRankingDraft = (updater: (current: RankingSchemaDetail) => RankingSchemaDetail) => {
-    setRankingDraft((current) => (current ? updater(current) : current));
-  };
-
-  const replaceGroup = (groupIndex: number, nextGroup: RankingGroup) => {
-    updateRankingDraft((current) => {
-      const nextGroups = current.config.groups.slice();
-      if (!nextGroups[groupIndex]) {
-        return current;
-      }
-      nextGroups[groupIndex] = nextGroup;
-      return {
-        ...current,
-        config: {
-          ...current.config,
-          groups: nextGroups
-        }
-      };
-    });
-  };
-
-  const replaceFactor = (groupIndex: number, factorIndex: number, nextFactor: RankingFactor) => {
-    updateRankingDraft((current) => {
-      const nextGroups = current.config.groups.slice();
-      const targetGroup = nextGroups[groupIndex];
-      if (!targetGroup) {
-        return current;
-      }
-      const nextFactors = targetGroup.factors.slice();
-      nextFactors[factorIndex] = nextFactor;
-      nextGroups[groupIndex] = {
-        ...targetGroup,
-        factors: nextFactors
-      };
-      return {
-        ...current,
-        config: {
-          ...current.config,
-          groups: nextGroups
-        }
-      };
-    });
-  };
-
-  const handleAddGroup = () => {
-    updateRankingDraft((current) => {
-      const nextGroup = buildEmptyGroup(current.config.groups.length, rankingCatalog, true);
-      return {
-        ...current,
-        config: {
-          ...current.config,
-          groups: [...current.config.groups, nextGroup]
-        }
-      };
-    });
-    setActiveGroupIndex(rankingDraft?.config.groups.length || 0);
-    setActiveFactorIndex(0);
-  };
-
-  const handleDuplicateGroup = (groupIndex: number) => {
-    updateRankingDraft((current) => {
-      const targetGroup = current.config.groups[groupIndex];
-      if (!targetGroup) {
-        return current;
-      }
-      const nextGroups = current.config.groups.slice();
-      nextGroups.splice(groupIndex + 1, 0, cloneGroup(targetGroup));
-      return {
-        ...current,
-        config: {
-          ...current.config,
-          groups: nextGroups
-        }
-      };
-    });
-    setActiveGroupIndex(groupIndex + 1);
-    setActiveFactorIndex(0);
-  };
-
-  const handleMoveGroup = (groupIndex: number, direction: 'up' | 'down') => {
-    const nextIndex = direction === 'up' ? groupIndex - 1 : groupIndex + 1;
-    updateRankingDraft((current) => ({
-      ...current,
-      config: {
-        ...current.config,
-        groups: moveItem(current.config.groups, groupIndex, nextIndex)
-      }
-    }));
-    setActiveGroupIndex(nextIndex);
-    setActiveFactorIndex(0);
-  };
-
-  const handleRemoveGroup = (groupIndex: number) => {
-    updateRankingDraft((current) => ({
-      ...current,
-      config: {
-        ...current.config,
-        groups: current.config.groups.filter((_, itemIndex) => itemIndex !== groupIndex)
-      }
-    }));
-    setActiveGroupIndex((current) =>
-      clampIndex(
-        current > groupIndex ? current - 1 : current,
-        (rankingDraft?.config.groups.length || 1) - 1
-      )
-    );
-    setActiveFactorIndex(0);
-  };
-
-  const handleAddFactor = () => {
-    if (!activeGroup) {
-      return;
-    }
-    const nextFactor = buildEmptyFactor(
-      activeGroup.name || `group-${activeGroupIndex + 1}`,
-      rankingCatalog
-    );
-    replaceGroup(activeGroupIndex, {
-      ...activeGroup,
-      factors: [...activeGroup.factors, nextFactor]
-    });
-    setActiveFactorIndex(activeGroup.factors.length);
-  };
-
-  const handleDuplicateFactor = (factorIndex: number) => {
-    if (!activeGroup) {
-      return;
-    }
-    const targetFactor = activeGroup.factors[factorIndex];
-    if (!targetFactor) {
-      return;
-    }
-    const nextFactors = activeGroup.factors.slice();
-    nextFactors.splice(factorIndex + 1, 0, cloneFactor(targetFactor));
-    replaceGroup(activeGroupIndex, {
-      ...activeGroup,
-      factors: nextFactors
-    });
-    setActiveFactorIndex(factorIndex + 1);
-  };
-
-  const handleMoveFactor = (factorIndex: number, direction: 'up' | 'down') => {
-    if (!activeGroup) {
-      return;
-    }
-    const nextIndex = direction === 'up' ? factorIndex - 1 : factorIndex + 1;
-    replaceGroup(activeGroupIndex, {
-      ...activeGroup,
-      factors: moveItem(activeGroup.factors, factorIndex, nextIndex)
-    });
-    setActiveFactorIndex(nextIndex);
-  };
-
-  const handleRemoveFactor = (factorIndex: number) => {
-    if (!activeGroup) {
-      return;
-    }
-    replaceGroup(activeGroupIndex, {
-      ...activeGroup,
-      factors: activeGroup.factors.filter((_, itemIndex) => itemIndex !== factorIndex)
-    });
-    setActiveFactorIndex((current) =>
-      clampIndex(current > factorIndex ? current - 1 : current, activeGroup.factors.length - 1)
-    );
-  };
+  const riskPolicy = strategy?.config.strategyRiskPolicy || strategy?.config.riskPolicy || null;
 
   return (
     <section
@@ -445,8 +153,8 @@ export function StrategyEditorPanel({
             </p>
             <h2 className="font-display text-xl text-foreground">Configuration Workspace</h2>
             <p className="text-sm text-muted-foreground">
-              Universe, ranking, regime, and risk controls are grouped here; child drafts save only
-              from their own section.
+              Strategy assembly pins reusable library revisions. Edit library objects from the
+              configuration hub; edit strategy pins here.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -456,7 +164,7 @@ export function StrategyEditorPanel({
             </Button>
             <Button variant="secondary" onClick={onEditStrategy} disabled={!detailReady}>
               <PencilLine className="h-4 w-4" />
-              Edit Strategy
+              Edit Pins
             </Button>
             <Button variant="outline" onClick={onDuplicateStrategy} disabled={!detailReady}>
               <CopyPlus className="h-4 w-4" />
@@ -499,10 +207,10 @@ export function StrategyEditorPanel({
                       {formatStrategyType(strategy.type)}
                     </Badge>
                     <Badge variant={strategy.config.regimePolicy ? 'secondary' : 'outline'}>
-                      {strategy.config.regimePolicy ? 'Regime aware' : 'No regime gate'}
+                      {strategy.config.regimePolicy ? 'Regime snapshot' : 'No regime snapshot'}
                     </Badge>
-                    <Badge variant={strategy.config.riskPolicy ? 'secondary' : 'outline'}>
-                      {strategy.config.riskPolicy ? 'Risk policy' : 'No risk policy'}
+                    <Badge variant={riskPolicy ? 'secondary' : 'outline'}>
+                      {riskPolicy ? 'Risk snapshot' : 'No risk snapshot'}
                     </Badge>
                   </div>
                   <div>
@@ -531,208 +239,101 @@ export function StrategyEditorPanel({
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <PanelTile
-                label="Universe"
-                value={strategy.config.universeConfigName || 'Not assigned'}
-                detail={
-                  strategy.config.universe
-                    ? 'Embedded legacy universe present.'
-                    : 'Linked eligibility definition.'
-                }
-              />
-              <PanelTile
-                label="Ranking"
-                value={strategy.config.rankingSchemaName || 'Not attached'}
-                detail="Linked ranking schema used during strategy materialization."
-              />
-              <PanelTile
                 label="Selection"
                 value={describeStrategySelection(strategy)}
                 detail={describeStrategyExecution(strategy)}
               />
               <PanelTile
-                label="Regime"
+                label="Regime Snapshot"
                 value={strategy.config.regimePolicy?.modelName || 'Disabled'}
                 detail={describeRegimePolicy(strategy)}
+              />
+              <PanelTile
+                label="Exit Snapshot"
+                value={`${strategy.config.exits?.length || 0} rules`}
+                detail={summarizeExitStack(strategy)}
+              />
+              <PanelTile
+                label="Risk Snapshot"
+                value={riskPolicy ? 'Resolved' : 'Disabled'}
+                detail="Resolved from the pinned risk policy when the strategy revision was saved."
               />
             </div>
 
             <section className="space-y-4 rounded-[2rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                 <div>
-                  <h4 className="font-display text-lg text-foreground">Universe Configuration</h4>
+                  <h4 className="font-display text-lg text-foreground">
+                    Pinned Configuration Revisions
+                  </h4>
                   <p className="text-sm text-muted-foreground">
-                    Edit the attached universe draft here. Saving this section never saves the
-                    strategy record.
+                    These pins define the library revisions used to resolve the immutable strategy
+                    snapshot.
                   </p>
                 </div>
-                <Button
-                  variant="secondary"
-                  onClick={() => saveUniverseMutation.mutate()}
-                  disabled={!universeDirty || saveUniverseMutation.isPending}
-                >
-                  <Save className="h-4 w-4" />
-                  {saveUniverseMutation.isPending ? 'Saving...' : 'Save Universe Draft'}
+                <Button variant="secondary" onClick={onEditStrategy}>
+                  <PencilLine className="h-4 w-4" />
+                  Repin Strategy
                 </Button>
               </div>
 
-              {!universeName ? (
-                <EmptySection>
-                  No universe configuration is attached. Use Edit Strategy to attach a versioned
-                  universe.
-                </EmptySection>
-              ) : universeDetailQuery.isLoading ? (
-                <EmptySection>Loading attached universe configuration...</EmptySection>
-              ) : universeDetailQuery.error ? (
-                <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-                  {formatSystemStatusText(universeDetailQuery.error)}
-                </div>
-              ) : universeDraft ? (
-                <UniverseRuleBuilder value={universeDraft} onChange={setUniverseDraft} />
-              ) : null}
-            </section>
-
-            <section className="space-y-4 rounded-[2rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                <div>
-                  <h4 className="font-display text-lg text-foreground">Ranking Configuration</h4>
-                  <p className="text-sm text-muted-foreground">
-                    Edit the attached ranking schema in place; this section has its own save action.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{factorCount} factors</Badge>
-                  <Button
-                    variant="secondary"
-                    onClick={() => saveRankingMutation.mutate()}
-                    disabled={!rankingDirty || saveRankingMutation.isPending || !rankingDraft}
-                  >
-                    <Save className="h-4 w-4" />
-                    {saveRankingMutation.isPending ? 'Saving...' : 'Save Ranking Draft'}
-                  </Button>
-                </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <PinnedConfigCard
+                  label="Universe"
+                  name={strategy.config.universeConfigName}
+                  version={strategy.config.universeConfigVersion}
+                  detail="Eligibility universe pinned for this strategy revision."
+                  tab="universe"
+                />
+                <PinnedConfigCard
+                  label="Ranking"
+                  name={strategy.config.rankingSchemaName}
+                  version={strategy.config.rankingSchemaVersion}
+                  detail="Ranking schema revision used for scoring and materialization."
+                  tab="ranking"
+                />
+                <PinnedConfigCard
+                  label="Regime Policy"
+                  name={strategy.config.regimePolicyConfigName}
+                  version={strategy.config.regimePolicyConfigVersion}
+                  detail="Regime policy revision resolved into the snapshot."
+                  tab="regime-policy"
+                />
+                <PinnedConfigCard
+                  label="Risk Policy"
+                  name={strategy.config.riskPolicyName}
+                  version={strategy.config.riskPolicyVersion}
+                  detail="Risk limits resolved into the snapshot."
+                  tab="risk-policy"
+                />
+                <PinnedConfigCard
+                  label="Exit Rule Set"
+                  name={strategy.config.exitRuleSetName}
+                  version={strategy.config.exitRuleSetVersion}
+                  detail="Ordered exit rule revision resolved into the snapshot."
+                  tab="exit-rules"
+                />
               </div>
-
-              {!rankingName ? (
-                <EmptySection>
-                  No ranking schema is attached. Use Edit Strategy to attach a versioned ranking
-                  schema.
-                </EmptySection>
-              ) : rankingDetailQuery.isLoading ? (
-                <EmptySection>Loading attached ranking schema...</EmptySection>
-              ) : rankingDetailQuery.error ? (
-                <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-                  {formatSystemStatusText(rankingDetailQuery.error)}
-                </div>
-              ) : rankingDraft ? (
-                <div className="space-y-5">
-                  {rankingCatalogQuery.error ? (
-                    <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-                      Ranking catalog failed: {formatSystemStatusText(rankingCatalogQuery.error)}
-                    </div>
-                  ) : null}
-                  <RankingSchemaBasics
-                    draft={rankingDraft}
-                    selectedSchemaName={rankingName}
-                    hasUnsavedChanges={rankingDirty}
-                    universeConfigs={universeConfigsQuery.data || []}
-                    onNameChange={(name) => setRankingDraft({ ...rankingDraft, name })}
-                    onDescriptionChange={(description) =>
-                      setRankingDraft({ ...rankingDraft, description })
-                    }
-                    onUniverseConfigChange={(universeConfigName) =>
-                      setRankingDraft({
-                        ...rankingDraft,
-                        config: {
-                          ...rankingDraft.config,
-                          universeConfigName
-                        }
-                      })
-                    }
-                  />
-                  <RankingGroupOverview
-                    groups={rankingDraft.config.groups}
-                    activeGroupIndex={activeGroupIndex}
-                    onSelectGroup={(index) => {
-                      setActiveGroupIndex(index);
-                      setActiveFactorIndex(0);
-                    }}
-                    onAddGroup={handleAddGroup}
-                    onDuplicateGroup={handleDuplicateGroup}
-                    onMoveGroup={handleMoveGroup}
-                    onRemoveGroup={handleRemoveGroup}
-                  />
-                  <RankingTransformSequenceEditor
-                    title="Overall Transforms"
-                    description="Run these after weighted groups are aggregated into the final ranking score."
-                    transforms={rankingDraft.config.overallTransforms || []}
-                    onChange={(nextTransforms: RankingTransform[]) =>
-                      setRankingDraft({
-                        ...rankingDraft,
-                        config: {
-                          ...rankingDraft.config,
-                          overallTransforms: nextTransforms
-                        }
-                      })
-                    }
-                  />
-                  <RankingGroupWorkspace
-                    group={activeGroup}
-                    groupIndex={activeGroupIndex}
-                    activeFactorIndex={activeFactorIndex}
-                    catalogByTable={catalogByTable}
-                    tableNames={tableNames}
-                    onChangeGroup={(nextGroup) => replaceGroup(activeGroupIndex, nextGroup)}
-                    onChangeGroupTransforms={(nextTransforms) => {
-                      if (!activeGroup) {
-                        return;
-                      }
-                      replaceGroup(activeGroupIndex, {
-                        ...activeGroup,
-                        transforms: nextTransforms
-                      });
-                    }}
-                    onAddFactor={handleAddFactor}
-                    onSelectFactor={setActiveFactorIndex}
-                    onDuplicateFactor={handleDuplicateFactor}
-                    onMoveFactor={handleMoveFactor}
-                    onRemoveFactor={handleRemoveFactor}
-                    onChangeFactor={(factorIndex, nextFactor) =>
-                      replaceFactor(activeGroupIndex, factorIndex, nextFactor)
-                    }
-                    onChangeFactorTransforms={(factorIndex, nextTransforms) => {
-                      const nextFactor = activeGroup?.factors[factorIndex];
-                      if (!nextFactor) {
-                        return;
-                      }
-                      replaceFactor(activeGroupIndex, factorIndex, {
-                        ...nextFactor,
-                        transforms: nextTransforms
-                      });
-                    }}
-                  />
-                </div>
-              ) : null}
             </section>
 
             <section className="grid gap-5 xl:grid-cols-2">
               <div className="space-y-4 rounded-[2rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
                 <div>
-                  <h4 className="font-display text-lg text-foreground">Regime Configuration</h4>
+                  <h4 className="font-display text-lg text-foreground">Resolved Regime</h4>
                   <p className="text-sm text-muted-foreground">
-                    Regime policy remains part of the strategy payload and is saved from Edit
-                    Strategy.
+                    Execution reads this resolved snapshot, not a moving latest-by-name policy.
                   </p>
                 </div>
                 <div className="grid gap-3">
                   <PanelTile
                     label="Model"
                     value={strategy.config.regimePolicy?.modelName || 'Not configured'}
-                    detail="Active regime model attached to the strategy."
+                    detail={`Model revision ${formatVersion(strategy.config.regimePolicy?.modelVersion)}`}
                   />
                   <PanelTile
                     label="Mode"
                     value={strategy.config.regimePolicy?.mode.replaceAll('_', ' ') || 'Disabled'}
-                    detail="Current shared schema exposes observe-only mode."
+                    detail="Current release supports observe-only mode."
                   />
                 </div>
               </div>
@@ -741,40 +342,50 @@ export function StrategyEditorPanel({
                 <div className="flex items-start gap-3">
                   <ShieldCheck className="mt-1 h-5 w-5 text-mcm-walnut" />
                   <div>
-                    <h4 className="font-display text-lg text-foreground">Risk Configuration</h4>
+                    <h4 className="font-display text-lg text-foreground">Resolved Risk</h4>
                     <p className="text-sm text-muted-foreground">
-                      Risk policy uses the new shared contract bridge and saves with the strategy
-                      draft.
+                      Risk limits shown here are the snapshot saved on the strategy revision.
                     </p>
                   </div>
                 </div>
-                {strategy.config.riskPolicy ? (
+                {riskPolicy ? (
                   <div className="grid gap-3 md:grid-cols-2">
                     <PanelTile
-                      label="Gross"
-                      value={riskValue(strategy.config.riskPolicy, 'grossExposureLimit')}
-                      detail="Gross exposure ceiling."
+                      label="State"
+                      value={riskPolicyState(riskPolicy)}
+                      detail={`Scope: ${formatRiskLabel(riskPolicy.scope)}.`}
                     />
                     <PanelTile
-                      label="Single Name"
-                      value={riskValue(strategy.config.riskPolicy, 'singleNameMaxWeight')}
-                      detail="Maximum issuer concentration."
+                      label="Stop Loss"
+                      value={
+                        riskPolicy.stopLoss?.enabled
+                          ? formatRatio(riskPolicy.stopLoss.thresholdPct)
+                          : 'Disabled'
+                      }
+                      detail={`Action: ${formatRiskLabel(riskPolicy.stopLoss?.action)}.`}
                     />
                     <PanelTile
-                      label="Turnover"
-                      value={riskValue(strategy.config.riskPolicy, 'turnoverBudget')}
-                      detail="Desk turnover budget."
+                      label="Take Profit"
+                      value={
+                        riskPolicy.takeProfit?.enabled
+                          ? formatRatio(riskPolicy.takeProfit.thresholdPct)
+                          : 'Disabled'
+                      }
+                      detail={`Action: ${formatRiskLabel(riskPolicy.takeProfit?.action)}.`}
                     />
                     <PanelTile
-                      label="Trade Notional"
-                      value={riskValue(strategy.config.riskPolicy, 'maxTradeNotionalBaseCcy')}
-                      detail="Per-trade liquidity guardrail."
+                      label="Reentry"
+                      value={`${riskPolicy.reentry.cooldownBars} bars`}
+                      detail={
+                        riskPolicy.reentry.requireApproval
+                          ? 'Manual approval required.'
+                          : 'Automatic reentry allowed.'
+                      }
                     />
                   </div>
                 ) : (
                   <EmptySection>
-                    No risk policy is attached. Open Edit Strategy to add the shared risk-policy
-                    payload.
+                    No risk policy snapshot is attached to this strategy revision.
                   </EmptySection>
                 )}
               </div>
@@ -785,7 +396,8 @@ export function StrategyEditorPanel({
                 <div>
                   <h4 className="font-display text-lg text-foreground">Recent Backtest Runs</h4>
                   <p className="text-sm text-muted-foreground">
-                    Existing run history stays visible while analytics APIs own strategy comparison.
+                    Historical runs stay tied to their strategy revision and resolved config
+                    snapshot.
                   </p>
                 </div>
                 <Badge variant="secondary">{recentRuns.length} runs</Badge>

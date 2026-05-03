@@ -17,6 +17,17 @@ export const rankingApi = {
     return request<RankingSchemaDetail>(`/rankings/${encodeURIComponent(name)}/detail`, { signal });
   },
 
+  async getRankingSchemaRevision(
+    name: string,
+    version: number,
+    signal?: AbortSignal
+  ): Promise<RankingSchemaDetail> {
+    return request<RankingSchemaDetail>(
+      `/rankings/${encodeURIComponent(name)}/revisions/${encodeURIComponent(String(version))}`,
+      { signal }
+    );
+  },
+
   async getRankingCatalog(signal?: AbortSignal): Promise<RankingCatalogResponse> {
     return request<RankingCatalogResponse>('/rankings/catalog', { signal });
   },

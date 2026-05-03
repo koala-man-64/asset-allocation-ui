@@ -3,8 +3,9 @@ import type {
   ExitRulePriceField,
   ExitRuleType,
   IntrabarConflictPolicy,
-  RegimePolicy,
+  RegimePolicyWithVersion,
   RegimePolicyMode,
+  StrategyRiskPolicy,
   StrategyDetail
 } from '@/types/strategy';
 
@@ -37,13 +38,78 @@ export const REGIME_POLICY_MODES: Array<{ value: RegimePolicyMode; label: string
   { value: 'observe_only', label: 'Observe Only' }
 ];
 
-const DEFAULT_REGIME_POLICY: RegimePolicy = {
+const DEFAULT_REGIME_POLICY: RegimePolicyWithVersion = {
   modelName: 'default-regime',
+  modelVersion: 1,
   mode: 'observe_only'
 };
 
-export function buildDefaultRegimePolicy(): RegimePolicy {
+const DEFAULT_RISK_POLICY: StrategyRiskPolicy = {
+  enabled: true,
+  scope: 'strategy',
+  stopLoss: {
+    id: 'strategy-stop-loss',
+    enabled: false,
+    basis: 'strategy_nav_drawdown',
+    thresholdPct: 0.1,
+    action: 'reduce_exposure',
+    reductionPct: 0.5
+  },
+  takeProfit: {
+    id: 'strategy-take-profit',
+    enabled: false,
+    basis: 'strategy_nav_gain',
+    thresholdPct: 0.2,
+    action: 'rebalance_to_target',
+    reductionPct: null
+  },
+  reentry: {
+    cooldownBars: 0,
+    requireApproval: false
+  }
+};
+
+export function buildDefaultRegimePolicy(): RegimePolicyWithVersion {
   return { ...DEFAULT_REGIME_POLICY };
+}
+
+export function buildDefaultRiskPolicy(): StrategyRiskPolicy {
+  return {
+    ...DEFAULT_RISK_POLICY,
+    stopLoss: DEFAULT_RISK_POLICY.stopLoss ? { ...DEFAULT_RISK_POLICY.stopLoss } : null,
+    takeProfit: DEFAULT_RISK_POLICY.takeProfit ? { ...DEFAULT_RISK_POLICY.takeProfit } : null,
+    reentry: { ...DEFAULT_RISK_POLICY.reentry }
+  };
+}
+
+function normalizeRiskPolicy(
+  policy: StrategyRiskPolicy | null | undefined
+): StrategyRiskPolicy | undefined {
+  if (!policy) {
+    return undefined;
+  }
+
+  const defaults = buildDefaultRiskPolicy();
+  return {
+    ...defaults,
+    ...policy,
+    stopLoss:
+      policy.stopLoss === undefined
+        ? defaults.stopLoss
+        : policy.stopLoss
+          ? { ...(defaults.stopLoss || {}), ...policy.stopLoss }
+          : policy.stopLoss,
+    takeProfit:
+      policy.takeProfit === undefined
+        ? defaults.takeProfit
+        : policy.takeProfit
+          ? { ...(defaults.takeProfit || {}), ...policy.takeProfit }
+          : policy.takeProfit,
+    reentry: {
+      ...defaults.reentry,
+      ...policy.reentry
+    }
+  };
 }
 
 export function buildEmptyStrategy(): StrategyDetail {
@@ -53,6 +119,15 @@ export function buildEmptyStrategy(): StrategyDetail {
     description: '',
     config: {
       universeConfigName: undefined,
+      universeConfigVersion: undefined,
+      rankingSchemaName: undefined,
+      rankingSchemaVersion: undefined,
+      regimePolicyConfigName: undefined,
+      regimePolicyConfigVersion: undefined,
+      riskPolicyName: undefined,
+      riskPolicyVersion: undefined,
+      exitRuleSetName: undefined,
+      exitRuleSetVersion: undefined,
       rebalance: 'monthly',
       longOnly: true,
       topN: 20,
@@ -62,6 +137,7 @@ export function buildEmptyStrategy(): StrategyDetail {
       intrabarConflictPolicy: 'stop_first',
       regimePolicy: undefined,
       riskPolicy: undefined,
+      strategyRiskPolicy: undefined,
       exits: []
     }
   };
@@ -70,7 +146,8 @@ export function buildEmptyStrategy(): StrategyDetail {
 export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): StrategyDetail {
   const base = buildEmptyStrategy();
   const incomingPolicy = strategy.config.regimePolicy;
-  const incomingRiskPolicy = strategy.config.riskPolicy;
+  const incomingRiskPolicy = strategy.config.riskPolicy || strategy.config.strategyRiskPolicy;
+  const normalizedRiskPolicy = normalizeRiskPolicy(incomingRiskPolicy);
 
   return {
     ...base,
@@ -84,12 +161,8 @@ export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): Str
             ...incomingPolicy
           }
         : undefined,
-      riskPolicy: incomingRiskPolicy
-        ? {
-            ...incomingRiskPolicy,
-            notes: incomingRiskPolicy.notes ?? ''
-          }
-        : undefined,
+      riskPolicy: normalizedRiskPolicy,
+      strategyRiskPolicy: normalizedRiskPolicy,
       exits: strategy.config.exits || []
     }
   };

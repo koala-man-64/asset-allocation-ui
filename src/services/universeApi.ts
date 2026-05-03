@@ -18,6 +18,17 @@ export const universeApi = {
     });
   },
 
+  async getUniverseConfigRevision(
+    name: string,
+    version: number,
+    signal?: AbortSignal
+  ): Promise<UniverseConfigDetail> {
+    return request<UniverseConfigDetail>(
+      `/universes/${encodeURIComponent(name)}/revisions/${encodeURIComponent(String(version))}`,
+      { signal }
+    );
+  },
+
   async saveUniverseConfig(
     payload: {
       name: string;

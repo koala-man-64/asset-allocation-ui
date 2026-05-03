@@ -41,10 +41,7 @@ import type {
   TradeOrderType,
   TradeTimeInForce
 } from '@asset-allocation/contracts';
-import type {
-  TradeAccountDetailView,
-  TradeAccountSummaryView
-} from '@/services/tradeDeskModels';
+import type { TradeAccountDetailView, TradeAccountSummaryView } from '@/services/tradeDeskModels';
 import {
   ActivityTimeline,
   OrdersTable,
@@ -80,6 +77,8 @@ type WorkflowMessage = {
   title: string;
   message: string;
 };
+
+const EMPTY_ACCOUNTS: TradeAccountSummaryView[] = [];
 
 const EMPTY_DRAFT: OrderDraft = {
   symbol: '',
@@ -177,10 +176,20 @@ function buildPreviewRequest(
       errors.push('Stop price is required for stop orders.');
     }
   }
-  if (detail?.riskLimits.maxShareQuantity && quantity && quantity > detail.riskLimits.maxShareQuantity) {
-    errors.push(`Quantity exceeds the account share limit of ${formatNumber(detail.riskLimits.maxShareQuantity)}.`);
+  if (
+    detail?.riskLimits.maxShareQuantity &&
+    quantity &&
+    quantity > detail.riskLimits.maxShareQuantity
+  ) {
+    errors.push(
+      `Quantity exceeds the account share limit of ${formatNumber(detail.riskLimits.maxShareQuantity)}.`
+    );
   }
-  if (detail?.riskLimits.maxOrderNotional && notional && notional > detail.riskLimits.maxOrderNotional) {
+  if (
+    detail?.riskLimits.maxOrderNotional &&
+    notional &&
+    notional > detail.riskLimits.maxOrderNotional
+  ) {
     errors.push(
       `Notional exceeds the account order limit of ${formatCurrency(detail.riskLimits.maxOrderNotional)}.`
     );
@@ -297,7 +306,9 @@ function DeskControlsRail({
           Account Controls
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Badge variant={readinessVariant(account.readiness)}>{titleCase(account.readiness)}</Badge>
+          <Badge variant={readinessVariant(account.readiness)}>
+            {titleCase(account.readiness)}
+          </Badge>
           <Badge variant={environmentVariant(account.environment)}>
             {account.environment.toUpperCase()}
           </Badge>
@@ -444,7 +455,8 @@ function OrderTicket({
   submitPending: boolean;
 }) {
   const allowedOrderTypes = getAllowedOrderTypes(account, detail);
-  const warningChecks = preview?.riskChecks.filter((check) => !check.blocking && check.status === 'warning') ?? [];
+  const warningChecks =
+    preview?.riskChecks.filter((check) => !check.blocking && check.status === 'warning') ?? [];
   const missingAcknowledgements = warningChecks.some(
     (check) => !acknowledgedRiskCheckIds.has(check.checkId)
   );
@@ -721,7 +733,7 @@ export function TradeDeskPage() {
     queryFn: ({ signal }) => tradeDeskApi.listAccounts(signal),
     refetchInterval: 30_000
   });
-  const accounts = accountsQuery.data?.accounts ?? [];
+  const accounts = accountsQuery.data?.accounts ?? EMPTY_ACCOUNTS;
 
   useEffect(() => {
     if (!accounts.length) {
@@ -865,10 +877,7 @@ export function TradeDeskPage() {
       setWorkflowMessage({
         tone: 'error',
         title: 'Submit Failed',
-        message: extractTradeDeskErrorMessage(
-          error,
-          'The order submission could not be completed.'
-        )
+        message: extractTradeDeskErrorMessage(error, 'The order submission could not be completed.')
       });
     }
   });
@@ -967,7 +976,9 @@ export function TradeDeskPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => activeAccountId && invalidateAccountQueries(queryClient, activeAccountId)}
+              onClick={() =>
+                activeAccountId && invalidateAccountQueries(queryClient, activeAccountId)
+              }
             >
               <RefreshCw className="size-4" />
               Refresh

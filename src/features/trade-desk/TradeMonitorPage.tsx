@@ -17,10 +17,7 @@ import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { tradeDeskApi, tradeDeskKeys } from '@/services/tradeDeskApi';
-import type {
-  TradeAccountDetailView,
-  TradeAccountSummaryView
-} from '@/services/tradeDeskModels';
+import type { TradeAccountDetailView, TradeAccountSummaryView } from '@/services/tradeDeskModels';
 import {
   ActivityTimeline,
   BlotterTable,
@@ -61,10 +58,15 @@ function pnlClassName(value?: number | null) {
   return value > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive';
 }
 
-function activeAlertCount(account: TradeAccountSummaryView, detail?: TradeAccountDetailView | null) {
+function activeAlertCount(
+  account: TradeAccountSummaryView,
+  detail?: TradeAccountDetailView | null
+) {
   const detailCount = detail?.alerts.filter((alert) => alert.status !== 'resolved').length;
   return detailCount ?? account.unresolvedAlertCount;
 }
+
+const EMPTY_ACCOUNTS: TradeAccountSummaryView[] = [];
 
 function RiskLimitsPanel({ detail }: { detail: TradeAccountDetailView | null }) {
   if (!detail) {
@@ -372,7 +374,7 @@ export function TradeMonitorPage() {
     queryFn: ({ signal }) => tradeDeskApi.listAccounts(signal),
     refetchInterval: 30_000
   });
-  const accounts = accountsQuery.data?.accounts ?? [];
+  const accounts = accountsQuery.data?.accounts ?? EMPTY_ACCOUNTS;
 
   useEffect(() => {
     if (!accounts.length) {

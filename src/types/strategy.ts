@@ -1,13 +1,15 @@
 // Core data types for the Strategy & Backtest Evaluation Dashboard
 
 import type {
+  ExitRule,
+  IntrabarConflictPolicy,
   RankingSchemaConfig,
+  RegimePolicy,
   StrategyConfig,
   UniverseConditionOperator as ContractUniverseConditionOperator,
   UniverseSource,
   UniverseValue
 } from '@asset-allocation/contracts';
-import type { StrategyRiskPolicy } from '@/types/strategyAnalytics';
 
 export type {
   ExitRule,
@@ -33,11 +35,168 @@ export type {
 } from '@asset-allocation/contracts';
 
 export type UniverseConditionOperator = ContractUniverseConditionOperator;
+export type RegimePolicyWithVersion = RegimePolicy & { modelVersion?: number | null };
+
+export type StrategyRiskPolicyScope = 'strategy' | 'sleeve';
+export type StrategyRiskStopLossBasis = 'strategy_nav_drawdown' | 'sleeve_nav_drawdown';
+export type StrategyRiskTakeProfitBasis = 'strategy_nav_gain' | 'sleeve_nav_gain';
+export type StrategyRiskStopLossAction = 'reduce_exposure' | 'liquidate' | 'freeze_buys';
+export type StrategyRiskTakeProfitAction = 'reduce_exposure' | 'rebalance_to_target';
+
+export interface StrategyRiskStopLossPolicy {
+  id: string;
+  enabled: boolean;
+  basis: StrategyRiskStopLossBasis;
+  thresholdPct: number;
+  action: StrategyRiskStopLossAction;
+  reductionPct?: number | null;
+}
+
+export interface StrategyRiskTakeProfitPolicy {
+  id: string;
+  enabled: boolean;
+  basis: StrategyRiskTakeProfitBasis;
+  thresholdPct: number;
+  action: StrategyRiskTakeProfitAction;
+  reductionPct?: number | null;
+}
+
+export interface StrategyRiskReentryPolicy {
+  cooldownBars: number;
+  requireApproval: boolean;
+}
+
+export interface StrategyRiskPolicy {
+  enabled: boolean;
+  scope: StrategyRiskPolicyScope;
+  stopLoss?: StrategyRiskStopLossPolicy | null;
+  takeProfit?: StrategyRiskTakeProfitPolicy | null;
+  reentry: StrategyRiskReentryPolicy;
+}
 
 export type UniverseGroupOperator = 'and' | 'or';
 export type StrategyConfigWithRiskPolicy = StrategyConfig & {
+  universeConfigVersion?: number | null;
+  rankingSchemaVersion?: number | null;
+  regimePolicyConfigName?: string | null;
+  regimePolicyConfigVersion?: number | null;
+  riskPolicyName?: string | null;
+  riskPolicyVersion?: number | null;
+  exitRuleSetName?: string | null;
+  exitRuleSetVersion?: number | null;
+  regimePolicy?: RegimePolicyWithVersion | null;
   riskPolicy?: StrategyRiskPolicy | null;
+  strategyRiskPolicy?: StrategyRiskPolicy | null;
 };
+
+export interface ConfigSaveResponse {
+  status: string;
+  message: string;
+  version: number;
+}
+
+export interface ConfigMutationResponse {
+  status: string;
+  message: string;
+}
+
+export interface ConfigRevisionSummary<ConfigShape> {
+  name: string;
+  version: number;
+  description?: string;
+  config: ConfigShape;
+  configHash?: string | null;
+  createdAt?: string | null;
+  createdBy?: string | null;
+}
+
+export interface RegimePolicyConfig {
+  modelName: string;
+  modelVersion?: number | null;
+  mode: 'observe_only';
+}
+
+export interface RegimePolicyConfigSummary {
+  name: string;
+  description?: string;
+  version: number;
+  archived?: boolean;
+  usageCount?: number;
+  modelName?: string;
+  modelVersion?: number | null;
+  mode?: 'observe_only';
+  updatedAt?: string | null;
+}
+
+export type RegimePolicyConfigRevision = ConfigRevisionSummary<RegimePolicyConfig>;
+
+export interface RegimePolicyConfigDetail {
+  policy: RegimePolicyConfigSummary;
+  activeRevision?: RegimePolicyConfigRevision | null;
+  revisions: RegimePolicyConfigRevision[];
+}
+
+export interface RegimePolicyConfigUpsertRequest {
+  name: string;
+  description?: string;
+  config: RegimePolicyConfig;
+}
+
+export interface RiskPolicyConfig {
+  policy: StrategyRiskPolicy;
+}
+
+export interface RiskPolicyConfigSummary {
+  name: string;
+  description?: string;
+  version: number;
+  archived?: boolean;
+  usageCount?: number;
+  updatedAt?: string | null;
+}
+
+export type RiskPolicyConfigRevision = ConfigRevisionSummary<RiskPolicyConfig>;
+
+export interface RiskPolicyConfigDetail {
+  policy: RiskPolicyConfigSummary;
+  activeRevision?: RiskPolicyConfigRevision | null;
+  revisions: RiskPolicyConfigRevision[];
+}
+
+export interface RiskPolicyConfigUpsertRequest {
+  name: string;
+  description?: string;
+  config: RiskPolicyConfig;
+}
+
+export interface ExitRuleSetConfig {
+  intrabarConflictPolicy: IntrabarConflictPolicy;
+  exits: ExitRule[];
+}
+
+export interface ExitRuleSetSummary {
+  name: string;
+  description?: string;
+  version: number;
+  archived?: boolean;
+  usageCount?: number;
+  ruleCount?: number;
+  updatedAt?: string | null;
+}
+
+export type ExitRuleSetRevision = ConfigRevisionSummary<ExitRuleSetConfig>;
+
+export interface ExitRuleSetDetail {
+  ruleSet: ExitRuleSetSummary;
+  activeRevision?: ExitRuleSetRevision | null;
+  revisions: ExitRuleSetRevision[];
+}
+
+export interface ExitRuleSetUpsertRequest {
+  name: string;
+  description?: string;
+  config: ExitRuleSetConfig;
+}
 
 export type JobCategory = 'data-pipeline' | 'strategy-compute' | 'operational-support';
 export type JobMetadataSource = 'tags' | 'legacy-catalog' | 'unknown';

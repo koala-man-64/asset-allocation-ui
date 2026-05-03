@@ -51,7 +51,11 @@ function getInitialPreviewDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function RankingConfigPage() {
+interface RankingConfigPageProps {
+  embedded?: boolean;
+}
+
+export function RankingConfigPage({ embedded = false }: RankingConfigPageProps = {}) {
   const queryClient = useQueryClient();
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -258,7 +262,7 @@ export function RankingConfigPage() {
         setBaselineSnapshot(serializeSchemaDetail(emptyDraft));
       }
       resetPreviewState();
-      toast.success(`Ranking schema ${name} deleted`);
+      toast.success(`Ranking schema ${name} archived`);
     },
     onError: (error) => {
       toast.error(`Failed to delete ranking schema: ${formatSystemStatusText(error)}`);
@@ -539,73 +543,75 @@ export function RankingConfigPage() {
   };
 
   return (
-    <div className="page-shell space-y-6">
-      <PageHero
-        kicker="Ranking Configuration"
-        title="Ranking Workbench"
-        subtitle="Build ranking schemas as a guided scoring stack instead of managing one long ladder of dropdowns and nested buttons."
-        actions={
-          <>
-            <Sheet open={isLibraryOpen} onOpenChange={setIsLibraryOpen}>
-              <SheetTrigger asChild>
-                <Button type="button" variant="outline" className="xl:hidden">
-                  <LayoutPanelLeft className="h-4 w-4" />
-                  Browse Schemas
-                </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                className="w-[92vw] border-mcm-walnut bg-background p-0 sm:max-w-xl"
-              >
-                <SheetHeader className="border-b border-border/40">
-                  <SheetTitle>Ranking Schema Library</SheetTitle>
-                  <SheetDescription>
-                    Switch between saved schemas or open a new draft workspace.
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="h-[calc(100vh-84px)] overflow-hidden p-4">
-                  <RankingSchemaLibrary
-                    schemas={schemas}
-                    selectedSchemaName={selectedSchemaName}
-                    isCreatingNew={isCreatingNew}
-                    hasUnsavedChanges={hasUnsavedChanges}
-                    draftName={draft.name}
-                    isLoading={isSchemasLoading}
-                    error={listError}
-                    onCreateNew={openNewDraft}
-                    onSelectSchema={loadSchema}
-                    className="h-full border-0 shadow-none before:hidden after:hidden"
-                  />
-                </div>
-              </SheetContent>
-            </Sheet>
+    <div className={embedded ? 'space-y-6' : 'page-shell space-y-6'}>
+      {!embedded && (
+        <PageHero
+          kicker="Ranking Configuration"
+          title="Ranking Workbench"
+          subtitle="Build ranking schemas as a guided scoring stack instead of managing one long ladder of dropdowns and nested buttons."
+          actions={
+            <>
+              <Sheet open={isLibraryOpen} onOpenChange={setIsLibraryOpen}>
+                <SheetTrigger asChild>
+                  <Button type="button" variant="outline" className="xl:hidden">
+                    <LayoutPanelLeft className="h-4 w-4" />
+                    Browse Schemas
+                  </Button>
+                </SheetTrigger>
+                <SheetContent
+                  side="left"
+                  className="w-[92vw] border-mcm-walnut bg-background p-0 sm:max-w-xl"
+                >
+                  <SheetHeader className="border-b border-border/40">
+                    <SheetTitle>Ranking Schema Library</SheetTitle>
+                    <SheetDescription>
+                      Switch between saved schemas or open a new draft workspace.
+                    </SheetDescription>
+                  </SheetHeader>
+                  <div className="h-[calc(100vh-84px)] overflow-hidden p-4">
+                    <RankingSchemaLibrary
+                      schemas={schemas}
+                      selectedSchemaName={selectedSchemaName}
+                      isCreatingNew={isCreatingNew}
+                      hasUnsavedChanges={hasUnsavedChanges}
+                      draftName={draft.name}
+                      isLoading={isSchemasLoading}
+                      error={listError}
+                      onCreateNew={openNewDraft}
+                      onSelectSchema={loadSchema}
+                      className="h-full border-0 shadow-none before:hidden after:hidden"
+                    />
+                  </div>
+                </SheetContent>
+              </Sheet>
 
-            <Button type="button" variant="secondary" onClick={openNewDraft}>
-              <Plus className="h-4 w-4" />
-              New Draft
-            </Button>
-          </>
-        }
-        metrics={[
-          {
-            label: 'Saved Schemas',
-            value: String(schemas.length),
-            detail: 'Published ranking schemas available in the library.'
-          },
-          {
-            label: 'Draft Status',
-            value: hasUnsavedChanges ? 'Unsaved' : 'Saved',
-            detail: hasUnsavedChanges
-              ? 'The current workspace differs from the saved baseline.'
-              : 'The current workspace matches the last saved baseline.'
-          },
-          {
-            label: 'Structure',
-            value: `${draft.config.groups.length}G / ${factorCount}F`,
-            detail: 'Current groups and factors in the active workspace.'
+              <Button type="button" variant="secondary" onClick={openNewDraft}>
+                <Plus className="h-4 w-4" />
+                New Draft
+              </Button>
+            </>
           }
-        ]}
-      />
+          metrics={[
+            {
+              label: 'Saved Schemas',
+              value: String(schemas.length),
+              detail: 'Published ranking schemas available in the library.'
+            },
+            {
+              label: 'Draft Status',
+              value: hasUnsavedChanges ? 'Unsaved' : 'Saved',
+              detail: hasUnsavedChanges
+                ? 'The current workspace differs from the saved baseline.'
+                : 'The current workspace matches the last saved baseline.'
+            },
+            {
+              label: 'Structure',
+              value: `${draft.config.groups.length}G / ${factorCount}F`,
+              detail: 'Current groups and factors in the active workspace.'
+            }
+          ]}
+        />
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
         <div className="hidden xl:block">
@@ -741,7 +747,7 @@ export function RankingConfigPage() {
                   onClick={handleDeleteSchema}
                   disabled={!selectedSchemaName || deleteMutation.isPending}
                 >
-                  {deleteMutation.isPending ? 'Deleting...' : 'Delete Schema'}
+                  {deleteMutation.isPending ? 'Archiving...' : 'Archive Schema'}
                 </Button>
               </div>
 

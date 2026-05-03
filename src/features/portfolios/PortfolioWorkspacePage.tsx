@@ -23,7 +23,6 @@ import {
   compactMetricToneClass,
   formatDate,
   formatPercent,
-  formatTimestamp,
   statusBadgeVariant,
   titleCaseWords
 } from '@/features/portfolios/lib/portfolioPresentation';
@@ -518,29 +517,26 @@ export function PortfolioWorkspacePage() {
       buildPortfolioBenchmarkComparison(monitorSnapshot?.history ?? [], benchmarkQuery.data ?? []),
     [benchmarkQuery.data, monitorSnapshot?.history]
   );
-  const nextRebalance = useMemo(
-    () => {
-      if (monitorSnapshot?.nextRebalance) {
-        return buildNextRebalanceWindow(monitorSnapshot.nextRebalance);
-      }
+  const nextRebalance = useMemo(() => {
+    if (monitorSnapshot?.nextRebalance) {
+      return buildNextRebalanceWindow(monitorSnapshot.nextRebalance);
+    }
 
-      return deriveNextRebalanceWindow({
-        cadence: draft.config.rebalanceCadence,
-        rebalanceAnchor: draft.config.rebalanceAnchor,
-        lastBuiltAt: draft.lastBuiltAt,
-        effectiveFrom: draft.activeAssignment?.effectiveFrom,
-        asOfDate: monitorSnapshot?.asOfDate
-      });
-    },
-    [
-      monitorSnapshot?.nextRebalance,
-      draft.activeAssignment?.effectiveFrom,
-      draft.config.rebalanceAnchor,
-      draft.config.rebalanceCadence,
-      draft.lastBuiltAt,
-      monitorSnapshot?.asOfDate
-    ]
-  );
+    return deriveNextRebalanceWindow({
+      cadence: draft.config.rebalanceCadence,
+      rebalanceAnchor: draft.config.rebalanceAnchor,
+      lastBuiltAt: draft.lastBuiltAt,
+      effectiveFrom: draft.activeAssignment?.effectiveFrom,
+      asOfDate: monitorSnapshot?.asOfDate
+    });
+  }, [
+    monitorSnapshot?.nextRebalance,
+    draft.activeAssignment?.effectiveFrom,
+    draft.config.rebalanceAnchor,
+    draft.config.rebalanceCadence,
+    draft.lastBuiltAt,
+    monitorSnapshot?.asOfDate
+  ]);
 
   const confirmDiscardDraft = (): boolean => {
     if (!hasUnsavedChanges) {
