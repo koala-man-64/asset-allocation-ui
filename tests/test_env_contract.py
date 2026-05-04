@@ -237,6 +237,24 @@ def test_nginx_static_asset_requests_do_not_fall_back_to_spa_shell() -> None:
     assert "try_files $uri $uri/ /index.html;" not in asset_location
 
 
+def test_nginx_deep_spa_routes_use_no_store_shell_fallback() -> None:
+    text = (repo_root() / "nginx.conf").read_text(encoding="utf-8")
+    route_location = re.search(r"location / \{(?P<body>.*?)\n  \}", text, re.S)
+    assert route_location
+    assert "try_files $uri $uri/ @spa_shell;" in route_location.group("body")
+
+    fallback_location = re.search(
+        r"location @spa_shell \{(?P<body>.*?)\n  \}", text, re.S
+    )
+    assert fallback_location
+    fallback_body = fallback_location.group("body")
+    assert (
+        'Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate"'
+        in fallback_body
+    )
+    assert "try_files /index.html =404;" in fallback_body
+
+
 def test_browser_bootstrap_loads_only_ui_config() -> None:
     text = (repo_root() / "index.html").read_text(encoding="utf-8")
     assert '<script src="/ui-config.js"></script>' in text
@@ -281,6 +299,7 @@ def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None
     assert "--validation-method CNAME \\" in text
     assert "https://${UI_PUBLIC_HOSTNAME}/ui-config.js" in text
     assert "ui-config.js advertises apiBaseUrl=" in validator_text
+    assert "deepRouteShell=" in asset_validator_text
     assert "missingAssetCheck=" in asset_validator_text
     assert "expected JavaScript" in asset_validator_text
     assert "Allowed: $*" in text

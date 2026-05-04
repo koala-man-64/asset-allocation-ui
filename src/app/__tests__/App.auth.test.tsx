@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import App from '../App';
 import { renderWithProviders } from '@/test/utils';
@@ -104,6 +105,14 @@ vi.mock('@/features/postgres-explorer/PostgresExplorerPage', () => ({
   PostgresExplorerPage: () => (
     <div data-testid="mock-postgres-explorer">Mock Postgres Explorer</div>
   )
+}));
+
+vi.mock('@/features/strategies/StrategyConfigPage', () => ({
+  StrategyConfigPage: () => <div data-testid="mock-strategy-config">Mock Strategy Workbench</div>
+}));
+
+vi.mock('@/features/backtests/BacktestWorkspacePage', () => ({
+  BacktestWorkspacePage: () => <div data-testid="mock-backtest-workspace">Mock Backtest Workspace</div>
 }));
 
 describe('App OIDC auth flow', () => {
@@ -231,6 +240,31 @@ describe('App OIDC auth flow', () => {
     expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
     expect(DataService.getAuthSessionStatusWithMeta).toHaveBeenCalledTimes(1);
     expect(mockUseRealtime).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  it('renders each clicked left-navigation route after protected session revalidation', async () => {
+    const user = userEvent.setup();
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue(validSessionResponse());
+    window.history.pushState({}, 'System Status', '/system-status');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Strategies', { selector: 'a' }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/strategies');
+      expect(screen.getByTestId('mock-strategy-config')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('mock-system-status')).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Backtests', { selector: 'a' }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/backtests');
+      expect(screen.getByTestId('mock-backtest-workspace')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('mock-strategy-config')).not.toBeInTheDocument();
+    expect(DataService.getAuthSessionStatusWithMeta).toHaveBeenCalledTimes(3);
   });
 
   it('shows access denied when the API session exists but the backend rejects access', async () => {

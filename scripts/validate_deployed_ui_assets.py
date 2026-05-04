@@ -21,6 +21,7 @@ JAVASCRIPT_CONTENT_TYPES = {
     "text/ecmascript",
     "text/javascript",
 }
+SPA_DEEP_ROUTE_PATH = "/strategy-configurations"
 
 
 class ValidationError(RuntimeError):
@@ -28,11 +29,19 @@ class ValidationError(RuntimeError):
 
 
 class HttpResult:
-    def __init__(self, url: str, status: int, content_type: str, body: bytes) -> None:
+    def __init__(
+        self,
+        url: str,
+        status: int,
+        content_type: str,
+        body: bytes,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.url = url
         self.status = status
         self.content_type = content_type
         self.body = body
+        self.headers = {key.lower(): value for key, value in (headers or {}).items()}
 
     def text(self) -> str:
         return self.body.decode("utf-8", errors="replace")
@@ -70,10 +79,14 @@ def fetch_url(url: str, timeout_seconds: float) -> HttpResult:
         with urlopen(request, timeout=timeout_seconds) as response:
             status = getattr(response, "status", None) or response.getcode()
             content_type = response.headers.get_content_type()
-            return HttpResult(url, int(status), content_type, response.read())
+            headers = {key: value for key, value in response.headers.items()}
+            return HttpResult(url, int(status), content_type, response.read(), headers)
     except HTTPError as exc:
         content_type = exc.headers.get_content_type() if exc.headers else ""
-        return HttpResult(url, int(exc.code), content_type, exc.read())
+        headers = (
+            {key: value for key, value in exc.headers.items()} if exc.headers else {}
+        )
+        return HttpResult(url, int(exc.code), content_type, exc.read(), headers)
 
 
 def require_status(result: HttpResult, expected_status: int) -> None:
@@ -88,6 +101,19 @@ def require_javascript(result: HttpResult) -> None:
     if result.content_type.lower() not in JAVASCRIPT_CONTENT_TYPES:
         raise ValidationError(
             f"GET {result.url} returned Content-Type {result.content_type or '<empty>'}, expected JavaScript."
+        )
+
+
+def require_no_store_cache_control(result: HttpResult) -> None:
+    cache_control = result.headers.get("cache-control", "")
+    directives = {
+        directive.strip().lower()
+        for directive in cache_control.split(",")
+        if directive.strip()
+    }
+    if "no-store" not in directives:
+        raise ValidationError(
+            f"GET {result.url} returned Cache-Control {cache_control or '<empty>'}, expected no-store."
         )
 
 
@@ -120,6 +146,12 @@ def validate_deployed_ui_assets(
 
     index_result = fetch(f"{origin}/", timeout_seconds)
     require_status(index_result, 200)
+    require_no_store_cache_control(index_result)
+
+    deep_route_url = f"{origin}{SPA_DEEP_ROUTE_PATH}"
+    deep_route_result = fetch(deep_route_url, timeout_seconds)
+    require_status(deep_route_result, 200)
+    require_no_store_cache_control(deep_route_result)
 
     main_module_url = parse_main_module_url(origin, index_result.text())
     main_module_result = fetch(main_module_url, timeout_seconds)
@@ -138,6 +170,7 @@ def validate_deployed_ui_assets(
         "main_module_url": main_module_url,
         "chunk_count": len(chunk_urls),
         "missing_asset_url": missing_asset_url,
+        "deep_route_url": deep_route_url,
     }
 
 
@@ -173,7 +206,9 @@ def validate_deployed_ui_assets_with_retries(
 
     if isinstance(last_error, ValidationError):
         raise last_error
-    raise ValidationError(str(last_error) or "UI asset validation failed.") from last_error
+    raise ValidationError(
+        str(last_error) or "UI asset validation failed."
+    ) from last_error
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -225,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Validated deployed UI assets for {result['ui_origin']}")
     print(f"mainModule={result['main_module_url']}")
     print(f"dynamicChunkCount={result['chunk_count']}")
+    print(f"deepRouteShell={result['deep_route_url']} -> no-store")
     print(f"missingAssetCheck={result['missing_asset_url']} -> 404")
     return 0
 
