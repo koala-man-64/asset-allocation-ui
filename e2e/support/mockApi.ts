@@ -56,6 +56,8 @@ const systemStatusViewPayload = {
         name: 'aca-job-backtest-runner',
         resourceType: 'Microsoft.App/jobs',
         status: 'healthy',
+        azureId:
+          '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner',
         runningState: 'Running',
         lastModifiedAt: NOW,
         signals: []

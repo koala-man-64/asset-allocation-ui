@@ -30,6 +30,13 @@ test('desktop smoke covers shell navigation, collapse state, and system-status a
   page
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.context().route('https://portal.azure.com/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<!doctype html><title>Azure Portal</title>'
+    });
+  });
 
   await page.goto('/');
 
@@ -42,6 +49,22 @@ test('desktop smoke covers shell navigation, collapse state, and system-status a
   });
   await expect(operationalJobs.getByText('aca-job-backtest-runner').first()).toBeVisible();
   await expect(operationalJobs.getByText('aca-job-market-bronze')).toHaveCount(0);
+  const azureJobLink = operationalJobs.getByRole('link', {
+    name: 'Open aca-job-backtest-runner in Azure'
+  });
+  await expect(azureJobLink).toHaveAttribute(
+    'href',
+    'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner'
+  );
+  const azurePopupPromise = page.waitForEvent('popup');
+  await azureJobLink.click();
+  const azurePopup = await azurePopupPromise;
+  await expect
+    .poll(() => azurePopup.url())
+    .toContain(
+      'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner'
+    );
+  await azurePopup.close();
   await expect(page.getByRole('button', { name: 'Expand market details' })).toBeVisible();
 
   const collapseButton = page.getByRole('button', { name: 'Collapse navigation' });

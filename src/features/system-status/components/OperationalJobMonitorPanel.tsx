@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react';
 import {
   Activity,
   ExternalLink,
@@ -11,7 +12,7 @@ import {
   Workflow
 } from 'lucide-react';
 
-import { Button } from '@/app/components/ui/button';
+import { Button, buttonVariants } from '@/app/components/ui/button';
 import {
   Table,
   TableBody,
@@ -62,6 +63,22 @@ const CATEGORY_TONE: Record<OperationalJobCategory, string> = {
 function formatOptionalTimestamp(value?: string | null): string {
   if (!value) return '-';
   return `${formatTimestamp(value)} ago`;
+}
+
+function openPortalLink(event: MouseEvent<HTMLAnchorElement>, url: string) {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.shiftKey
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function CategoryBadge({ category }: { category: OperationalJobCategory }) {
@@ -205,17 +222,19 @@ export function OperationalJobMonitorPanel({
                           <Tooltip>
                             <TooltipTrigger asChild>
                               {jobPortalUrl ? (
-                                <Button
-                                  asChild
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
+                                <a
+                                  href={jobPortalUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(event) => openPortalLink(event, jobPortalUrl)}
+                                  className={cn(
+                                    buttonVariants({ variant: 'ghost', size: 'icon' }),
+                                    'h-8 w-8'
+                                  )}
                                   aria-label={`Open ${job.name} in Azure`}
                                 >
-                                  <a href={jobPortalUrl} target="_blank" rel="noreferrer">
-                                    <ExternalLink className="h-4 w-4" />
-                                  </a>
-                                </Button>
+                                  <ExternalLink className="h-4 w-4" />
+                                </a>
                               ) : (
                                 <Button
                                   variant="ghost"
