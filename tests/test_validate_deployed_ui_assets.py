@@ -119,3 +119,21 @@ def test_validator_rejects_cacheable_deep_route_shell() -> None:
                 deep_route_cache_control="public, max-age=300",
             ),
         )
+
+
+def test_validator_resolves_vite_asset_table_paths_from_app_base() -> None:
+    validator = load_validator_module()
+
+    urls = validator.extract_chunk_urls(
+        "https://asset-allocation-ui.example.com/app/assets/index-abc123.js",
+        """
+        const deps = ["assets/chunk-def456.js", "./lazy-ghi789.js", "/assets/root-jkl012.js"];
+        """,
+    )
+
+    assert urls == [
+        "https://asset-allocation-ui.example.com/app/assets/chunk-def456.js",
+        "https://asset-allocation-ui.example.com/app/assets/lazy-ghi789.js",
+        "https://asset-allocation-ui.example.com/assets/root-jkl012.js",
+    ]
+    assert not any("/assets/assets/" in url for url in urls)

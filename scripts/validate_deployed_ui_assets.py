@@ -22,6 +22,7 @@ JAVASCRIPT_CONTENT_TYPES = {
     "text/javascript",
 }
 SPA_DEEP_ROUTE_PATH = "/strategy-configurations"
+VITE_ASSET_TABLE_PREFIX = "assets/"
 
 
 class ValidationError(RuntimeError):
@@ -128,9 +129,24 @@ def parse_main_module_url(origin: str, index_html: str) -> str:
     return urljoin(f"{origin}/", selected_script)
 
 
+def resolve_app_base_url(main_module_url: str) -> str:
+    parsed = urlsplit(main_module_url)
+    path_prefix = parsed.path.split("/assets/", 1)[0]
+    if path_prefix != parsed.path:
+        base_path = f"{path_prefix.rstrip('/')}/" if path_prefix else "/"
+        return f"{parsed.scheme}://{parsed.netloc}{base_path}"
+    return urljoin(main_module_url, "./")
+
+
+def resolve_chunk_url(main_module_url: str, literal_path: str) -> str:
+    if literal_path.startswith(VITE_ASSET_TABLE_PREFIX):
+        return urljoin(resolve_app_base_url(main_module_url), literal_path)
+    return urljoin(main_module_url, literal_path)
+
+
 def extract_chunk_urls(main_module_url: str, module_text: str) -> list[str]:
     chunk_urls = {
-        urljoin(main_module_url, match.group("path"))
+        resolve_chunk_url(main_module_url, match.group("path"))
         for match in SCRIPT_LITERAL_PATTERN.finditer(module_text)
     }
     return sorted(chunk_urls)
