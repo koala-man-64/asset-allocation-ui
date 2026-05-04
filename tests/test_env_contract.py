@@ -160,10 +160,12 @@ def test_ui_deploy_workflow_is_release_driven_and_uses_repo_var() -> None:
     assert "REPO_VARS_JSON: ${{ toJson(vars) }}" in text
     assert '--vars-json "${REPO_VARS_JSON}"' in text
     assert "vars.API_UPSTREAM" in text
-    assert "actions/workflows/release.yml/runs?branch=main&per_page=20" in text
-    assert (
-        "actions/runs/${{ steps.release-run.outputs.release_run_id }}/artifacts" in text
-    )
+    assert "python scripts/workflows/resolve_release_image_digest.py" in text
+    assert "--artifact ui-release" in text
+    assert "--image-repository asset-allocation-ui" in text
+    assert "--github-output \"$GITHUB_OUTPUT\"" in text
+    assert "actions/workflows/release.yml/runs?branch=main&per_page=20" not in text
+    assert "az acr repository show-manifests" not in text
 
 
 def test_ui_runtime_deploy_workflow_uses_repo_var_only() -> None:
@@ -182,15 +184,24 @@ def test_ui_runtime_deploy_workflow_uses_repo_var_only() -> None:
     assert "contracts_version" not in text
 
 
-def test_ui_rollback_workflow_requires_only_image_digest() -> None:
+def test_ui_rollback_workflow_requires_guarded_release_provenance() -> None:
     text = workflow_text("rollback-prod.yml")
     assert "workflow_dispatch:" in text
     assert "image_digest:" in text
+    assert "release_run_id:" in text
+    assert "release_git_sha:" in text
+    assert "rollback_reason:" in text
     assert "api_upstream:" not in text
     assert "contracts_version:" not in text
     assert "Validate required repo deploy vars" in text
     assert "REPO_VARS_JSON: ${{ toJson(vars) }}" in text
     assert '--vars-json "${REPO_VARS_JSON}"' in text
+    assert "python scripts/workflows/resolve_release_image_digest.py" in text
+    assert "--allow-rollback" in text
+    assert "--max-age-days 14" in text
+    assert '--run-id "${{ inputs.release_run_id }}"' in text
+    assert '--expected-digest "${{ inputs.image_digest }}"' in text
+    assert '--expected-git-sha "${{ inputs.release_git_sha }}"' in text
     assert "uses: ./.github/workflows/deploy-ui-runtime.yml" in text
 
 
@@ -287,6 +298,8 @@ def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None
     assert "vars.UI_OIDC_SCOPES" in text
     assert "python scripts/validate_deployed_ui_oidc.py \\" in text
     assert "python scripts/validate_deployed_ui_assets.py \\" in text
+    assert 'expected_prefix="${acr_login_server}/asset-allocation-ui@sha256:"' in text
+    assert 'test "${actual_image}" = "${{ steps.rollout.outputs.image_digest }}"' in text
     assert '--ui-origin "https://${fqdn}"' in text
     assert '--ui-auth-enabled "${UI_AUTH_ENABLED}"' in text
     assert '--ui-auth-provider "${UI_AUTH_PROVIDER}"' in text
@@ -343,7 +356,27 @@ def test_ui_release_workflow_publishes_release_manifest_artifact() -> None:
     text = workflow_text("release.yml")
     assert "name: ui-release" in text
     assert "path: artifacts/release-manifest.json" in text
+    assert '"artifact_kind": "container-image"' in text
+    assert '"artifact_ref": os.environ["IMAGE_REF"]' in text
     assert '"image_digest": os.environ["IMAGE_DIGEST"]' in text
+    assert '"release_run_id": os.environ["GITHUB_RUN_ID"]' in text
+    assert '"release_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"]' in text
+    assert '"created_at": os.environ["CREATED_AT"]' in text
+
+
+def test_ui_container_workflows_reject_stale_image_paths() -> None:
+    workflow_dir = repo_root() / ".github" / "workflows"
+    workflow_texts = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(workflow_dir.glob("*.yml"))
+    )
+    dockerfile = (repo_root() / "Dockerfile").read_text(encoding="utf-8")
+
+    assert ":latest" not in workflow_texts
+    assert "az acr repository show-manifests" not in workflow_texts
+    assert "docker build --pull" in workflow_texts
+    assert "python scripts/workflows/validate_pinned_image_digests.py" in workflow_texts
+    assert re.search(r"^FROM node:20-slim@sha256:[0-9a-f]{64} AS builder$", dockerfile, re.M)
+    assert re.search(r"^FROM nginx:alpine@sha256:[0-9a-f]{64}$", dockerfile, re.M)
 
 
 def test_ui_release_workflow_supports_manual_dispatch_without_bypassing_ci() -> None:
