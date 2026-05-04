@@ -195,6 +195,35 @@ export function classifyJobCategory(input: {
   return 'other-operational';
 }
 
+function buildOperationalJobUrlIndex(
+  dataLayers: DataLayer[] = [],
+  domainJobKeys: Set<string>
+): Map<string, string> {
+  const urls = new Map<string, string>();
+
+  for (const layer of dataLayers) {
+    for (const domain of layer.domains || []) {
+      const jobName = resolveRunnableJobName({
+        jobName: domain.jobName,
+        jobUrl: domain.jobUrl
+      });
+      const key = toJobKey(jobName);
+      const jobUrl = String(domain.jobUrl || '').trim();
+      if (!key || !jobUrl || urls.has(key)) continue;
+
+      const category = classifyJobCategory({
+        jobName,
+        domainJobKeys
+      });
+      if (category === 'domain-data') continue;
+
+      urls.set(key, jobUrl);
+    }
+  }
+
+  return urls;
+}
+
 function applyRunFields(target: OperationalJobTarget, run?: JobRun | null): OperationalJobTarget {
   if (!run) {
     return target;
@@ -230,7 +259,10 @@ function timestampRank(value?: string | null): number {
   return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
 }
 
-function buildConfiguredJobTarget(job: ExpectedOperationalJob): OperationalJobTarget {
+function buildConfiguredJobTarget(
+  job: ExpectedOperationalJob,
+  jobUrl?: string | null
+): OperationalJobTarget {
   return {
     name: job.name,
     label: job.name,
@@ -243,7 +275,7 @@ function buildConfiguredJobTarget(job: ExpectedOperationalJob): OperationalJobTa
     duration: null,
     recordsProcessed: null,
     triggeredBy: null,
-    jobUrl: null,
+    jobUrl: jobUrl || null,
     signals: null
   };
 }
@@ -280,6 +312,7 @@ export function buildOperationalJobTargets({
   jobStatusesByKey?: Map<string, JobStatusEntry>;
 }): OperationalJobTarget[] {
   const domainJobKeys = buildDomainJobKeySet(dataLayers);
+  const operationalJobUrlsByKey = buildOperationalJobUrlIndex(dataLayers, domainJobKeys);
   const runByKey =
     jobStatusesByKey ??
     new Map(
@@ -297,7 +330,7 @@ export function buildOperationalJobTargets({
   for (const job of EXPECTED_OPERATIONAL_JOBS) {
     const key = toJobKey(job.name);
     if (key) {
-      targets.set(key, buildConfiguredJobTarget(job));
+      targets.set(key, buildConfiguredJobTarget(job, operationalJobUrlsByKey.get(key)));
     }
   }
 
@@ -314,6 +347,7 @@ export function buildOperationalJobTargets({
       domainJobKeys
     });
     if (category === 'domain-data') continue;
+    const existing = targets.get(key);
 
     targets.set(key, {
       name,
@@ -327,7 +361,7 @@ export function buildOperationalJobTargets({
       duration: run?.duration ?? null,
       recordsProcessed: run?.recordsProcessed ?? null,
       triggeredBy: run?.triggeredBy ?? null,
-      jobUrl: resource.azureId || null,
+      jobUrl: resource.azureId || existing?.jobUrl || operationalJobUrlsByKey.get(key) || null,
       signals: resource.signals || null
     });
   }
@@ -370,7 +404,7 @@ export function buildOperationalJobTargets({
       duration: run.duration ?? null,
       recordsProcessed: run.recordsProcessed ?? null,
       triggeredBy: run.triggeredBy || null,
-      jobUrl: null,
+      jobUrl: operationalJobUrlsByKey.get(key) || null,
       signals: null
     });
   }

@@ -27,9 +27,9 @@ import {
   formatDuration,
   formatRecordCount,
   formatTimestamp,
-  getAzureJobExecutionsUrl,
   getStatusBadge,
-  getStatusIcon
+  getStatusIcon,
+  normalizeAzurePortalUrl
 } from '@/features/system-status/lib/SystemStatusHelpers';
 import {
   OPERATIONAL_JOB_CATEGORY_LABELS,
@@ -167,7 +167,7 @@ export function OperationalJobMonitorPanel({
                     (jobControl?.jobName === job.name &&
                       (jobControl.action === 'stop' || jobControl.action === 'suspend'));
                   const controlsDisabled = Boolean(triggeringJob) || Boolean(jobControl);
-                  const executionUrl = getAzureJobExecutionsUrl(job.jobUrl);
+                  const jobPortalUrl = normalizeAzurePortalUrl(job.jobUrl);
 
                   return (
                     <TableRow key={job.name}>
@@ -204,15 +204,15 @@ export function OperationalJobMonitorPanel({
                         <div className="flex items-center justify-end gap-1">
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              {executionUrl ? (
+                              {jobPortalUrl ? (
                                 <Button
                                   asChild
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8"
-                                  aria-label={`Open ${job.name} executions in Azure`}
+                                  aria-label={`Open ${job.name} in Azure`}
                                 >
-                                  <a href={executionUrl} target="_blank" rel="noreferrer">
+                                  <a href={jobPortalUrl} target="_blank" rel="noreferrer">
                                     <ExternalLink className="h-4 w-4" />
                                   </a>
                                 </Button>
@@ -222,14 +222,14 @@ export function OperationalJobMonitorPanel({
                                   size="icon"
                                   className="h-8 w-8"
                                   disabled
-                                  aria-label={`No Azure execution link for ${job.name}`}
+                                  aria-label={`No Azure job link for ${job.name}`}
                                 >
                                   <ExternalLink className="h-4 w-4" />
                                 </Button>
                               )}
                             </TooltipTrigger>
                             <TooltipContent side="left">
-                              {executionUrl ? 'Open Azure executions' : 'Azure link unavailable'}
+                              {jobPortalUrl ? 'Open Azure job' : 'Azure link unavailable'}
                             </TooltipContent>
                           </Tooltip>
 

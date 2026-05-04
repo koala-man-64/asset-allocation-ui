@@ -14,6 +14,8 @@ const BACKTEST_JOB_AZURE_ID =
   '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner';
 const GOLD_REGIME_JOB_AZURE_ID =
   '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/gold-regime-job';
+const GOLD_REGIME_JOB_PORTAL_URL =
+  'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/gold-regime-job/overview';
 
 const DATA_LAYERS: DataLayer[] = [
   {
@@ -322,6 +324,49 @@ describe('operational job classification', () => {
         domainJobKeys
       })
     ).toBe('domain-data');
+  });
+
+  it('carries domain-layer Azure URLs onto expected operational rows', () => {
+    const targets = buildOperationalJobTargets({
+      dataLayers: [
+        {
+          name: 'Gold',
+          description: 'Curated data',
+          status: 'healthy',
+          lastUpdated: '2026-04-18T14:30:00Z',
+          refreshFrequency: 'Daily',
+          domains: [
+            {
+              name: 'regime',
+              type: 'delta',
+              path: 'gold/regime',
+              lastUpdated: '2026-04-18T14:30:00Z',
+              status: 'healthy',
+              jobName: 'gold-regime-job',
+              jobUrl: GOLD_REGIME_JOB_PORTAL_URL
+            }
+          ]
+        }
+      ],
+      managedContainerJobs: [
+        {
+          name: 'gold-regime-job',
+          runningState: 'Succeeded',
+          lastModifiedAt: '2026-04-18T14:31:00Z'
+        }
+      ]
+    });
+
+    expect(targets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'gold-regime-job',
+          category: 'regime',
+          jobUrl: GOLD_REGIME_JOB_PORTAL_URL,
+          runningState: 'Succeeded'
+        })
+      ])
+    );
   });
 
   it('merges live telemetry over seeded expected job rows', () => {

@@ -128,17 +128,17 @@ describe('OperationalJobMonitorPanel', () => {
     expect(screen.queryByRole('button', { name: /View logs for/i })).not.toBeInTheDocument();
   });
 
-  it('links Azure actions to the concrete Container App Job executions blade', () => {
+  it('links Azure actions to the concrete Container App Job overview blade', () => {
     renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
 
     expect(
-      screen.getByRole('link', { name: 'Open aca-job-backtest-runner executions in Azure' })
+      screen.getByRole('link', { name: 'Open aca-job-backtest-runner in Azure' })
     ).toHaveAttribute(
       'href',
-      'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner/executions'
+      'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner'
     );
     expect(
-      screen.getByRole('button', { name: 'No Azure execution link for aca-job-ranking-materialize' })
+      screen.getByRole('button', { name: 'No Azure job link for aca-job-ranking-materialize' })
     ).toBeDisabled();
   });
 
