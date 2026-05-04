@@ -79,7 +79,9 @@ def validate(
     )
 
 
-def test_release_artifact_rejects_expired_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_release_artifact_rejects_expired_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     module = load_resolver()
 
     monkeypatch.setattr(
@@ -117,7 +119,10 @@ def test_validate_manifest_rejects_wrong_artifact_kind() -> None:
 
 def test_validate_manifest_rejects_digest_mismatch() -> None:
     with pytest.raises(SystemExit, match="image_digest does not match"):
-        validate(expected_digest="assetalloc.azurecr.io/asset-allocation-ui@sha256:" + ("b" * 64))
+        validate(
+            expected_digest="assetalloc.azurecr.io/asset-allocation-ui@sha256:"
+            + ("b" * 64)
+        )
 
 
 def test_validate_manifest_rejects_git_sha_mismatch() -> None:

@@ -13,7 +13,9 @@ PINNED_IMAGE_PATTERN = re.compile(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Validate pinned Docker image digests against current tag digests.")
+    parser = argparse.ArgumentParser(
+        description="Validate pinned Docker image digests against current tag digests."
+    )
     parser.add_argument("paths", nargs="*", default=["Dockerfile", ".github/workflows"])
     return parser.parse_args()
 
@@ -23,7 +25,13 @@ def iter_files(paths: list[str]) -> list[Path]:
     for raw_path in paths:
         path = Path(raw_path)
         if path.is_dir():
-            files.extend(sorted(p for p in path.rglob("*") if p.is_file() and p.suffix in {".yml", ".yaml"}))
+            files.extend(
+                sorted(
+                    p
+                    for p in path.rglob("*")
+                    if p.is_file() and p.suffix in {".yml", ".yaml"}
+                )
+            )
         elif path.is_file():
             files.append(path)
     return files
@@ -38,7 +46,9 @@ def pinned_images(paths: list[str]) -> dict[str, set[str]]:
 
 
 def current_digest(image: str) -> str:
-    output = subprocess.check_output(["docker", "buildx", "imagetools", "inspect", image], text=True)
+    output = subprocess.check_output(
+        ["docker", "buildx", "imagetools", "inspect", image], text=True
+    )
     for line in output.splitlines():
         stripped = line.strip()
         if stripped.startswith("Digest:"):
@@ -50,14 +60,18 @@ def validate_pins(paths: list[str]) -> None:
     failures: list[str] = []
     for image, digests in sorted(pinned_images(paths).items()):
         if len(digests) != 1:
-            failures.append(f"{image} has inconsistent pinned digests: {', '.join(sorted(digests))}")
+            failures.append(
+                f"{image} has inconsistent pinned digests: {', '.join(sorted(digests))}"
+            )
             continue
         pinned = next(iter(digests))
         current = current_digest(image)
         if pinned != current:
             failures.append(f"{image} pinned {pinned}, current tag digest is {current}")
     if failures:
-        raise SystemExit("Pinned image digest validation failed:\n" + "\n".join(failures))
+        raise SystemExit(
+            "Pinned image digest validation failed:\n" + "\n".join(failures)
+        )
 
 
 def main() -> None:

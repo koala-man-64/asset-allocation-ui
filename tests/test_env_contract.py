@@ -163,7 +163,7 @@ def test_ui_deploy_workflow_is_release_driven_and_uses_repo_var() -> None:
     assert "python scripts/workflows/resolve_release_image_digest.py" in text
     assert "--artifact ui-release" in text
     assert "--image-repository asset-allocation-ui" in text
-    assert "--github-output \"$GITHUB_OUTPUT\"" in text
+    assert '--github-output "$GITHUB_OUTPUT"' in text
     assert "actions/workflows/release.yml/runs?branch=main&per_page=20" not in text
     assert "az acr repository show-manifests" not in text
 
@@ -299,7 +299,9 @@ def test_ui_runtime_deploy_workflow_verifies_ui_owned_runtime_contract() -> None
     assert "python scripts/validate_deployed_ui_oidc.py \\" in text
     assert "python scripts/validate_deployed_ui_assets.py \\" in text
     assert 'expected_prefix="${acr_login_server}/asset-allocation-ui@sha256:"' in text
-    assert 'test "${actual_image}" = "${{ steps.rollout.outputs.image_digest }}"' in text
+    assert (
+        'test "${actual_image}" = "${{ steps.rollout.outputs.image_digest }}"' in text
+    )
     assert '--ui-origin "https://${fqdn}"' in text
     assert '--ui-auth-enabled "${UI_AUTH_ENABLED}"' in text
     assert '--ui-auth-provider "${UI_AUTH_PROVIDER}"' in text
@@ -375,7 +377,9 @@ def test_ui_container_workflows_reject_stale_image_paths() -> None:
     assert "az acr repository show-manifests" not in workflow_texts
     assert "docker build --pull" in workflow_texts
     assert "python scripts/workflows/validate_pinned_image_digests.py" in workflow_texts
-    assert re.search(r"^FROM node:20-slim@sha256:[0-9a-f]{64} AS builder$", dockerfile, re.M)
+    assert re.search(
+        r"^FROM node:20-slim@sha256:[0-9a-f]{64} AS builder$", dockerfile, re.M
+    )
     assert re.search(r"^FROM nginx:alpine@sha256:[0-9a-f]{64}$", dockerfile, re.M)
 
 

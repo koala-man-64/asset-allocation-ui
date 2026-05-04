@@ -23,7 +23,9 @@ IMAGE_DIGEST_PATTERN = re.compile(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Resolve and verify the UI release image digest.")
+    parser = argparse.ArgumentParser(
+        description="Resolve and verify the UI release image digest."
+    )
     parser.add_argument("--repo", required=True)
     parser.add_argument("--branch", default="main")
     parser.add_argument("--workflow", default="release.yml")
@@ -73,16 +75,23 @@ def download_bytes(url: str, token: str) -> bytes:
 
 
 def branch_head_sha(*, repo: str, branch: str, token: str) -> str:
-    payload = request_json(f"{API_BASE_URL}/repos/{repo}/git/ref/heads/{quote(branch, safe='')}", token)
+    payload = request_json(
+        f"{API_BASE_URL}/repos/{repo}/git/ref/heads/{quote(branch, safe='')}", token
+    )
     ref_object = payload.get("object")
     if not isinstance(ref_object, dict) or not str(ref_object.get("sha") or "").strip():
         raise SystemExit(f"Could not resolve origin branch {branch}")
     return str(ref_object["sha"]).strip()
 
 
-def latest_successful_run(*, repo: str, branch: str, workflow: str, token: str) -> dict[str, Any]:
+def latest_successful_run(
+    *, repo: str, branch: str, workflow: str, token: str
+) -> dict[str, Any]:
     query = urlencode({"branch": branch, "status": "completed", "per_page": 20})
-    payload = request_json(f"{API_BASE_URL}/repos/{repo}/actions/workflows/{quote(workflow)}/runs?{query}", token)
+    payload = request_json(
+        f"{API_BASE_URL}/repos/{repo}/actions/workflows/{quote(workflow)}/runs?{query}",
+        token,
+    )
     for run in payload.get("workflow_runs", []):
         if isinstance(run, dict) and run.get("conclusion") == "success":
             return run
@@ -96,9 +105,13 @@ def successful_run_by_id(*, repo: str, run_id: int, token: str) -> dict[str, Any
     return run
 
 
-def release_artifact(*, repo: str, run_id: int, artifact_name: str, token: str) -> dict[str, Any]:
+def release_artifact(
+    *, repo: str, run_id: int, artifact_name: str, token: str
+) -> dict[str, Any]:
     query = urlencode({"per_page": 100})
-    payload = request_json(f"{API_BASE_URL}/repos/{repo}/actions/runs/{run_id}/artifacts?{query}", token)
+    payload = request_json(
+        f"{API_BASE_URL}/repos/{repo}/actions/runs/{run_id}/artifacts?{query}", token
+    )
     for artifact in payload.get("artifacts", []):
         if not isinstance(artifact, dict) or artifact.get("name") != artifact_name:
             continue
@@ -110,7 +123,9 @@ def release_artifact(*, repo: str, run_id: int, artifact_name: str, token: str) 
 
 def read_release_manifest(archive_bytes: bytes) -> dict[str, Any]:
     with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
-        manifest_paths = [name for name in archive.namelist() if Path(name).name == MANIFEST_NAME]
+        manifest_paths = [
+            name for name in archive.namelist() if Path(name).name == MANIFEST_NAME
+        ]
         if not manifest_paths:
             raise SystemExit(f"{MANIFEST_NAME} not found in release artifact")
         with archive.open(manifest_paths[0]) as handle:
@@ -125,7 +140,9 @@ def parse_github_timestamp(value: str, *, label: str) -> datetime:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise SystemExit(f"{label} is not a valid ISO-8601 timestamp: {value}") from exc
-    return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+    return (
+        parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    ).astimezone(timezone.utc)
 
 
 def require_manifest_fields(manifest: dict[str, Any]) -> None:
@@ -139,16 +156,24 @@ def require_manifest_fields(manifest: dict[str, Any]) -> None:
         "release_run_attempt",
         "created_at",
     }
-    missing = sorted(name for name in required if not str(manifest.get(name) or "").strip())
+    missing = sorted(
+        name for name in required if not str(manifest.get(name) or "").strip()
+    )
     if missing:
-        raise SystemExit(f"{MANIFEST_NAME} is missing required fields: {', '.join(missing)}")
+        raise SystemExit(
+            f"{MANIFEST_NAME} is missing required fields: {', '.join(missing)}"
+        )
 
 
 def validate_image_digest(image_digest: str, *, image_repository: str) -> None:
     if not IMAGE_DIGEST_PATTERN.fullmatch(image_digest):
-        raise SystemExit("release image_digest must be a fully-qualified image@sha256:<64 hex> reference")
+        raise SystemExit(
+            "release image_digest must be a fully-qualified image@sha256:<64 hex> reference"
+        )
     if not image_digest.split("@", 1)[0].endswith(f"/{image_repository}"):
-        raise SystemExit(f"release image_digest does not point to repository {image_repository}")
+        raise SystemExit(
+            f"release image_digest does not point to repository {image_repository}"
+        )
 
 
 def validate_manifest(
@@ -173,17 +198,28 @@ def validate_manifest(
     run_id = str(run.get("id") or "").strip()
     run_attempt = str(run.get("run_attempt") or "").strip()
     if str(manifest["release_run_id"]) != run_id:
-        raise SystemExit(f"{MANIFEST_NAME} release_run_id did not match the selected workflow run")
+        raise SystemExit(
+            f"{MANIFEST_NAME} release_run_id did not match the selected workflow run"
+        )
     if run_attempt and str(manifest["release_run_attempt"]) != run_attempt:
-        raise SystemExit(f"{MANIFEST_NAME} release_run_attempt did not match the selected workflow run")
+        raise SystemExit(
+            f"{MANIFEST_NAME} release_run_attempt did not match the selected workflow run"
+        )
     if str(run.get("head_branch") or "").strip() != branch:
         raise SystemExit(f"Selected release run is not for branch {branch}")
 
     release_git_sha = str(manifest["git_sha"]).strip()
-    if str(run.get("head_sha") or "").strip() and release_git_sha != str(run["head_sha"]).strip():
-        raise SystemExit(f"{MANIFEST_NAME} git_sha did not match the selected workflow run")
+    if (
+        str(run.get("head_sha") or "").strip()
+        and release_git_sha != str(run["head_sha"]).strip()
+    ):
+        raise SystemExit(
+            f"{MANIFEST_NAME} git_sha did not match the selected workflow run"
+        )
     if expected_git_sha and release_git_sha != expected_git_sha:
-        raise SystemExit(f"{MANIFEST_NAME} git_sha does not match the requested git SHA")
+        raise SystemExit(
+            f"{MANIFEST_NAME} git_sha does not match the requested git SHA"
+        )
     if not allow_rollback and release_git_sha != current_branch_sha:
         raise SystemExit(
             f"Latest successful release {release_git_sha} does not match current {branch} HEAD {current_branch_sha}"
@@ -191,20 +227,32 @@ def validate_manifest(
 
     created_at = str(manifest["created_at"]).strip()
     parse_github_timestamp(created_at, label=f"{MANIFEST_NAME} created_at")
-    run_created_at = parse_github_timestamp(str(run.get("created_at") or ""), label="release run created_at")
-    if allow_rollback and datetime.now(timezone.utc) - run_created_at > timedelta(days=max_age_days):
-        raise SystemExit(f"Rollback release run {run_id} is older than {max_age_days} days")
+    run_created_at = parse_github_timestamp(
+        str(run.get("created_at") or ""), label="release run created_at"
+    )
+    if allow_rollback and datetime.now(timezone.utc) - run_created_at > timedelta(
+        days=max_age_days
+    ):
+        raise SystemExit(
+            f"Rollback release run {run_id} is older than {max_age_days} days"
+        )
 
     image_digest = str(manifest["image_digest"]).strip()
     validate_image_digest(image_digest, image_repository=image_repository)
     if expected_digest and image_digest != expected_digest:
-        raise SystemExit(f"{MANIFEST_NAME} image_digest does not match the requested digest")
+        raise SystemExit(
+            f"{MANIFEST_NAME} image_digest does not match the requested digest"
+        )
     if "@" in str(manifest["artifact_ref"]):
-        raise SystemExit(f"{MANIFEST_NAME} artifact_ref must be the release tag image reference")
+        raise SystemExit(
+            f"{MANIFEST_NAME} artifact_ref must be the release tag image reference"
+        )
 
     return {
         "image_digest": image_digest,
-        "image_source": "guarded-rollback" if allow_rollback else "current-main-release",
+        "image_source": "guarded-rollback"
+        if allow_rollback
+        else "current-main-release",
         "release_artifact": MANIFEST_NAME,
         "release_branch": branch,
         "release_git_sha": release_git_sha,
@@ -230,15 +278,23 @@ def resolve_release_image(
     max_age_days: int = 14,
 ) -> dict[str, str]:
     if allow_rollback and not (run_id and expected_digest and expected_git_sha):
-        raise SystemExit("Guarded rollback requires run_id, expected_digest, and expected_git_sha")
+        raise SystemExit(
+            "Guarded rollback requires run_id, expected_digest, and expected_git_sha"
+        )
     current_branch_sha = branch_head_sha(repo=repo, branch=branch, token=token)
     run = (
         successful_run_by_id(repo=repo, run_id=run_id, token=token)
         if run_id is not None
-        else latest_successful_run(repo=repo, branch=branch, workflow=workflow, token=token)
+        else latest_successful_run(
+            repo=repo, branch=branch, workflow=workflow, token=token
+        )
     )
-    artifact = release_artifact(repo=repo, run_id=int(run["id"]), artifact_name=artifact_name, token=token)
-    manifest = read_release_manifest(download_bytes(str(artifact["archive_download_url"]), token))
+    artifact = release_artifact(
+        repo=repo, run_id=int(run["id"]), artifact_name=artifact_name, token=token
+    )
+    manifest = read_release_manifest(
+        download_bytes(str(artifact["archive_download_url"]), token)
+    )
     return validate_manifest(
         manifest=manifest,
         run=run,

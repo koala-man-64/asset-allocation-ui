@@ -129,9 +129,11 @@ jobs:
           docker push "${image_ref}"
           image_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "${image_ref}")"
           created_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          echo "image_ref=${image_ref}" >> "$GITHUB_OUTPUT"
-          echo "image_digest=${image_digest}" >> "$GITHUB_OUTPUT"
-          echo "created_at=${created_at}" >> "$GITHUB_OUTPUT"
+          {
+            echo "image_ref=${image_ref}"
+            echo "image_digest=${image_digest}"
+            echo "created_at=${created_at}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Write release manifest
         shell: bash

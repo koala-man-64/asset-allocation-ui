@@ -104,17 +104,19 @@ jobs:
       - name: Resolve Azure resource identifiers
         id: azure
         shell: bash
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
         run: |
           set -euo pipefail
           az config set extension.use_dynamic_install=yes_without_prompt > /dev/null
           identity_id="$(az identity show --name "${ACR_PULL_IDENTITY_NAME}" --resource-group "${RESOURCE_GROUP}" --query id -o tsv)"
           acr_login_server="$(az acr show --name "${ACR_NAME}" --resource-group "${RESOURCE_GROUP}" --query loginServer -o tsv)"
-          env_id="/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.App/managedEnvironments/${CONTAINER_APPS_ENVIRONMENT_NAME}"
+          env_id="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.App/managedEnvironments/${CONTAINER_APPS_ENVIRONMENT_NAME}"
           image_digest="${{ steps.rollout.outputs.image_digest }}"
           expected_prefix="${acr_login_server}/asset-allocation-ui@sha256:"
           case "${image_digest}" in
             "${expected_prefix}"*)
-              digest="${image_digest#${expected_prefix}}"
+              digest="${image_digest#"$expected_prefix"}"
               ;;
             *)
               echo "Resolved image must point to ${expected_prefix}<digest>." >&2
