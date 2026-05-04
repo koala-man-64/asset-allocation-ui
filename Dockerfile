@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS builder
+FROM node:25-slim@sha256:e49fd70491eb042270f974167c874d6245287263ffc16422fcf93b3c150409d8 AS builder
 WORKDIR /workspace/asset-allocation-ui
 
 ARG VITE_API_BASE_URL=/api
