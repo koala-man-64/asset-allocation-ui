@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountOperationsPage } from '@/features/accounts/AccountOperationsPage';
 import { accountOperationsApi } from '@/services/accountOperationsApi';
+import { DataService } from '@/services/DataService';
 import { tradeDeskApi } from '@/services/tradeDeskApi';
 import { ApiError } from '@/services/apiService';
 import { renderWithProviders } from '@/test/utils';
@@ -23,6 +24,12 @@ import type {
   BrokerAccountSummary
 } from '@/types/brokerAccounts';
 import type { TradeOrder, TradePosition } from '@asset-allocation/contracts';
+
+const ACCOUNT_POLICY_WRITE_ROLE = 'AssetAllocation.AccountPolicy.Write';
+
+const mockConfig = vi.hoisted(() => ({
+  authRequired: false
+}));
 
 vi.mock('@/services/accountOperationsApi', () => ({
   accountOperationsApi: {
@@ -53,6 +60,16 @@ vi.mock('@/services/accountOperationsApi', () => ({
       provider ?? 'none',
       environment ?? 'none'
     ]
+  }
+}));
+
+vi.mock('@/config', () => ({
+  config: mockConfig
+}));
+
+vi.mock('@/services/DataService', () => ({
+  DataService: {
+    getAuthSessionStatusWithMeta: vi.fn()
   }
 }));
 
@@ -793,9 +810,32 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+function authSessionWithRoles(grantedRoles: string[]) {
+  return {
+    data: {
+      authMode: 'oidc',
+      subject: 'desk-op',
+      displayName: 'Desk Operator',
+      username: 'desk@example.com',
+      requiredRoles: ['AssetAllocation.Access'],
+      grantedRoles
+    },
+    meta: {
+      requestId: 'session-req-1',
+      status: 200,
+      durationMs: 12,
+      url: '/api/auth/session'
+    }
+  };
+}
+
 describe('AccountOperationsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockConfig.authRequired = false;
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue(
+      authSessionWithRoles([ACCOUNT_POLICY_WRITE_ROLE])
+    );
     vi.mocked(accountOperationsApi.listAccounts).mockResolvedValue(listResponse);
     vi.mocked(accountOperationsApi.getAccountDetail).mockResolvedValue(detailResponse);
     vi.mocked(accountOperationsApi.getConfiguration).mockResolvedValue(configurationResponse);
@@ -1262,10 +1302,7 @@ describe('AccountOperationsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     await user.click(screen.getByRole('button', { name: /paper paper execution posture/i }));
     await user.click(screen.getByRole('button', { name: 'Review' }));
-    await user.type(
-      screen.getByLabelText(/operator reason/i),
-      'Create monitored paper account.'
-    );
+    await user.type(screen.getByLabelText(/operator reason/i), 'Create monitored paper account.');
     await user.click(screen.getByRole('button', { name: /onboard account/i }));
 
     await waitFor(() => {
@@ -1284,6 +1321,65 @@ describe('AccountOperationsPage', () => {
     });
     expect(await screen.findByTestId('account-card-alpaca-paper')).toBeInTheDocument();
     expect(toast.success).toHaveBeenCalledWith('Account onboarded.');
+  });
+
+  it('blocks add account discovery when the current session lacks account policy write', async () => {
+    mockConfig.authRequired = true;
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue(
+      authSessionWithRoles(['AssetAllocation.AccountPolicy.Read'])
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(
+      await screen.findByText(/Add Account requires AssetAllocation\.AccountPolicy\.Write/i)
+    ).toBeInTheDocument();
+    const addAccountButton = screen.getByRole('button', { name: /add account/i });
+    expect(addAccountButton).toBeDisabled();
+
+    await user.click(addAccountButton);
+
+    expect(accountOperationsApi.listOnboardingCandidates).not.toHaveBeenCalled();
+  });
+
+  it('keeps add account discovery available when the current session has account policy write', async () => {
+    mockConfig.authRequired = true;
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockResolvedValue(
+      authSessionWithRoles([ACCOUNT_POLICY_WRITE_ROLE])
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    const addAccountButton = await screen.findByRole('button', { name: /add account/i });
+    await waitFor(() => expect(addAccountButton).not.toBeDisabled());
+    await user.click(addAccountButton);
+    await user.click(await screen.findByRole('button', { name: /discover accounts/i }));
+
+    expect(await screen.findByText('Alpaca Paper')).toBeInTheDocument();
+    expect(accountOperationsApi.listOnboardingCandidates).toHaveBeenCalled();
+  });
+
+  it('shows a friendly missing-role message when discovery returns a write-role 403', async () => {
+    vi.mocked(accountOperationsApi.listOnboardingCandidates).mockRejectedValueOnce(
+      new ApiError(
+        403,
+        `API Error: 403 Forbidden [requestId=req-403] - {"detail":"Missing required roles: ${ACCOUNT_POLICY_WRITE_ROLE}."}`
+      )
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    await user.click(await screen.findByRole('button', { name: /add account/i }));
+    await user.click(await screen.findByRole('button', { name: /discover accounts/i }));
+
+    expect(
+      await screen.findByText(/Add Account requires AssetAllocation\.AccountPolicy\.Write/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText('req-403')).toBeInTheDocument();
+    expect(screen.queryByText(/ApiError: API Error/i)).not.toBeInTheDocument();
   });
 
   it('does not allow an already configured discovered account to be added again', async () => {

@@ -66,6 +66,7 @@ import {
   OrdersTable,
   PositionsTable
 } from '@/features/trade-desk/tradeDeskComponents';
+import { config } from '@/config';
 import {
   buildTradeDeskPath,
   buildTradeMonitorPath,
@@ -75,6 +76,8 @@ import {
   titleCase
 } from '@/features/trade-desk/tradeDeskUtils';
 import { accountOperationsApi, accountOperationsKeys } from '@/services/accountOperationsApi';
+import { ApiError } from '@/services/apiService';
+import { DataService } from '@/services/DataService';
 import { tradeDeskApi, tradeDeskKeys } from '@/services/tradeDeskApi';
 import type {
   TradeAccountDetailView,
@@ -148,6 +151,13 @@ const EMPTY_TRADE_ACCOUNTS: readonly TradeAccountSummaryView[] = [];
 const EMPTY_POSITIONS: readonly TradePosition[] = [];
 const EMPTY_ORDERS: readonly TradeOrder[] = [];
 const EMPTY_BLOTTER_ROWS: readonly TradeBlotterRow[] = [];
+const ACCOUNT_POLICY_WRITE_ROLE = 'AssetAllocation.AccountPolicy.Write';
+const ACCOUNT_POLICY_SESSION_QUERY_KEY = ['account-operations', 'auth-session'] as const;
+const ACCOUNT_POLICY_WRITE_REQUIRED_MESSAGE = `Add Account requires ${ACCOUNT_POLICY_WRITE_ROLE}. Ask an administrator to grant the role, then sign out and back in.`;
+const ACCOUNT_POLICY_WRITE_CHECKING_MESSAGE =
+  'Checking your account-policy role assignment before opening Add Account.';
+const MISSING_REQUIRED_ROLE_PATTERN = /missing required roles?:/i;
+const REQUEST_ID_PATTERN = /\[requestId=([^\]]+)\]/i;
 
 function tradeSyncStatus(account: TradeAccountSummaryView): BrokerSyncStatus {
   const states = [
@@ -217,10 +227,10 @@ function tradeConnectionHealth(
     syncStatus,
     lastCheckedAt: lastObservedAt,
     lastSuccessfulSyncAt:
-      syncStatus === 'fresh' || syncStatus === 'stale' ? account.lastSyncedAt ?? null : null,
+      syncStatus === 'fresh' || syncStatus === 'stale' ? (account.lastSyncedAt ?? null) : null,
     lastFailedSyncAt: null,
     authExpiresAt: null,
-    staleReason: syncStatus === 'stale' ? account.freshness.staleReason ?? null : null,
+    staleReason: syncStatus === 'stale' ? (account.freshness.staleReason ?? null) : null,
     failureMessage,
     syncPaused: false
   };
@@ -272,6 +282,43 @@ function populateExistingTradeAccounts(
   return missingBrokerAccounts.length
     ? [...brokerAccounts, ...missingBrokerAccounts]
     : brokerAccounts;
+}
+
+function hasGrantedRole(grantedRoles: readonly string[] | null | undefined, role: string): boolean {
+  return Boolean(grantedRoles?.includes(role));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error ?? 'Unknown error');
+}
+
+function requestIdFromError(error: unknown): string | null {
+  const match = errorMessage(error).match(REQUEST_ID_PATTERN);
+  return match?.[1]?.trim() || null;
+}
+
+function isMissingAccountPolicyWriteRoleError(error: unknown): boolean {
+  const message = errorMessage(error);
+  return (
+    error instanceof ApiError &&
+    error.status === 403 &&
+    MISSING_REQUIRED_ROLE_PATTERN.test(message) &&
+    message.includes(ACCOUNT_POLICY_WRITE_ROLE)
+  );
+}
+
+function discoveryFailureFeedback(error: unknown): { message: string; requestId: string | null } {
+  if (isMissingAccountPolicyWriteRoleError(error)) {
+    return {
+      message: ACCOUNT_POLICY_WRITE_REQUIRED_MESSAGE,
+      requestId: requestIdFromError(error)
+    };
+  }
+
+  return {
+    message: errorMessage(error),
+    requestId: requestIdFromError(error)
+  };
 }
 
 const ACTION_REASON_PRESETS: Record<AccountActionDialogTarget['kind'], string[]> = {
@@ -930,6 +977,20 @@ function candidateStateVariant(candidate: BrokerAccountOnboardingCandidate) {
   return 'secondary';
 }
 
+function OnboardingDiscoveryFailure({ error }: { error: unknown }) {
+  const feedback = discoveryFailureFeedback(error);
+
+  return (
+    <StatePanel tone="error" title="Discovery failed" message={feedback.message}>
+      {feedback.requestId ? (
+        <p className="text-xs text-muted-foreground">
+          Request ID: <span className="font-mono">{feedback.requestId}</span>
+        </p>
+      ) : null}
+    </StatePanel>
+  );
+}
+
 function AccountOnboardingDialog({
   open,
   onOpenChange,
@@ -1098,8 +1159,8 @@ function AccountOnboardingDialog({
         <DialogHeader>
           <DialogTitle>Add Account</DialogTitle>
           <DialogDescription>
-            Discover broker accounts, choose an initial control posture, and seed account
-            monitoring without manual database changes.
+            Discover broker accounts, choose an initial control posture, and seed account monitoring
+            without manual database changes.
           </DialogDescription>
         </DialogHeader>
 
@@ -1120,7 +1181,10 @@ function AccountOnboardingDialog({
               >
                 Provider
               </label>
-              <Select value={provider} onValueChange={(value) => setProvider(value as BrokerVendor)}>
+              <Select
+                value={provider}
+                onValueChange={(value) => setProvider(value as BrokerVendor)}
+              >
                 <SelectTrigger id="onboarding-provider">
                   <SelectValue placeholder="Provider" />
                 </SelectTrigger>
@@ -1167,11 +1231,7 @@ function AccountOnboardingDialog({
             {candidatesQuery.isLoading ? (
               <PageLoader variant="panel" text="Discovering broker accounts..." />
             ) : candidatesQuery.error ? (
-              <StatePanel
-                tone="error"
-                title="Discovery failed"
-                message={String(candidatesQuery.error)}
-              />
+              <OnboardingDiscoveryFailure error={candidatesQuery.error} />
             ) : candidatesQuery.data?.discoveryStatus !== 'completed' ? (
               <StatePanel
                 tone="warning"
@@ -1217,7 +1277,8 @@ function AccountOnboardingDialog({
                       <div>
                         <div className="font-medium text-foreground">{candidate.displayName}</div>
                         <div className="mt-1 text-sm text-muted-foreground">
-                          {candidate.suggestedAccountId} | {candidate.accountNumberMasked || 'masked id unavailable'}
+                          {candidate.suggestedAccountId} |{' '}
+                          {candidate.accountNumberMasked || 'masked id unavailable'}
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -1305,7 +1366,9 @@ function AccountOnboardingDialog({
               </p>
               <div className="grid gap-3 md:grid-cols-2">
                 {ONBOARDING_POSTURES.map((posture) => {
-                  const allowed = selectedCandidate.allowedExecutionPostures.includes(posture.value);
+                  const allowed = selectedCandidate.allowedExecutionPostures.includes(
+                    posture.value
+                  );
                   const reason = selectedCandidate.blockedExecutionPostureReasons[posture.value];
                   const postureDescription = allowed
                     ? posture.detail
@@ -2333,6 +2396,17 @@ export function AccountOperationsPage() {
     refetchOnWindowFocus: true
   });
 
+  const authSessionQuery = useQuery({
+    queryKey: ACCOUNT_POLICY_SESSION_QUERY_KEY,
+    queryFn: async () => {
+      const response = await DataService.getAuthSessionStatusWithMeta();
+      return response.data;
+    },
+    enabled: config.authRequired,
+    retry: false,
+    staleTime: 30000
+  });
+
   const brokerAccounts = listQuery.data?.accounts ?? EMPTY_ACCOUNTS;
   const tradeAccounts = tradeAccountsQuery.data?.accounts ?? EMPTY_TRADE_ACCOUNTS;
   const accounts = useMemo(
@@ -2594,6 +2668,18 @@ export function AccountOperationsPage() {
   const hasActiveFilters =
     searchTerm.trim() || brokerFilter !== 'all' || statusFilter !== 'all' || scopeFilter !== 'all';
   const selectedConfiguration = configurationQuery.data ?? detailQuery.data?.configuration ?? null;
+  const hasAccountPolicyWriteRole =
+    !config.authRequired ||
+    hasGrantedRole(authSessionQuery.data?.grantedRoles, ACCOUNT_POLICY_WRITE_ROLE);
+  const accountPolicyWriteRoleMissing =
+    config.authRequired && authSessionQuery.isSuccess && !hasAccountPolicyWriteRole;
+  const accountPolicyWriteRoleChecking = config.authRequired && authSessionQuery.isLoading;
+  const addAccountDisabledReason = accountPolicyWriteRoleMissing
+    ? ACCOUNT_POLICY_WRITE_REQUIRED_MESSAGE
+    : accountPolicyWriteRoleChecking
+      ? ACCOUNT_POLICY_WRITE_CHECKING_MESSAGE
+      : null;
+  const addAccountDisabled = Boolean(addAccountDisabledReason);
   const selectedMonitoring: AccountMonitoringData = {
     tradeAccount: selectedSnapshot?.tradeAccount ?? null,
     tradeAccountsError: tradeAccountsQuery.error,
@@ -2650,6 +2736,14 @@ export function AccountOperationsPage() {
     setSelectedAccountId(accountId);
     setDetailTab('overview');
     setConfigurationDirty(false);
+  };
+
+  const openOnboardingDialog = () => {
+    if (addAccountDisabledReason) {
+      toast.error(addAccountDisabledReason);
+      return;
+    }
+    setOnboardingOpen(true);
   };
 
   const handleSaveTradingPolicy = async (
@@ -2781,7 +2875,13 @@ export function AccountOperationsPage() {
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" size="sm" onClick={() => setOnboardingOpen(true)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={addAccountDisabled}
+                  title={addAccountDisabledReason ?? undefined}
+                  onClick={openOnboardingDialog}
+                >
                   <Plus className="mr-2 size-4" />
                   Add Account
                 </Button>
@@ -2805,6 +2905,15 @@ export function AccountOperationsPage() {
               onStatusFilterChange={setStatusFilter}
               onScopeChange={setScopeFilter}
             />
+            {accountPolicyWriteRoleMissing ? (
+              <div className="mt-4">
+                <StatePanel
+                  tone="warning"
+                  title="Account role required"
+                  message={ACCOUNT_POLICY_WRITE_REQUIRED_MESSAGE}
+                />
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-4 p-5">
@@ -2814,7 +2923,12 @@ export function AccountOperationsPage() {
                 title="No configured accounts"
                 message="Discover a connected broker account and seed it into account monitoring without manual SQL."
                 action={
-                  <Button type="button" onClick={() => setOnboardingOpen(true)}>
+                  <Button
+                    type="button"
+                    disabled={addAccountDisabled}
+                    title={addAccountDisabledReason ?? undefined}
+                    onClick={openOnboardingDialog}
+                  >
                     <Plus className="mr-2 size-4" />
                     Add Account
                   </Button>
