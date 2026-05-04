@@ -176,8 +176,8 @@ describe('JobLogStreamPanel', () => {
     expect(screen.getByRole('columnheader', { name: 'stream_s' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'message' })).toBeInTheDocument();
     expect(screen.getByText('stdout')).toBeInTheDocument();
-    expect(subscribeTopics).toEqual(
-      expect.arrayContaining([['job-logs:alpha-job/executions/alpha-exec-001']])
+    expect(subscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:alpha-job', 'job-logs:alpha-job/executions/alpha-exec-001'])
     );
 
     await user.click(screen.getByRole('combobox', { name: /monitored job/i }));
@@ -195,11 +195,11 @@ describe('JobLogStreamPanel', () => {
       );
     });
 
-    expect(unsubscribeTopics).toEqual(
-      expect.arrayContaining([['job-logs:alpha-job/executions/alpha-exec-001']])
+    expect(unsubscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:alpha-job', 'job-logs:alpha-job/executions/alpha-exec-001'])
     );
-    expect(subscribeTopics).toEqual(
-      expect.arrayContaining([['job-logs:beta-job/executions/beta-exec-001']])
+    expect(subscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:beta-job', 'job-logs:beta-job/executions/beta-exec-001'])
     );
     expect(await screen.findByText('beta snapshot')).toBeInTheDocument();
 
@@ -226,6 +226,65 @@ describe('JobLogStreamPanel', () => {
 
     window.removeEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
     window.removeEventListener(REALTIME_UNSUBSCRIBE_EVENT, captureUnsubscribe);
+  });
+
+  it('ignores stale snapshot responses after the selected job changes', async () => {
+    let resolveAlpha: (value: Awaited<ReturnType<typeof DataService.getJobLogs>>) => void = () =>
+      undefined;
+    const alphaSnapshot = new Promise<Awaited<ReturnType<typeof DataService.getJobLogs>>>(
+      (resolve) => {
+        resolveAlpha = resolve;
+      }
+    );
+    vi.mocked(DataService.getJobLogs)
+      .mockReturnValueOnce(alphaSnapshot)
+      .mockResolvedValueOnce({
+        jobName: 'beta-job',
+        runsRequested: 3,
+        runsReturned: 1,
+        tailLines: 10,
+        runs: [
+          {
+            executionName: 'beta-exec-001',
+            tail: ['beta current snapshot']
+          }
+        ]
+      });
+
+    const user = userEvent.setup();
+    renderWithProviders(<ControlledJobLogStreamPanel />);
+
+    await waitFor(() => {
+      expect(DataService.getJobLogs).toHaveBeenCalledWith(
+        'alpha-job',
+        { runs: 3 },
+        expect.any(AbortSignal)
+      );
+    });
+
+    await user.click(screen.getByRole('combobox', { name: /monitored job/i }));
+    await user.click(await screen.findByRole('option', { name: 'Silver / finance / beta-job' }));
+
+    expect(await screen.findByText('beta current snapshot')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveAlpha({
+        jobName: 'alpha-job',
+        runsRequested: 3,
+        runsReturned: 1,
+        tailLines: 10,
+        runs: [
+          {
+            executionName: 'alpha-exec-001',
+            tail: ['stale alpha snapshot']
+          }
+        ]
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('stale alpha snapshot')).not.toBeInTheDocument();
+    expect(screen.getByText('beta current snapshot')).toBeInTheDocument();
   });
 
   it('defaults to a running job before idle jobs when the stream owns selection', async () => {
@@ -323,8 +382,8 @@ describe('JobLogStreamPanel', () => {
 
     expect(await screen.findByText('older active snapshot')).toBeInTheDocument();
     expect(screen.queryByText('latest finished snapshot')).not.toBeInTheDocument();
-    expect(subscribeTopics).toEqual(
-      expect.arrayContaining([['job-logs:beta-job/executions/beta-exec-001']])
+    expect(subscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:beta-job', 'job-logs:beta-job/executions/beta-exec-001'])
     );
 
     window.removeEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
@@ -386,8 +445,8 @@ describe('JobLogStreamPanel', () => {
     });
     expect(await screen.findByText('older output snapshot')).toBeInTheDocument();
     expect(screen.queryByText('oldest output snapshot')).not.toBeInTheDocument();
-    expect(subscribeTopics).toEqual(
-      expect.arrayContaining([['job-logs:beta-job/executions/beta-exec-002']])
+    expect(subscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:beta-job', 'job-logs:beta-job/executions/beta-exec-002'])
     );
 
     await act(async () => {
@@ -405,7 +464,7 @@ describe('JobLogStreamPanel', () => {
         ]
       });
     });
-    expect(screen.queryByText('ignored latest live line')).not.toBeInTheDocument();
+    expect(await screen.findByText('ignored latest live line')).toBeInTheDocument();
 
     await act(async () => {
       emitConsoleLogStream({
@@ -470,7 +529,25 @@ describe('JobLogStreamPanel', () => {
     expect(
       await screen.findByText('No console log lines were returned for the last 3 executions.')
     ).toBeInTheDocument();
-    expect(subscribeTopics).toEqual([]);
+    expect(subscribeTopics.flat()).toEqual(expect.arrayContaining(['job-logs:alpha-job']));
+
+    await act(async () => {
+      emitConsoleLogStream({
+        topic: 'job-logs:alpha-job/executions/alpha-exec-live',
+        resourceType: 'job',
+        resourceName: 'alpha-job',
+        lines: [
+          {
+            id: 'alpha-live-line',
+            message: 'alpha live output',
+            timestamp: '2026-03-12T12:00:02Z',
+            stream_s: 'stdout'
+          }
+        ]
+      });
+    });
+
+    expect(await screen.findByText('alpha live output')).toBeInTheDocument();
 
     window.removeEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
   });
@@ -505,8 +582,8 @@ describe('JobLogStreamPanel', () => {
     expect(
       await screen.findByText('Waiting for live console output from the running execution.')
     ).toBeInTheDocument();
-    expect(subscribeTopics).toEqual(
-      expect.arrayContaining([['job-logs:beta-job/executions/beta-exec-001']])
+    expect(subscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:beta-job', 'job-logs:beta-job/executions/beta-exec-001'])
     );
 
     await act(async () => {
@@ -785,6 +862,27 @@ describe('JobLogStreamPanel', () => {
     });
     expect(await screen.findByText('0.5 cores')).toBeInTheDocument();
     expect(screen.getByText('1 GiB')).toBeInTheDocument();
+  });
+
+  it('surfaces stale usage metrics when live usage polling fails', async () => {
+    vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
+      jobName: 'beta-job',
+      runsRequested: 3,
+      runsReturned: 1,
+      tailLines: 10,
+      runs: [
+        {
+          tail: ['beta snapshot']
+        }
+      ]
+    });
+    vi.mocked(DataService.getSystemHealth).mockRejectedValueOnce(new Error('health unavailable'));
+
+    renderWithProviders(<JobLogStreamPanel jobs={[JOBS[1]]} />);
+
+    expect(await screen.findByText('beta snapshot')).toBeInTheDocument();
+    expect(await screen.findByText('Showing last known metrics.')).toBeInTheDocument();
   });
 
   it('skips a live usage poll while the previous system health refresh is still running', async () => {

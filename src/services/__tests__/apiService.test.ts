@@ -146,6 +146,42 @@ describe('apiService cookie auth transport', () => {
     expect(headers.get('Authorization')).toBe('Bearer oidc-access-token');
   });
 
+  it('encodes job log names and normalizes missing log arrays', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'ok' })).mockResolvedValueOnce(
+      jsonResponse({
+        jobName: 'job/name with spaces',
+        runsRequested: 2,
+        runsReturned: 1,
+        tailLines: 10,
+        runs: [
+          {
+            executionName: 'exec-1'
+          }
+        ]
+      })
+    );
+    const controller = new AbortController();
+
+    const { apiService } = await importApiService();
+    const response = await apiService.getJobLogs(
+      'job/name with spaces',
+      { runs: 2 },
+      controller.signal
+    );
+
+    const logCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/system/jobs/'));
+    expect(String(logCall?.[0])).toContain('/api/system/jobs/job%2Fname%20with%20spaces/logs');
+    expect(String(logCall?.[0])).toContain('runs=2');
+    expect((logCall?.[1] as RequestInit).signal).toBe(controller.signal);
+    expect(response.runs).toEqual([
+      expect.objectContaining({
+        executionName: 'exec-1',
+        consoleLogs: [],
+        tail: []
+      })
+    ]);
+  });
+
   it('throws an ApiError directly when the backend returns 401', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'ok' }));
     fetchMock.mockResolvedValueOnce(

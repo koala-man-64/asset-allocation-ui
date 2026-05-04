@@ -13,6 +13,7 @@ import {
   CONSOLE_LOG_STREAM_EVENT_TYPE,
   REALTIME_SUBSCRIBE_EVENT,
   REALTIME_UNSUBSCRIBE_EVENT,
+  emitRealtimeStatus,
   emitConsoleLogStream
 } from '@/services/realtimeBus';
 import { redirectToLogin } from '@/utils/authNavigation';
@@ -169,6 +170,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
     }
 
     function markRealtimeUnavailable(message: string): void {
+      emitRealtimeStatus({ status: 'unavailable', message });
       if (realtimeUnavailableRef.current) {
         return;
       }
@@ -177,6 +179,10 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
     }
 
     function scheduleReconnect(): void {
+      emitRealtimeStatus({
+        status: 'reconnecting',
+        message: 'Realtime updates are reconnecting.'
+      });
       if (reconnectTimeoutRef.current) {
         window.clearTimeout(reconnectTimeoutRef.current);
       }
@@ -277,6 +283,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
         return;
       }
 
+      emitRealtimeStatus({ status: 'connecting', message: 'Opening realtime updates.' });
       connectInFlightRef.current = true;
       try {
         const ticket = await fetchRealtimeTicket();
@@ -289,6 +296,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
         ws.onopen = () => {
           connectInFlightRef.current = false;
           realtimeUnavailableRef.current = false;
+          emitRealtimeStatus({ status: 'connected', message: 'Realtime updates connected.' });
 
           const topics = [...SUBSCRIPTION_TOPICS, ...getDynamicTopics()];
           sendSubscription('subscribe', topics);

@@ -67,12 +67,15 @@ function createWrapper() {
 async function flushPromises() {
   await act(async () => {
     await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
   });
 }
 
 describe('useSystemStatusViewQuery auth handling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete (mockDataService as { getSystemStatusViewResult?: unknown }).getSystemStatusViewResult;
     vi.useRealTimers();
     window.sessionStorage.clear();
     window.history.pushState({}, 'System Status', '/system-status?tab=health#latency');
@@ -125,6 +128,7 @@ describe('useSystemStatusViewQuery auth handling', () => {
 describe('useSystemStatusViewQuery polling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete (mockDataService as { getSystemStatusViewResult?: unknown }).getSystemStatusViewResult;
     vi.useFakeTimers();
     vi.spyOn(Math, 'random').mockReturnValue(0);
     window.sessionStorage.clear();
@@ -154,6 +158,58 @@ describe('useSystemStatusViewQuery polling', () => {
     });
 
     expect(mockDataService.getSystemStatusView).toHaveBeenCalledTimes(2);
+  });
+
+  it('backs off and self-heals polling after a status-view auth failure', async () => {
+    mockDataService.getSystemStatusView
+      .mockRejectedValueOnce(new ApiError(401, 'API Error: 401 Unauthorized'))
+      .mockResolvedValueOnce(systemStatusView);
+
+    const { result } = renderHook(() => useSystemStatusViewQuery({ autoRefresh: true }), {
+      wrapper: createWrapper()
+    });
+
+    await flushPromises();
+    expect(mockDataService.getSystemStatusView).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(59_999);
+    });
+    expect(mockDataService.getSystemStatusView).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(mockDataService.getSystemStatusView).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toMatchObject(systemStatusView);
+  });
+
+  it('exposes local status metadata for fallback status-view results', async () => {
+    (
+      mockDataService as {
+        getSystemStatusViewResult?: ReturnType<typeof vi.fn>;
+      }
+    ).getSystemStatusViewResult = vi.fn().mockResolvedValueOnce({
+      data: systemStatusView,
+      meta: {
+        status: 'fallback',
+        receivedAt: '2026-04-27T06:11:32.000Z',
+        message: 'API Error: 404 Not Found'
+      }
+    });
+
+    const { result } = renderHook(() => useSystemStatusViewQuery({ autoRefresh: true }), {
+      wrapper: createWrapper()
+    });
+
+    await flushPromises();
+    expect(result.current.statusMeta).toMatchObject({
+      status: 'fallback',
+      message: 'API Error: 404 Not Found'
+    });
   });
 
   it('does not poll while the document is hidden', async () => {

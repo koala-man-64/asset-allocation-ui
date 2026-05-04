@@ -138,12 +138,7 @@ export function OperationalJobMonitorPanel({
               here so ingestion health remains readable in the medallion matrix.
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isRefreshing || isFetching}
-          >
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
             <RefreshCw
               className={cn('h-4 w-4', isRefreshing || isFetching ? 'animate-spin' : '')}
             />

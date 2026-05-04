@@ -45,7 +45,9 @@ import { getLogStreamFeedback } from '@/features/system-status/lib/logStreamFeed
 import { apiService } from '@/services/apiService';
 import {
   addConsoleLogStreamListener,
+  buildJobLogTopics,
   buildJobLogTopic,
+  isJobLogTopicForJob,
   requestRealtimeSubscription,
   requestRealtimeUnsubscription
 } from '@/services/realtimeBus';
@@ -309,10 +311,10 @@ export function ScheduledJobMonitor({
   const expandedExecutionName = expandedJobName
     ? (logStateByJob[expandedJobName]?.executionName ?? null)
     : null;
-  const expandedTopic =
-    expandedJobName && expandedExecutionName
-      ? buildJobLogTopic(expandedJobName, expandedExecutionName)
-      : null;
+  const expandedTopics = useMemo(
+    () => (expandedJobName ? buildJobLogTopics(expandedJobName, expandedExecutionName) : []),
+    [expandedExecutionName, expandedJobName]
+  );
 
   const fetchLogs = (jobName: string, runStart: string | null) => {
     logControllers.current[jobName]?.abort();
@@ -380,15 +382,15 @@ export function ScheduledJobMonitor({
   };
 
   useEffect(() => {
-    if (!expandedTopic) return;
-    requestRealtimeSubscription([expandedTopic]);
-    return () => requestRealtimeUnsubscription([expandedTopic]);
-  }, [expandedTopic]);
+    if (expandedTopics.length === 0) return;
+    requestRealtimeSubscription(expandedTopics);
+    return () => requestRealtimeUnsubscription(expandedTopics);
+  }, [expandedTopics]);
 
   useEffect(() => {
-    if (!expandedJobName || !expandedTopic) return;
+    if (!expandedJobName) return;
     return addConsoleLogStreamListener((detail) => {
-      if (detail.topic !== expandedTopic) {
+      if (!isJobLogTopicForJob(detail.topic, expandedJobName, expandedExecutionName)) {
         return;
       }
 
@@ -402,6 +404,13 @@ export function ScheduledJobMonitor({
         return;
       }
 
+      const liveExecutionName =
+        detail.topic === buildJobLogTopic(expandedJobName)
+          ? detail.lines
+              .map((line) => String(line.executionName || '').trim())
+              .find((value) => value.length > 0)
+          : null;
+
       setLogStateByJob((prev) => {
         const current = prev[expandedJobName];
         return {
@@ -411,12 +420,12 @@ export function ScheduledJobMonitor({
             loading: false,
             error: null,
             runStart: current?.runStart ?? null,
-            executionName: current?.executionName ?? null
+            executionName: liveExecutionName ?? current?.executionName ?? null
           }
         };
       });
     });
-  }, [expandedJobName, expandedTopic]);
+  }, [expandedExecutionName, expandedJobName]);
 
   useEffect(() => {
     const controllers = logControllers.current;

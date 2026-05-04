@@ -122,6 +122,26 @@ describe('DataService.getSystemStatusView', () => {
     });
   });
 
+  it('returns local fetch metadata when unified status view falls back', async () => {
+    mockApiService.getSystemStatusView.mockRejectedValueOnce(
+      new MockApiError(404, 'API Error: 404 Not Found')
+    );
+    mockApiService.getSystemHealth.mockResolvedValueOnce(systemHealth);
+    mockApiService.getDomainMetadataSnapshot.mockResolvedValueOnce(metadataSnapshot);
+
+    const result = await DataService.getSystemStatusViewResult();
+
+    expect(result.data).toMatchObject({
+      systemHealth,
+      metadataSnapshot
+    });
+    expect(result.meta).toMatchObject({
+      status: 'fallback',
+      message: expect.stringContaining('API Error: 404')
+    });
+    expect(result.meta.receivedAt).toEqual(expect.any(String));
+  });
+
   it('retries the unified status view after an ordinary 401 when the cookie session is valid', async () => {
     mockApiService.getSystemStatusView.mockRejectedValueOnce(
       new MockApiError(401, 'API Error: 401 Unauthorized')

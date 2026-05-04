@@ -34,10 +34,7 @@ const apiWarmupInFlight = new Map<string, Promise<void>>();
  * Ensures array fields are never null/undefined from API responses.
  * Azure SDK may return null instead of empty array; this normalizes to [].
  */
-function normalizeArrayField<T>(
-  arr: T[] | null | undefined,
-  defaultValue: T[] = []
-): T[] {
+function normalizeArrayField<T>(arr: T[] | null | undefined, defaultValue: T[] = []): T[] {
   return Array.isArray(arr) ? arr : defaultValue;
 }
 
@@ -59,8 +56,7 @@ function summarizeResponseForLogs(response: Response): Record<string, unknown> {
     server: response.headers.get('Server') ?? null,
     wwwAuthenticate: response.headers.get('Www-Authenticate') ?? null,
     accessControlAllowOrigin: response.headers.get('Access-Control-Allow-Origin') ?? null,
-    accessControlAllowCredentials:
-      response.headers.get('Access-Control-Allow-Credentials') ?? null,
+    accessControlAllowCredentials: response.headers.get('Access-Control-Allow-Credentials') ?? null,
     vary: response.headers.get('Vary') ?? null
   };
 }
@@ -75,11 +71,13 @@ function readCookie(name: string): string {
   }
 
   const target = `${name}=`;
-  return document.cookie
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(target))
-    ?.slice(target.length) ?? '';
+  return (
+    document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(target))
+      ?.slice(target.length) ?? ''
+  );
 }
 
 function readCsrfToken(): string {
@@ -174,7 +172,9 @@ function buildRequestUrl(
 }
 
 function normalizeCookieSessionApiBaseUrl(apiBaseUrl: string): string {
-  const trimmed = String(apiBaseUrl || '').trim().replace(/\/+$/, '');
+  const trimmed = String(apiBaseUrl || '')
+    .trim()
+    .replace(/\/+$/, '');
   if (!trimmed) {
     return '/api';
   }
@@ -189,11 +189,15 @@ function normalizeCookieSessionApiBaseUrl(apiBaseUrl: string): string {
       return normalizedPath;
     }
 
-    logApiRequest('cookie-session-cross-origin-api-base-coerced', {
-      configuredApiBaseUrl: summarizeUrlForLogs(trimmed),
-      coercedApiBaseUrl: summarizeUrlForLogs(normalizedPath),
-      currentOrigin: window.location.origin
-    }, 'warn');
+    logApiRequest(
+      'cookie-session-cross-origin-api-base-coerced',
+      {
+        configuredApiBaseUrl: summarizeUrlForLogs(trimmed),
+        coercedApiBaseUrl: summarizeUrlForLogs(normalizedPath),
+        currentOrigin: window.location.origin
+      },
+      'warn'
+    );
     return normalizedPath.startsWith('/api') ? normalizedPath : '/api';
   } catch {
     return '/api';
@@ -375,9 +379,10 @@ async function performRequest<T>(
   let url = buildRequestUrl(apiBaseUrl, endpoint, params);
 
   const requestHeaders = new Headers(headers);
-  const requestMethod = String(customConfig.method ?? 'GET')
-    .trim()
-    .toUpperCase() || 'GET';
+  const requestMethod =
+    String(customConfig.method ?? 'GET')
+      .trim()
+      .toUpperCase() || 'GET';
   const hasBody = customConfig.body !== undefined && customConfig.body !== null;
   if (hasBody && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json');
@@ -1204,7 +1209,7 @@ export const apiService = {
     params: { runs?: number } = {},
     signal?: AbortSignal
   ): Promise<JobLogsResponse> {
-    return request<JobLogsResponse>(`/system/jobs/${jobName}/logs`, {
+    return request<JobLogsResponse>(`/system/jobs/${encodeURIComponent(jobName)}/logs`, {
       params,
       signal
     }).then((response) => ({

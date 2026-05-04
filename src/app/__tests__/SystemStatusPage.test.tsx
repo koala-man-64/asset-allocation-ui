@@ -9,6 +9,7 @@ import { getDomainOrderEntries } from '@/features/system-status/lib/domainOrderi
 import { queryKeys } from '@/hooks/useDataQueries';
 import { upsertRunningJobOverride } from '@/hooks/useSystemHealthJobOverrides';
 import { DataService } from '@/services/DataService';
+import { REALTIME_STATUS_EVENT } from '@/services/realtimeBus';
 import type { SystemStatusViewResponse } from '@/services/apiService';
 import type { DataLayer } from '@/types/strategy';
 
@@ -293,6 +294,7 @@ function buildSystemStatusView(
 describe('SystemStatusPage', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    delete (DataService as { getSystemStatusViewResult?: unknown }).getSystemStatusViewResult;
     vi.mocked(DataService.getSystemStatusView).mockResolvedValue(buildSystemStatusView());
   });
 
@@ -373,6 +375,47 @@ describe('SystemStatusPage', () => {
       expect(DataService.getSystemStatusView).toHaveBeenCalled();
     });
     expect(screen.queryByText('System Link Failure')).not.toBeInTheDocument();
+    expect(await screen.findByText('Last refresh failed')).toBeInTheDocument();
+  });
+
+  it('shows a degraded banner when the unified status view uses fallback endpoints', async () => {
+    (
+      DataService as unknown as {
+        getSystemStatusViewResult?: ReturnType<typeof vi.fn>;
+      }
+    ).getSystemStatusViewResult = vi.fn().mockResolvedValueOnce({
+      data: buildSystemStatusView(),
+      meta: {
+        status: 'fallback',
+        receivedAt: '2026-04-27T06:11:32.000Z',
+        message: 'API Error: 404 Not Found'
+      }
+    });
+
+    renderWithProviders(<SystemStatusPage />);
+
+    expect(await screen.findByText('Status view degraded')).toBeInTheDocument();
+    expect(screen.getByText(/health\/metadata fallback endpoints/i)).toBeInTheDocument();
+  });
+
+  it('shows a persistent degraded banner when realtime reconnects', async () => {
+    renderWithProviders(<SystemStatusPage />);
+    await screen.findByTestId('mock-domain-layer-coverage-panel');
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(REALTIME_STATUS_EVENT, {
+          detail: {
+            status: 'reconnecting',
+            message: 'Realtime updates are reconnecting.',
+            changedAt: '2026-04-27T06:11:32.000Z'
+          }
+        })
+      );
+    });
+
+    expect(await screen.findByText('Realtime updates degraded')).toBeInTheDocument();
+    expect(screen.getByText('Realtime updates are reconnecting.')).toBeInTheDocument();
   });
 
   it('keeps platinum as a layer but removes it as a data domain', async () => {

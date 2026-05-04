@@ -42,21 +42,29 @@ describe('useSystemHealthQuery', () => {
   });
 
   it('reads system health from the unified system status view', async () => {
-    const getSystemStatusViewSpy = vi.spyOn(DataService, 'getSystemStatusView').mockResolvedValue({
-      version: 1,
-      generatedAt: '2026-05-01T12:00:00Z',
-      systemHealth: healthPayload,
-      metadataSnapshot: {
-        version: 1,
-        updatedAt: null,
-        entries: {},
-        warnings: []
-      },
-      sources: {
-        systemHealth: 'cache',
-        metadataSnapshot: 'persisted-snapshot'
-      }
-    });
+    const getSystemStatusViewSpy = vi
+      .spyOn(DataService, 'getSystemStatusViewResult')
+      .mockResolvedValue({
+        data: {
+          version: 1,
+          generatedAt: '2026-05-01T12:00:00Z',
+          systemHealth: healthPayload,
+          metadataSnapshot: {
+            version: 1,
+            updatedAt: null,
+            entries: {},
+            warnings: []
+          },
+          sources: {
+            systemHealth: 'cache',
+            metadataSnapshot: 'persisted-snapshot'
+          }
+        },
+        meta: {
+          status: 'direct',
+          receivedAt: '2026-05-01T12:00:00Z'
+        }
+      });
 
     renderWithProviders(<SystemHealthProbe />);
 

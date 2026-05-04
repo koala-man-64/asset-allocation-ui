@@ -37,6 +37,19 @@ import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
 export type { FinanceData, MarketData };
 
+export type SystemStatusViewFetchStatus = 'direct' | 'fallback' | 'error';
+
+export interface SystemStatusViewFetchMeta {
+  status: SystemStatusViewFetchStatus;
+  receivedAt: string;
+  message?: string;
+}
+
+export interface SystemStatusViewFetchResult {
+  data: SystemStatusViewResponse;
+  meta: SystemStatusViewFetchMeta;
+}
+
 const SUPPRESSED_SESSION_AUTH_MESSAGE =
   'Interactive sign-in was suppressed because /auth/session succeeded recently';
 
@@ -136,6 +149,30 @@ async function buildFallbackSystemStatusView(
       systemHealth: params.refresh ? 'live-refresh' : 'cache',
       metadataSnapshot: 'persisted-snapshot'
     }
+  };
+}
+
+function systemStatusViewFetchMeta(
+  status: SystemStatusViewFetchStatus,
+  message?: string
+): SystemStatusViewFetchMeta {
+  return {
+    status,
+    receivedAt: new Date().toISOString(),
+    ...(message ? { message } : {})
+  };
+}
+
+async function buildFallbackSystemStatusViewResult(
+  params: { refresh?: boolean },
+  cause: unknown,
+  signal?: AbortSignal
+): Promise<SystemStatusViewFetchResult> {
+  const data = await buildFallbackSystemStatusView(params, cause, signal);
+  const message = cause instanceof Error ? cause.message : String(cause ?? 'Unknown error');
+  return {
+    data,
+    meta: systemStatusViewFetchMeta('fallback', message)
   };
 }
 
@@ -240,15 +277,19 @@ export const DataService = {
     return apiService.getDomainMetadataSnapshot(params, signal);
   },
 
-  async getSystemStatusView(
+  async getSystemStatusViewResult(
     params: { refresh?: boolean } = {},
     signal?: AbortSignal
-  ): Promise<SystemStatusViewResponse> {
+  ): Promise<SystemStatusViewFetchResult> {
     try {
-      return await apiService.getSystemStatusView(params, signal);
+      const data = await apiService.getSystemStatusView(params, signal);
+      return {
+        data,
+        meta: systemStatusViewFetchMeta('direct')
+      };
     } catch (error) {
       if (isKnownSystemStatusFallbackError(error)) {
-        return buildFallbackSystemStatusView(params, error, signal);
+        return buildFallbackSystemStatusViewResult(params, error, signal);
       }
 
       const session = await confirmSessionAfterSystemStatus401(error);
@@ -265,7 +306,10 @@ export const DataService = {
             },
             'warn'
           );
-          return retry;
+          return {
+            data: retry,
+            meta: systemStatusViewFetchMeta('direct')
+          };
         } catch (retryError) {
           logUiDiagnostic(
             'DataService',
@@ -280,10 +324,10 @@ export const DataService = {
             'warn'
           );
           if (isKnownSystemStatusFallbackError(retryError)) {
-            return buildFallbackSystemStatusView(params, retryError, signal);
+            return buildFallbackSystemStatusViewResult(params, retryError, signal);
           }
           if (retryError instanceof ApiError && retryError.status === 401) {
-            return buildFallbackSystemStatusView(params, retryError, signal);
+            return buildFallbackSystemStatusViewResult(params, retryError, signal);
           }
           throw retryError;
         }
@@ -291,6 +335,14 @@ export const DataService = {
 
       throw error;
     }
+  },
+
+  async getSystemStatusView(
+    params: { refresh?: boolean } = {},
+    signal?: AbortSignal
+  ): Promise<SystemStatusViewResponse> {
+    const result = await DataService.getSystemStatusViewResult(params, signal);
+    return result.data;
   },
 
   getPersistedDomainMetadataSnapshotCache(): Promise<DomainMetadataSnapshotResponse> {

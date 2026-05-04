@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState, lazy, Suspense } from 'react';
+import { useCallback, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle } from 'lucide-react';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { useJobStatuses } from '@/hooks/useJobStatuses';
 import { useSystemStatusViewQuery } from '@/hooks/useSystemStatusView';
@@ -8,8 +9,10 @@ import type {
   SystemStatusViewResponse
 } from '@/services/apiService';
 import { ErrorBoundary } from '@/app/components/common/ErrorBoundary';
+import { Alert, AlertDescription, AlertTitle } from '@/app/components/ui/alert';
 import { Skeleton } from '@/app/components/ui/skeleton';
 import { PageLoader } from '@/app/components/common/PageLoader';
+import { addRealtimeStatusListener, type RealtimeStatusDetail } from '@/services/realtimeBus';
 import type { ManagedContainerJob } from '@/features/system-status/types';
 import type { JobLogStreamTarget } from '@/features/system-status/components/JobLogStreamPanel';
 import type {
@@ -102,17 +105,21 @@ export function SystemStatusPage() {
     isLoading,
     error,
     isFetching,
+    statusMeta,
     refresh: refreshSystemStatusView
   } = useSystemStatusViewQuery({
     autoRefresh: true
   });
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatusDetail | null>(null);
   const systemStatusView = data;
   const systemHealth = systemStatusView?.systemHealth;
   const jobStatuses = useJobStatuses({ autoRefresh: false });
   const jobStatusesByKey = jobStatuses.byKey;
   const errorMessage = error instanceof Error ? error.message : 'No telemetry available';
+
+  useEffect(() => addRealtimeStatusListener(setRealtimeStatus), []);
 
   const displayDataLayers = useMemo(() => {
     return (systemHealth?.dataLayers || []).map((layer) => ({
@@ -403,6 +410,40 @@ export function SystemStatusPage() {
       </div>
 
       <div className="space-y-6">
+        {statusMeta?.status === 'fallback' ? (
+          <Alert className="border-mcm-mustard/60 bg-mcm-mustard/10">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Status view degraded</AlertTitle>
+            <AlertDescription className="break-words">
+              The unified status view did not refresh cleanly, so this page is using the
+              health/metadata fallback endpoints.
+              {statusMeta.message ? ` Last error: ${statusMeta.message}` : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {statusMeta?.status === 'error' ? (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Last refresh failed</AlertTitle>
+            <AlertDescription className="break-words">
+              Showing the last cached status view because the latest refresh failed.
+              {statusMeta.message ? ` Last error: ${statusMeta.message}` : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {realtimeStatus?.status === 'reconnecting' || realtimeStatus?.status === 'unavailable' ? (
+          <Alert className="border-mcm-mustard/60 bg-mcm-mustard/10">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Realtime updates degraded</AlertTitle>
+            <AlertDescription className="break-words">
+              {realtimeStatus.message ||
+                'Realtime updates are unavailable; polling and manual refresh remain active.'}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         <ErrorBoundary>
           <Suspense fallback={<Skeleton className="h-[360px] w-full rounded-xl bg-muted/20" />}>
             <OperationalJobMonitorPanel
