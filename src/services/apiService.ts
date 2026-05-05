@@ -12,7 +12,8 @@ import {
 } from '@/services/uiDiagnostics';
 
 const API_WARMUP_PATH = '/healthz';
-const API_COLD_START_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const API_WARMUP_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const API_REQUEST_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 502, 503, 504]);
 const API_WARMUP_MAX_ATTEMPTS = 3;
 const API_WARMUP_BASE_DELAY_MS = 500;
 const API_WARMUP_MAX_DELAY_MS = 4000;
@@ -101,8 +102,8 @@ function appendCookieAuthHeaders(headers: Headers, method: string): Headers {
   return nextHeaders;
 }
 
-function isRetryableStatusCode(statusCode: number): boolean {
-  return API_COLD_START_RETRYABLE_STATUS_CODES.has(statusCode);
+function isWarmupRetryableStatusCode(statusCode: number): boolean {
+  return API_WARMUP_RETRYABLE_STATUS_CODES.has(statusCode);
 }
 
 function isRetryableFetchError(error: unknown, externalSignal?: AbortSignal | null): boolean {
@@ -263,7 +264,7 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
             if (response.status < 400) {
               return;
             }
-            if (!shouldRetry || !isRetryableStatusCode(response.status)) {
+            if (!shouldRetry || !isWarmupRetryableStatusCode(response.status)) {
               return;
             }
           } catch (error) {
@@ -374,7 +375,7 @@ async function performRequest<T>(
       ? new Set<number>()
       : Array.isArray(retryOnStatusCodes)
         ? new Set<number>(retryOnStatusCodes)
-        : API_COLD_START_RETRYABLE_STATUS_CODES;
+        : API_REQUEST_RETRYABLE_STATUS_CODES;
 
   let url = buildRequestUrl(apiBaseUrl, endpoint, params);
 

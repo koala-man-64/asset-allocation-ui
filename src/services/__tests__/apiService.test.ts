@@ -80,6 +80,21 @@ describe('apiService cookie auth transport', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('does not retry backend 500 responses for primary requests by default', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(new Response('server bug', { status: 500, statusText: 'Server Error' }));
+
+    const { request } = await importApiService();
+
+    await expect(request('/system/status-view')).rejects.toThrow(/API Error: 500 Server Error/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const primaryCalls = fetchMock.mock.calls.filter(([url]) =>
+      String(url).includes('/api/system/status-view')
+    );
+    expect(primaryCalls).toHaveLength(1);
+  });
+
   it('sends cookie credentials and csrf without Authorization headers', async () => {
     Object.defineProperty(document, 'cookie', {
       configurable: true,
