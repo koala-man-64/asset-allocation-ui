@@ -31,7 +31,7 @@ import type {
   DataProfilingResponse,
   StorageUsageResponse
 } from '@/services/apiService';
-import type { StockScreenerResponse } from '@/services/apiService';
+import type { StockScreenerRequestParams, StockScreenerResponse } from '@/services/apiService';
 import { ApiError, apiService } from '@/services/apiService';
 import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
@@ -406,14 +406,7 @@ export const DataService = {
   },
 
   getStockScreener(
-    params: {
-      q?: string;
-      limit?: number;
-      offset?: number;
-      asOf?: string;
-      sort?: string;
-      direction?: 'asc' | 'desc';
-    } = {},
+    params: StockScreenerRequestParams = {},
     signal?: AbortSignal
   ): Promise<StockScreenerResponse> {
     return apiService.getStockScreener(params, signal);

@@ -28,6 +28,13 @@ const SYSTEM_STATUS_VIEW_TIMEOUT_MS = 20_000;
 const AUTH_SESSION_STATUS_ENDPOINT = '/auth/session';
 const CSRF_COOKIE_NAMES = ['__Host-aa_csrf', 'aa_csrf_dev'] as const;
 
+type RequestParamPrimitive = string | number | boolean;
+type RequestParamValue =
+  | RequestParamPrimitive
+  | readonly RequestParamPrimitive[]
+  | null
+  | undefined;
+
 const apiWarmupAttempted = new Set<string>();
 const apiWarmupInFlight = new Map<string, Promise<void>>();
 
@@ -154,13 +161,17 @@ function isSafeReplayMethod(method?: string): boolean {
 function buildRequestUrl(
   apiBaseUrl: string,
   endpoint: string,
-  params?: Record<string, string | number | boolean | undefined>
+  params?: Record<string, RequestParamValue>
 ): string {
   let url = `${apiBaseUrl}${endpoint}`;
   if (params) {
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) {
+      if (Array.isArray(value)) {
+        value.forEach((item) => searchParams.append(key, String(item)));
+        return;
+      }
+      if (value !== undefined && value !== null) {
         searchParams.append(key, String(value));
       }
     });
@@ -312,7 +323,7 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
 }
 
 export interface RequestConfig extends RequestInit {
-  params?: Record<string, string | number | boolean | undefined>;
+  params?: Record<string, RequestParamValue>;
   timeoutMs?: number;
   retryOnStatusCodes?: number[] | false;
   retryAttempts?: number;
@@ -626,13 +637,111 @@ export interface StockScreenerRow {
   sma50d?: number | null;
   sma200d?: number | null;
   trend50_200?: number | null;
-  aboveSma50?: number | null;
+  aboveSma50?: boolean | number | null;
   bbWidth20d?: number | null;
   compressionScore?: number | null;
   volumeZ20d?: number | null;
   volumePctRank252d?: number | null;
-  hasSilver?: number | null;
-  hasGold?: number | null;
+  hasSilver?: boolean | number | null;
+  hasGold?: boolean | number | null;
+}
+
+export type StockScreenerSortDirection = 'asc' | 'desc';
+
+export type StockScreenerSortKey =
+  | 'symbol'
+  | 'close'
+  | 'volume'
+  | 'return_1d'
+  | 'return_5d'
+  | 'vol_20d'
+  | 'drawdown_1y'
+  | 'atr_14d'
+  | 'gap_atr'
+  | 'sma_50d'
+  | 'sma_200d'
+  | 'trend_50_200'
+  | 'above_sma_50'
+  | 'bb_width_20d'
+  | 'compression_score'
+  | 'volume_z_20d'
+  | 'volume_pct_rank_252d';
+
+type StockScreenerStringFilter = string | readonly string[];
+
+export interface StockScreenerRequestParams {
+  q?: string;
+  asOf?: string;
+  as_of?: string;
+  limit?: number;
+  offset?: number;
+  sort?: StockScreenerSortKey;
+  direction?: StockScreenerSortDirection;
+  sectors?: StockScreenerStringFilter;
+  industries?: StockScreenerStringFilter;
+  countries?: StockScreenerStringFilter;
+  is_optionable?: boolean;
+  has_silver?: boolean;
+  has_gold?: boolean;
+  above_sma_50?: boolean;
+  min_close?: number;
+  max_close?: number;
+  min_volume?: number;
+  max_volume?: number;
+  min_return_1d?: number;
+  max_return_1d?: number;
+  min_return_5d?: number;
+  max_return_5d?: number;
+  min_vol_20d?: number;
+  max_vol_20d?: number;
+  min_drawdown_1y?: number;
+  max_drawdown_1y?: number;
+  min_atr_14d?: number;
+  max_atr_14d?: number;
+  min_gap_atr?: number;
+  max_gap_atr?: number;
+  min_sma_50d?: number;
+  max_sma_50d?: number;
+  min_sma_200d?: number;
+  max_sma_200d?: number;
+  min_trend_50_200?: number;
+  max_trend_50_200?: number;
+  min_bb_width_20d?: number;
+  max_bb_width_20d?: number;
+  min_compression_score?: number;
+  max_compression_score?: number;
+  min_volume_z_20d?: number;
+  max_volume_z_20d?: number;
+  min_volume_pct_rank_252d?: number;
+  max_volume_pct_rank_252d?: number;
+}
+
+export interface StockScreenerCoverageSummary {
+  silverRows: number;
+  goldRows: number;
+  bothRows: number;
+  silverPct?: number | null;
+  goldPct?: number | null;
+}
+
+export interface StockScreenerSummary {
+  universeCount: number;
+  filteredCount: number;
+  coverage: StockScreenerCoverageSummary;
+  sectorCount?: number | null;
+  countryCount?: number | null;
+}
+
+export interface StockScreenerFacetBucket {
+  value: string;
+  count: number;
+}
+
+export interface StockScreenerFacets {
+  sectors?: StockScreenerFacetBucket[];
+  industries?: StockScreenerFacetBucket[];
+  countries?: StockScreenerFacetBucket[];
+  coverage?: Partial<StockScreenerCoverageSummary>;
 }
 
 export interface StockScreenerResponse {
@@ -641,6 +750,51 @@ export interface StockScreenerResponse {
   limit: number;
   offset: number;
   rows: StockScreenerRow[];
+  summary?: StockScreenerSummary | null;
+  facets?: StockScreenerFacets | null;
+  filters?: Partial<StockScreenerRequestParams> | null;
+}
+
+function serializeStockScreenerList(value: StockScreenerStringFilter | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    const serialized = value
+      .map((item) => String(item).trim())
+      .filter(Boolean)
+      .join(',');
+    return serialized || undefined;
+  }
+  const serialized = String(value ?? '').trim();
+  return serialized || undefined;
+}
+
+function buildStockScreenerQueryParams(
+  params: StockScreenerRequestParams
+): Record<string, RequestParamValue> {
+  const {
+    asOf,
+    as_of,
+    sectors,
+    industries,
+    countries,
+    q,
+    ...rest
+  } = params;
+  const queryParams: Record<string, RequestParamValue> = {
+    ...rest,
+    q: String(q ?? '').trim() || undefined,
+    as_of: String(asOf ?? as_of ?? '').trim() || undefined,
+    sectors: serializeStockScreenerList(sectors),
+    industries: serializeStockScreenerList(industries),
+    countries: serializeStockScreenerList(countries)
+  };
+
+  Object.keys(queryParams).forEach((key) => {
+    if (queryParams[key] === undefined || queryParams[key] === null || queryParams[key] === '') {
+      delete queryParams[key];
+    }
+  });
+
+  return queryParams;
 }
 
 export interface PurgeRequest {
@@ -1276,18 +1430,11 @@ export const apiService = {
   },
 
   getStockScreener(
-    params: {
-      q?: string;
-      limit?: number;
-      offset?: number;
-      asOf?: string;
-      sort?: string;
-      direction?: 'asc' | 'desc';
-    } = {},
+    params: StockScreenerRequestParams = {},
     signal?: AbortSignal
   ): Promise<StockScreenerResponse> {
     return request<StockScreenerResponse>('/data/screener', {
-      params,
+      params: buildStockScreenerQueryParams(params),
       signal
     });
   },
