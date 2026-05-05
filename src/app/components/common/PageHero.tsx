@@ -15,7 +15,7 @@ export interface PageHeroMetric {
 interface PageHeroProps {
   kicker: string;
   title: ReactNode;
-  subtitle: ReactNode;
+  subtitle?: ReactNode;
   actions?: ReactNode;
   metrics?: PageHeroMetric[];
   className?: string;
@@ -42,7 +42,7 @@ export function PageHero({
       <div className={cn('page-header min-w-0 flex-1', contentClassName)}>
         <p className="page-kicker">{kicker}</p>
         <h1 className="page-title">{title}</h1>
-        <p className="page-subtitle max-w-3xl">{subtitle}</p>
+        {subtitle ? <p className="page-subtitle max-w-3xl">{subtitle}</p> : null}
       </div>
 
       {hasSideContent ? (
