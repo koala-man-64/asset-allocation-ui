@@ -132,23 +132,6 @@ function isConfigTab(value: string | null): value is ConfigTab {
   return CONFIG_TABS.includes(value as ConfigTab);
 }
 
-function ConfigTabContent({ activeTab }: { activeTab: ConfigTab }) {
-  switch (activeTab) {
-    case 'universe':
-      return <UniverseConfigPage embedded />;
-    case 'ranking':
-      return <RankingConfigPage embedded />;
-    case 'rebalance-policy':
-      return <RebalancePolicyPanel />;
-    case 'regime-policy':
-      return <RegimePolicyPanel />;
-    case 'risk-policy':
-      return <RiskPolicyPanel />;
-    case 'exit-rules':
-      return <ExitRuleSetPanel />;
-  }
-}
-
 function formatTimestamp(value?: string | null): string {
   if (!value) {
     return 'Never updated';
@@ -1968,8 +1951,23 @@ export function StrategyConfigurationHubPage() {
           </TabsList>
         </div>
 
-        <TabsContent key={activeTab} value={activeTab}>
-          <ConfigTabContent activeTab={activeTab} />
+        <TabsContent value="universe">
+          <UniverseConfigPage embedded />
+        </TabsContent>
+        <TabsContent value="ranking">
+          <RankingConfigPage embedded />
+        </TabsContent>
+        <TabsContent value="rebalance-policy">
+          <RebalancePolicyPanel />
+        </TabsContent>
+        <TabsContent value="regime-policy">
+          <RegimePolicyPanel />
+        </TabsContent>
+        <TabsContent value="risk-policy">
+          <RiskPolicyPanel />
+        </TabsContent>
+        <TabsContent value="exit-rules">
+          <ExitRuleSetPanel />
         </TabsContent>
       </Tabs>
     </div>
