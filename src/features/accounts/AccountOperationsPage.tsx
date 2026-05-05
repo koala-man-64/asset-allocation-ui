@@ -352,6 +352,7 @@ const ACTION_REASON_PRESETS: Record<AccountActionDialogTarget['kind'], string[]>
 
 const ONBOARDING_PROVIDERS: Array<{ value: BrokerVendor; label: string }> = [
   { value: 'alpaca', label: 'Alpaca' },
+  { value: 'kalshi', label: 'Kalshi' },
   { value: 'etrade', label: 'E*TRADE' },
   { value: 'schwab', label: 'Schwab' }
 ];
@@ -364,6 +365,27 @@ const ONBOARDING_ENVIRONMENTS: Array<{
   { value: 'sandbox', label: 'Sandbox' },
   { value: 'live', label: 'Live' }
 ];
+
+const ONBOARDING_PROVIDER_ENVIRONMENTS: Record<
+  BrokerVendor,
+  BrokerAccountOnboardingEnvironment[]
+> = {
+  alpaca: ['paper', 'live'],
+  etrade: ['sandbox', 'live'],
+  schwab: ['live'],
+  kalshi: ['live']
+};
+
+function defaultOnboardingEnvironment(
+  provider: BrokerVendor
+): BrokerAccountOnboardingEnvironment {
+  return ONBOARDING_PROVIDER_ENVIRONMENTS[provider][0] ?? 'paper';
+}
+
+function onboardingEnvironmentOptions(provider: BrokerVendor) {
+  const supported = new Set(ONBOARDING_PROVIDER_ENVIRONMENTS[provider]);
+  return ONBOARDING_ENVIRONMENTS.filter((option) => supported.has(option.value));
+}
 
 const ONBOARDING_POSTURES: Array<{
   value: BrokerAccountExecutionPosture;
@@ -1043,6 +1065,7 @@ function AccountOnboardingDialog({
   const candidates = candidatesQuery.data?.candidates ?? [];
   const selectedCandidate =
     candidates.find((candidate) => candidate.candidateId === selectedCandidateId) ?? null;
+  const environmentOptions = useMemo(() => onboardingEnvironmentOptions(provider), [provider]);
 
   const onboardMutation = useMutation({
     mutationFn: (payload: {
@@ -1082,6 +1105,21 @@ function AccountOnboardingDialog({
     setReadiness('review');
     setExecutionPosture('monitor_only');
     setStep('setup');
+  };
+
+  const handleProviderChange = (value: string) => {
+    const nextProvider = value as BrokerVendor;
+    const supportedEnvironments = ONBOARDING_PROVIDER_ENVIRONMENTS[nextProvider] ?? [];
+    setProvider(nextProvider);
+    setEnvironment((current) =>
+      supportedEnvironments.includes(current) ? current : defaultOnboardingEnvironment(nextProvider)
+    );
+    setSelectedCandidateId(null);
+  };
+
+  const handleEnvironmentChange = (value: string) => {
+    setEnvironment(value as BrokerAccountOnboardingEnvironment);
+    setSelectedCandidateId(null);
   };
 
   const goBack = () => {
@@ -1188,7 +1226,7 @@ function AccountOnboardingDialog({
               </label>
               <Select
                 value={provider}
-                onValueChange={(value) => setProvider(value as BrokerVendor)}
+                onValueChange={handleProviderChange}
               >
                 <SelectTrigger id="onboarding-provider">
                   <SelectValue placeholder="Provider" />
@@ -1212,15 +1250,13 @@ function AccountOnboardingDialog({
               </label>
               <Select
                 value={environment}
-                onValueChange={(value) =>
-                  setEnvironment(value as BrokerAccountOnboardingEnvironment)
-                }
+                onValueChange={handleEnvironmentChange}
               >
                 <SelectTrigger id="onboarding-environment">
                   <SelectValue placeholder="Environment" />
                 </SelectTrigger>
                 <SelectContent>
-                  {ONBOARDING_ENVIRONMENTS.map((option) => (
+                  {environmentOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>

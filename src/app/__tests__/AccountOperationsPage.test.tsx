@@ -275,6 +275,33 @@ const onboardingCandidatesResponse: BrokerAccountOnboardingCandidateListResponse
   generatedAt: '2026-04-20T13:50:00Z'
 };
 
+const kalshiOnboardingCandidatesResponse: BrokerAccountOnboardingCandidateListResponse = {
+  candidates: [
+    {
+      candidateId: 'kalshi:live:123',
+      provider: 'kalshi',
+      environment: 'live',
+      suggestedAccountId: 'kalshi-live-subaccount-0',
+      displayName: 'Kalshi Live Subaccount 0',
+      accountNumberMasked: 'GEN-0001',
+      baseCurrency: 'USD',
+      state: 'available',
+      stateReason: null,
+      existingAccountId: null,
+      allowedExecutionPostures: ['monitor_only'],
+      blockedExecutionPostureReasons: {
+        paper: 'Kalshi account operations v1 is live balance visibility only.',
+        sandbox: 'Kalshi account operations v1 is live balance visibility only.',
+        live: 'Kalshi account operations v1 does not support trade execution.'
+      },
+      canOnboard: true
+    }
+  ],
+  discoveryStatus: 'completed',
+  message: '',
+  generatedAt: '2026-04-20T13:50:00Z'
+};
+
 const onboardedAccount: BrokerAccountSummary = {
   accountId: 'alpaca-paper',
   broker: 'alpaca',
@@ -1322,6 +1349,45 @@ describe('AccountOperationsPage', () => {
     await user.click(await screen.findByRole('option', { name: 'Kalshi' }));
 
     expect(screen.getByTestId('account-card-acct-kalshi-1')).toBeInTheDocument();
+  });
+
+  it('discovers Kalshi account candidates with the live environment', async () => {
+    vi.mocked(accountOperationsApi.listAccounts).mockResolvedValue({
+      accounts: [],
+      generatedAt: '2026-04-20T13:50:00Z'
+    });
+    vi.mocked(tradeDeskApi.listAccounts).mockResolvedValue({
+      accounts: [],
+      generatedAt: '2026-04-20T13:50:00Z'
+    });
+    vi.mocked(accountOperationsApi.listOnboardingCandidates).mockResolvedValueOnce(
+      kalshiOnboardingCandidatesResponse
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByText(/no configured accounts/i)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /add account/i })[0]);
+
+    const dialog = await screen.findByRole('dialog', { name: /add account/i });
+    await user.click(within(dialog).getByRole('combobox', { name: /provider/i }));
+    await user.click(await screen.findByRole('option', { name: 'Kalshi' }));
+
+    expect(within(dialog).getByRole('combobox', { name: /environment/i })).toHaveTextContent(
+      'Live'
+    );
+
+    await user.click(within(dialog).getByRole('button', { name: /discover accounts/i }));
+
+    expect(await screen.findByText('Kalshi Live Subaccount 0')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(accountOperationsApi.listOnboardingCandidates).toHaveBeenCalledWith(
+        'kalshi',
+        'live',
+        expect.any(AbortSignal)
+      );
+    });
   });
 
   it('onboards a discovered broker account from the empty state and renders it on the board', async () => {

@@ -3,8 +3,7 @@ import type {
   BrokerAccountSummary,
   BrokerHealthTone,
   BrokerTradeReadiness,
-  BrokerStrategyAllocationSummary,
-  BrokerVendor
+  BrokerStrategyAllocationSummary
 } from '@/types/brokerAccounts';
 import type { TradeAccountSummaryView } from '@/services/tradeDeskModels';
 import type { AccountProvider } from '@/features/accounts/lib/accountMonitoring';
