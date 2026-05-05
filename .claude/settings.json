@@ -5,7 +5,11 @@
       "Bash(grep -oE \"[A-Za-z0-9_]{1,4}=DH\\\\\\(\\\\\\)|searchParams\" /tmp/hub.js)",
       "PowerShell($ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -Uri \"https://asset-allocation-ui.braveground-4b8beb5c.eastus.azurecontainerapps.io/assets/StrategyConfigurationHubPage-Bbxk63nI.js\" -OutFile \"$env:TEMP\\\\hub.js\"; \\(Get-Item \"$env:TEMP\\\\hub.js\"\\).Length)",
       "PowerShell($content = Get-Content \"$env:TEMP\\\\hub.js\" -Raw; $idx = $content.IndexOf\\(\"Configuration Library\"\\); Write-Output \"idx=$idx\"; if \\($idx -ge 0\\) { $start = [Math]::Max\\(0,$idx-1500\\); Write-Output $content.Substring\\($start,1700\\) })",
-      "PowerShell($content = Get-Content \"$env:TEMP\\\\hub.js\" -Raw; $idx = $content.IndexOf\\(\"Configuration Library\"\\); $end = [Math]::Min\\($content.Length, $idx+3500\\); Write-Output $content.Substring\\($idx, $end-$idx\\))"
+      "PowerShell($content = Get-Content \"$env:TEMP\\\\hub.js\" -Raw; $idx = $content.IndexOf\\(\"Configuration Library\"\\); $end = [Math]::Min\\($content.Length, $idx+3500\\); Write-Output $content.Substring\\($idx, $end-$idx\\))",
+      "Bash(curl -sS -o /tmp/err.json -w \"HTTP %{http_code}\\\\n\" \"https://asset-allocation-ui.braveground-4b8beb5c.eastus.azurecontainerapps.io/api/exit-rule-sets/\")",
+      "Bash(curl -sS -o /tmp/health.json -w \"HTTP %{http_code}\\\\n\" \"https://asset-allocation-ui.braveground-4b8beb5c.eastus.azurecontainerapps.io/api/universe-configs/\")",
+      "Bash(curl -sS -o /tmp/h2.json -w \"HTTP %{http_code}\\\\n\" \"https://asset-allocation-ui.braveground-4b8beb5c.eastus.azurecontainerapps.io/healthz\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' https://asset-allocation-ui.braveground-4b8beb5c.eastus.azurecontainerapps.io/api/__TRACKED_VAR__)"
     ]
   }
 }
