@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, ArrowDown, ArrowUp, ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -1902,33 +1902,11 @@ export function StrategyConfigurationHubPage() {
     );
   };
 
-  const tabMetrics = useMemo(
-    () => [
-      {
-        label: 'Assembly Model',
-        value: 'Pinned',
-        detail: 'Strategies reference exact config revisions.'
-      },
-      {
-        label: 'Runtime Snapshots',
-        value: 'Immutable',
-        detail: 'Resolved strategy revisions remain executable after library edits.'
-      },
-      {
-        label: 'Persistence',
-        value: 'Control Plane',
-        detail: 'The UI saves through APIs; Postgres remains server-owned.'
-      }
-    ],
-    []
-  );
-
   return (
     <div className="page-shell space-y-6">
       <PageHero
         kicker="Strategy Setup"
         title="Configuration Library"
-        subtitle="Maintain reusable universe, ranking, rebalance, regime, risk, and exit definitions as versioned library objects. Strategies pin exact revisions and only move when explicitly repinned."
         actions={
           <Button asChild variant="outline">
             <Link to="/strategies">
@@ -1937,7 +1915,6 @@ export function StrategyConfigurationHubPage() {
             </Link>
           </Button>
         }
-        metrics={tabMetrics}
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="gap-5">
