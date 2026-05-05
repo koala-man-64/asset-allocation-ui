@@ -197,6 +197,35 @@ describe('apiService cookie auth transport', () => {
     ]);
   });
 
+  it('serializes stock screener filters with the contract query names', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ asOf: '2025-01-02', total: 0, limit: 25, offset: 0, rows: [] }));
+
+    const { apiService } = await importApiService();
+
+    await apiService.getStockScreener({
+      q: ' AAPL ',
+      asOf: '2025-01-02',
+      limit: 25,
+      offset: 0,
+      sort: 'return_5d',
+      direction: 'desc',
+      sectors: ['Technology', 'Healthcare'],
+      has_gold: true,
+      min_return_5d: 0.02
+    });
+
+    const screenerUrl = new URL(String(fetchMock.mock.calls[1]?.[0]), 'http://test.local');
+    expect(screenerUrl.pathname).toBe('/api/data/screener');
+    expect(screenerUrl.searchParams.get('q')).toBe('AAPL');
+    expect(screenerUrl.searchParams.get('as_of')).toBe('2025-01-02');
+    expect(screenerUrl.searchParams.has('asOf')).toBe(false);
+    expect(screenerUrl.searchParams.get('sectors')).toBe('Technology,Healthcare');
+    expect(screenerUrl.searchParams.get('has_gold')).toBe('true');
+    expect(screenerUrl.searchParams.get('min_return_5d')).toBe('0.02');
+  });
+
   it('throws an ApiError directly when the backend returns 401', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'ok' }));
     fetchMock.mockResolvedValueOnce(

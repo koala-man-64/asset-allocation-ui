@@ -1,4 +1,13 @@
 export { ApiError } from '@/services/apiService';
+export type {
+  StockScreenerFacets,
+  StockScreenerRequestParams,
+  StockScreenerResponse,
+  StockScreenerRow,
+  StockScreenerSortDirection,
+  StockScreenerSortKey,
+  StockScreenerSummary
+} from '@/services/apiService';
 import { request as apiRequest } from '@/services/apiService';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed';
@@ -122,44 +131,6 @@ export interface JobLogsResponse {
   runsReturned: number;
   tailLines: number;
   runs: JobLogRunResponse[];
-}
-
-export interface StockScreenerRow {
-  symbol: string;
-  name?: string | null;
-  sector?: string | null;
-  industry?: string | null;
-  country?: string | null;
-  isOptionable?: boolean | null;
-  open?: number | null;
-  high?: number | null;
-  low?: number | null;
-  close?: number | null;
-  volume?: number | null;
-  return1d?: number | null;
-  return5d?: number | null;
-  vol20d?: number | null;
-  drawdown1y?: number | null;
-  atr14d?: number | null;
-  gapAtr?: number | null;
-  sma50d?: number | null;
-  sma200d?: number | null;
-  trend50_200?: number | null;
-  aboveSma50?: number | null;
-  bbWidth20d?: number | null;
-  compressionScore?: number | null;
-  volumeZ20d?: number | null;
-  volumePctRank252d?: number | null;
-  hasSilver?: number | null;
-  hasGold?: number | null;
-}
-
-export interface StockScreenerResponse {
-  asOf: string;
-  total: number;
-  limit: number;
-  offset: number;
-  rows: StockScreenerRow[];
 }
 
 export interface TradeResponse {
