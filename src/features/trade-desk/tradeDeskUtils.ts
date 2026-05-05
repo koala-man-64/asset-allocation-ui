@@ -1,8 +1,5 @@
 import { ApiError } from '@/services/apiService';
-import type {
-  TradeEnvironment,
-  TradeOrderStatus
-} from '@asset-allocation/contracts';
+import type { TradeEnvironment, TradeOrderStatus } from '@asset-allocation/contracts';
 import type { TradeAccountSummaryView } from '@/services/tradeDeskModels';
 
 export function formatCurrency(value?: number | null): string {
@@ -66,7 +63,8 @@ export function orderStatusVariant(status: TradeOrderStatus) {
   return 'outline' as const;
 }
 
-export function brokerLabel(provider: TradeAccountSummaryView['provider']): string {
+export function brokerLabel(provider: TradeAccountSummaryView['provider'] | 'kalshi'): string {
+  if (provider === 'kalshi') return 'Kalshi';
   if (provider === 'etrade') return 'E*TRADE';
   if (provider === 'schwab') return 'Schwab';
   return 'Alpaca';
@@ -100,7 +98,10 @@ export function extractTradeDeskErrorMessage(error: unknown, fallback: string): 
     try {
       const parsed = rawBody ? JSON.parse(rawBody) : null;
       const serviceMessage =
-        parsed && typeof parsed === 'object' && 'message' in parsed && typeof parsed.message === 'string'
+        parsed &&
+        typeof parsed === 'object' &&
+        'message' in parsed &&
+        typeof parsed.message === 'string'
           ? parsed.message
           : null;
       if (serviceMessage) {

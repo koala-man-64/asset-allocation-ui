@@ -9,10 +9,7 @@ import type {
   TradeOrderPreviewResponse,
   TradePosition
 } from '@asset-allocation/contracts';
-import type {
-  TradeAccountDetailView,
-  TradeAccountSummaryView
-} from '@/services/tradeDeskModels';
+import type { TradeAccountDetailView, TradeAccountSummaryView } from '@/services/tradeDeskModels';
 
 const mocks = vi.hoisted(() => ({
   listAccounts: vi.fn(),
@@ -175,6 +172,42 @@ const liveAccount: TradeAccountSummaryView = {
   lastTradeAt: now
 };
 
+const kalshiAccount: TradeAccountSummaryView = {
+  ...paperAccount,
+  accountId: 'acct-kalshi',
+  name: 'Kalshi Forecasts',
+  provider: 'kalshi' as TradeAccountSummaryView['provider'],
+  environment: 'live',
+  accountNumberMasked: 'KLSH-01',
+  readiness: 'review',
+  readinessReason: 'Event-contract venue is enabled for monitoring only.',
+  capabilities: {
+    ...paperAccount.capabilities,
+    canPreview: false,
+    canSubmitPaper: false,
+    canSubmitLive: false,
+    canCancel: false,
+    supportsMarketOrders: false,
+    supportsLimitOrders: false,
+    supportsStopOrders: false,
+    supportsFractionalQuantity: false,
+    supportsNotionalOrders: false,
+    supportsEquities: false,
+    supportsEtfs: false,
+    readOnly: true,
+    unsupportedReason: 'Kalshi account operations are monitoring-only.'
+  },
+  cash: 25000,
+  buyingPower: 25000,
+  equity: 25000,
+  openOrderCount: 1,
+  positionCount: 0,
+  unresolvedAlertCount: 0,
+  confirmationRequired: false,
+  pnl: null,
+  lastTradeAt: null
+};
+
 const paperOrder: TradeOrder = {
   orderId: 'order-1',
   accountId: 'acct-paper',
@@ -292,6 +325,22 @@ const detailsByAccountId: Record<string, TradeAccountDetailView> = {
         observedAt: now
       }
     ]
+  },
+  'acct-kalshi': {
+    account: kalshiAccount,
+    restrictions: ['Equity order routing is not supported for Kalshi accounts.'],
+    riskLimits: {
+      maxOrderNotional: 0,
+      maxDailyNotional: 0,
+      maxShareQuantity: 0,
+      allowedAssetClasses: [],
+      allowedOrderTypes: [],
+      liveTradingAllowed: false,
+      liveTradingReason: 'Kalshi account operations are monitoring-only.'
+    },
+    unresolvedAlerts: [],
+    recentAuditEvents: [],
+    alerts: []
   }
 };
 
@@ -300,7 +349,9 @@ function configureSuccessMocks() {
     accounts: [paperAccount, liveAccount],
     generatedAt: now
   });
-  mocks.getAccountDetail.mockImplementation(async (accountId: string) => detailsByAccountId[accountId]);
+  mocks.getAccountDetail.mockImplementation(
+    async (accountId: string) => detailsByAccountId[accountId]
+  );
   mocks.listPositions.mockImplementation(async (accountId: string) => ({
     accountId,
     positions: accountId === 'acct-paper' ? [paperPosition] : [],
@@ -334,6 +385,36 @@ describe('TradeDeskPage', () => {
     );
     expect((await screen.findAllByText('MSFT')).length).toBeGreaterThan(0);
     expect(screen.getByText('Manual order preview generated.')).toBeInTheDocument();
+  });
+
+  it('renders Kalshi accounts and disables unsupported equity trade actions', async () => {
+    configureSuccessMocks();
+    mocks.listAccounts.mockResolvedValue({
+      accounts: [kalshiAccount],
+      generatedAt: now
+    });
+    mocks.listOrders.mockResolvedValue({
+      accountId: kalshiAccount.accountId,
+      orders: [
+        { ...paperOrder, accountId: kalshiAccount.accountId, provider: kalshiAccount.provider }
+      ],
+      generatedAt: now
+    });
+
+    renderWithProviders(<TradeDeskPage />);
+
+    expect(
+      await screen.findByText(/Kalshi Forecasts is routed through Kalshi/)
+    ).toBeInTheDocument();
+    const previewButton = screen.getByRole('button', { name: 'Preview' });
+    expect(previewButton).toBeDisabled();
+    expect(previewButton).toHaveAttribute(
+      'title',
+      'Equity orders are not supported for this account.'
+    );
+    expect(await screen.findByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(mocks.previewOrder).not.toHaveBeenCalled();
+    expect(mocks.cancelOrder).not.toHaveBeenCalled();
   });
 
   it('previews and submits a manual paper order with idempotency keys', async () => {

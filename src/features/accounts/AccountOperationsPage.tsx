@@ -42,6 +42,7 @@ import {
 } from '@/features/accounts/lib/accountMonitoring';
 import type {
   AccountActionAvailability,
+  AccountProvider,
   AccountBoardScope,
   AccountMonitoringSnapshot,
   AccountStatusFilter,
@@ -391,13 +392,17 @@ const ONBOARDING_POSTURES: Array<{
   }
 ];
 
-function brokerLabel(broker: BrokerVendor): string {
+function brokerLabel(broker: AccountProvider): string {
   if (broker === 'alpaca') {
     return 'Alpaca';
   }
 
   if (broker === 'schwab') {
     return 'Schwab';
+  }
+
+  if (broker === 'kalshi') {
+    return 'Kalshi';
   }
 
   return 'E*TRADE';
@@ -693,7 +698,7 @@ function AccountBoardControls({
   brokerFilter: BrokerFilter;
   statusFilter: AccountStatusFilter;
   scope: AccountBoardScope;
-  brokers: readonly BrokerVendor[];
+  brokers: readonly AccountProvider[];
   onSearchTermChange: (value: string) => void;
   onBrokerFilterChange: (value: BrokerFilter) => void;
   onStatusFilterChange: (value: AccountStatusFilter) => void;
@@ -2426,7 +2431,7 @@ export function AccountOperationsPage() {
     [accounts, tradeAccountsById]
   );
   const brokers = useMemo(
-    () => Array.from(new Set(accounts.map((account) => account.broker))).sort(),
+    () => Array.from(new Set(accounts.map((account) => account.broker as AccountProvider))).sort(),
     [accounts]
   );
   const filteredSnapshots = useMemo(

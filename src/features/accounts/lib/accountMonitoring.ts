@@ -9,6 +9,8 @@ import type {
 import type { TradeAccountSummaryView } from '@/services/tradeDeskModels';
 import { getAccountSearchText } from '@/features/accounts/lib/accountPresentation';
 
+export type AccountProvider = BrokerVendor | 'kalshi';
+
 export type AccountBoardScope =
   | 'all'
   | 'needs_action'
@@ -19,7 +21,7 @@ export type AccountBoardScope =
   | 'paper';
 
 export type AccountStatusFilter = 'all' | BrokerHealthTone | BrokerTradeReadiness;
-export type BrokerFilter = 'all' | BrokerVendor;
+export type BrokerFilter = 'all' | AccountProvider;
 
 export interface AccountMonitoringSnapshot {
   account: BrokerAccountSummary;
@@ -124,7 +126,7 @@ export function accountMatchesBoardFilters(
   const { account, tradeAccount } = snapshot;
   const search = filters.searchTerm.trim().toLowerCase();
 
-  if (filters.broker !== 'all' && account.broker !== filters.broker) {
+  if (filters.broker !== 'all' && (account.broker as AccountProvider) !== filters.broker) {
     return false;
   }
 

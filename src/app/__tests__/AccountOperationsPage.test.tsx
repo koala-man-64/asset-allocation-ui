@@ -107,6 +107,9 @@ global.ResizeObserver = class ResizeObserver {
 };
 
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
+window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+window.HTMLElement.prototype.setPointerCapture = vi.fn();
+window.HTMLElement.prototype.releasePointerCapture = vi.fn();
 
 const disconnectedAccount: BrokerAccountSummary = {
   accountId: 'acct-schwab-1',
@@ -614,6 +617,39 @@ const healthyTradeAccount: TradeAccountSummaryView = {
     ordersState: 'fresh',
     staleReason: null
   },
+  confirmationRequired: false
+};
+
+const kalshiTradeAccount: TradeAccountSummaryView = {
+  ...healthyTradeAccount,
+  accountId: 'acct-kalshi-1',
+  name: 'Kalshi Forecasts',
+  provider: 'kalshi' as TradeAccountSummaryView['provider'],
+  environment: 'live',
+  accountNumberMasked: 'KLSH-01',
+  readiness: 'review',
+  readinessReason: 'Event-contract venue is enabled for monitoring only.',
+  capabilities: {
+    ...tradeCapabilities,
+    canPreview: false,
+    canSubmitPaper: false,
+    canCancel: false,
+    supportsMarketOrders: false,
+    supportsLimitOrders: false,
+    supportsEquities: false,
+    supportsEtfs: false,
+    readOnly: true,
+    unsupportedReason: 'Kalshi account operations are monitoring-only.'
+  },
+  cash: 25000,
+  buyingPower: 25000,
+  equity: 25000,
+  openOrderCount: 1,
+  positionCount: 2,
+  unresolvedAlertCount: 0,
+  killSwitchActive: false,
+  pnl: null,
+  lastTradeAt: null,
   confirmationRequired: false
 };
 
@@ -1264,6 +1300,28 @@ describe('AccountOperationsPage', () => {
     expect(screen.getByTestId('account-card-acct-schwab-1')).toBeInTheDocument();
     expect(screen.queryByText(/no configured accounts/i)).not.toBeInTheDocument();
     expect(accountOperationsApi.onboardAccount).not.toHaveBeenCalled();
+  });
+
+  it('renders and filters Kalshi trade account rows when broker account rows are missing', async () => {
+    vi.mocked(accountOperationsApi.listAccounts).mockResolvedValue({
+      accounts: [],
+      generatedAt: '2026-04-20T13:50:00Z'
+    });
+    vi.mocked(tradeDeskApi.listAccounts).mockResolvedValue({
+      accounts: [kalshiTradeAccount],
+      generatedAt: '2026-04-20T13:50:00Z'
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(<AccountOperationsPage />);
+
+    expect(await screen.findByTestId('account-card-acct-kalshi-1')).toBeInTheDocument();
+    expect(screen.getAllByText('Kalshi').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('combobox', { name: /broker filter/i }));
+    await user.click(await screen.findByRole('option', { name: 'Kalshi' }));
+
+    expect(screen.getByTestId('account-card-acct-kalshi-1')).toBeInTheDocument();
   });
 
   it('onboards a discovered broker account from the empty state and renders it on the board', async () => {

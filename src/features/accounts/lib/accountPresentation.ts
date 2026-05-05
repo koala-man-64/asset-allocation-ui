@@ -7,6 +7,7 @@ import type {
   BrokerVendor
 } from '@/types/brokerAccounts';
 import type { TradeAccountSummaryView } from '@/services/tradeDeskModels';
+import type { AccountProvider } from '@/features/accounts/lib/accountMonitoring';
 
 export function formatCurrency(value?: number | null, currency: string = 'USD'): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
@@ -130,13 +131,17 @@ export function accountAssignmentDetail(account: BrokerAccountSummary): string {
     .join(' · ');
 }
 
-export function brokerAccentClass(broker: BrokerVendor): string {
+export function brokerAccentClass(broker: AccountProvider): string {
   if (broker === 'alpaca') {
     return 'border-l-mcm-teal bg-[linear-gradient(90deg,rgba(0,128,128,0.14),transparent_22%)]';
   }
 
   if (broker === 'schwab') {
     return 'border-l-mcm-mustard bg-[linear-gradient(90deg,rgba(225,173,1,0.16),transparent_22%)]';
+  }
+
+  if (broker === 'kalshi') {
+    return 'border-l-mcm-rust bg-[linear-gradient(90deg,rgba(174,77,42,0.14),transparent_22%)]';
   }
 
   return 'border-l-mcm-olive bg-[linear-gradient(90deg,rgba(111,102,0,0.14),transparent_22%)]';
@@ -173,6 +178,7 @@ export function getAccountSearchText(
   return [
     account.name,
     account.broker,
+    (account.broker as AccountProvider) === 'kalshi' ? 'Kalshi' : null,
     account.accountNumberMasked,
     account.activePortfolioName,
     account.strategyLabel,

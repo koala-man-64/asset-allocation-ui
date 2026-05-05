@@ -203,6 +203,15 @@ function buildPreviewRequest(
   if (blockingAlerts.length) {
     errors.push(`Blocking alert: ${blockingAlerts.map((alert) => alert.title).join('; ')}.`);
   }
+  if (!account.capabilities.supportsEquities) {
+    errors.push('Equity orders are not supported for this account.');
+  }
+  if (account.capabilities.readOnly) {
+    errors.push(account.capabilities.unsupportedReason || 'This account is read-only.');
+  }
+  if (!account.capabilities.canPreview) {
+    errors.push('Order preview is not supported for this account.');
+  }
 
   if (errors.length) {
     return { errors };
@@ -460,10 +469,19 @@ function OrderTicket({
   const missingAcknowledgements = warningChecks.some(
     (check) => !acknowledgedRiskCheckIds.has(check.checkId)
   );
+  const equityActionDisabledReason = !account.capabilities.supportsEquities
+    ? 'Equity orders are not supported for this account.'
+    : account.capabilities.readOnly
+      ? account.capabilities.unsupportedReason || 'This account is read-only.'
+      : !account.capabilities.canPreview
+        ? 'Order preview is not supported for this account.'
+        : null;
+  const previewDisabled = previewPending || Boolean(equityActionDisabledReason);
   const submitDisabled =
     !preview ||
     preview.blocked ||
     submitPending ||
+    Boolean(equityActionDisabledReason) ||
     missingAcknowledgements ||
     (account.environment === 'live' && !liveConfirmed) ||
     (account.environment === 'live' && !account.capabilities.canSubmitLive);
@@ -493,6 +511,7 @@ function OrderTicket({
             <Input
               id="trade-symbol"
               value={draft.symbol}
+              disabled={Boolean(equityActionDisabledReason)}
               onChange={(event) => onDraftChange({ ...draft, symbol: event.target.value })}
               placeholder="MSFT"
             />
@@ -504,6 +523,7 @@ function OrderTicket({
             </Label>
             <Select
               value={draft.side}
+              disabled={Boolean(equityActionDisabledReason)}
               onValueChange={(value) => onDraftChange({ ...draft, side: value as TradeOrderSide })}
             >
               <SelectTrigger id="trade-side" aria-label="Trade side">
@@ -522,6 +542,7 @@ function OrderTicket({
             </Label>
             <Select
               value={draft.orderType}
+              disabled={Boolean(equityActionDisabledReason)}
               onValueChange={(value) =>
                 onDraftChange({ ...draft, orderType: value as TradeOrderType })
               }
@@ -547,6 +568,7 @@ function OrderTicket({
               id="trade-quantity"
               inputMode="decimal"
               value={draft.quantity}
+              disabled={Boolean(equityActionDisabledReason)}
               onChange={(event) => onDraftChange({ ...draft, quantity: event.target.value })}
             />
           </div>
@@ -559,6 +581,7 @@ function OrderTicket({
               id="trade-notional"
               inputMode="decimal"
               value={draft.notional}
+              disabled={Boolean(equityActionDisabledReason)}
               onChange={(event) => onDraftChange({ ...draft, notional: event.target.value })}
             />
           </div>
@@ -571,6 +594,7 @@ function OrderTicket({
               id="trade-limit-price"
               inputMode="decimal"
               value={draft.limitPrice}
+              disabled={Boolean(equityActionDisabledReason)}
               onChange={(event) => onDraftChange({ ...draft, limitPrice: event.target.value })}
             />
           </div>
@@ -583,6 +607,7 @@ function OrderTicket({
               id="trade-stop-price"
               inputMode="decimal"
               value={draft.stopPrice}
+              disabled={Boolean(equityActionDisabledReason)}
               onChange={(event) => onDraftChange({ ...draft, stopPrice: event.target.value })}
             />
           </div>
@@ -593,6 +618,7 @@ function OrderTicket({
             </Label>
             <Select
               value={draft.timeInForce}
+              disabled={Boolean(equityActionDisabledReason)}
               onValueChange={(value) =>
                 onDraftChange({ ...draft, timeInForce: value as TradeTimeInForce })
               }
@@ -622,11 +648,22 @@ function OrderTicket({
         ) : null}
 
         <div className="flex flex-wrap gap-3">
-          <Button type="button" onClick={onPreview} disabled={previewPending}>
+          <Button
+            type="button"
+            onClick={onPreview}
+            disabled={previewDisabled}
+            title={equityActionDisabledReason ?? undefined}
+          >
             <Ticket className="size-4" />
             {previewPending ? 'Previewing...' : 'Preview'}
           </Button>
-          <Button type="button" variant="outline" onClick={onSubmit} disabled={submitDisabled}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onSubmit}
+            disabled={submitDisabled}
+            title={equityActionDisabledReason ?? undefined}
+          >
             <ShieldCheck className="size-4" />
             {submitPending ? 'Submitting...' : 'Submit'}
           </Button>
@@ -941,6 +978,13 @@ export function TradeDeskPage() {
 
   const positions = positionsQuery.data?.positions ?? [];
   const openOrders = ordersQuery.data?.orders ?? [];
+  const cancelUnavailableReason = !selectedAccount.capabilities.supportsEquities
+    ? 'Equity order cancellation is not supported for this account.'
+    : !selectedAccount.capabilities.canCancel
+      ? 'Order cancellation is not supported for this account.'
+      : selectedAccount.capabilities.readOnly
+        ? selectedAccount.capabilities.unsupportedReason || 'This account is read-only.'
+        : null;
 
   return (
     <div className="space-y-6">
@@ -1052,6 +1096,7 @@ export function TradeDeskPage() {
                   orders={openOrders}
                   onCancel={(order) => cancelMutation.mutate(order)}
                   cancellingOrderId={cancellingOrderId}
+                  cancelUnavailableReason={cancelUnavailableReason}
                   emptyMessage="No open orders are currently staged for this account."
                 />
               )}
