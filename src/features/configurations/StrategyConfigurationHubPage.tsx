@@ -65,7 +65,14 @@ import type {
 } from '@/types/strategy';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
-const CONFIG_TABS = ['universe', 'ranking', 'rebalance-policy', 'regime-policy', 'risk-policy', 'exit-rules'] as const;
+const CONFIG_TABS = [
+  'universe',
+  'ranking',
+  'rebalance-policy',
+  'regime-policy',
+  'risk-policy',
+  'exit-rules'
+] as const;
 type ConfigTab = (typeof CONFIG_TABS)[number];
 
 const TAB_LABELS: Record<ConfigTab, string> = {
@@ -123,6 +130,23 @@ const TAKE_PROFIT_ACTION_OPTIONS: Array<{ value: StrategyRiskTakeProfitAction; l
 
 function isConfigTab(value: string | null): value is ConfigTab {
   return CONFIG_TABS.includes(value as ConfigTab);
+}
+
+function ConfigTabContent({ activeTab }: { activeTab: ConfigTab }) {
+  switch (activeTab) {
+    case 'universe':
+      return <UniverseConfigPage embedded />;
+    case 'ranking':
+      return <RankingConfigPage embedded />;
+    case 'rebalance-policy':
+      return <RebalancePolicyPanel />;
+    case 'regime-policy':
+      return <RegimePolicyPanel />;
+    case 'risk-policy':
+      return <RiskPolicyPanel />;
+    case 'exit-rules':
+      return <ExitRuleSetPanel />;
+  }
 }
 
 function formatTimestamp(value?: string | null): string {
@@ -554,7 +578,8 @@ function RebalancePolicyPanel() {
   });
   const detailQuery = useQuery({
     queryKey: ['rebalance-policies', 'detail', selectedName],
-    queryFn: ({ signal }) => rebalancePolicyApi.getRebalancePolicyDetail(String(selectedName), signal),
+    queryFn: ({ signal }) =>
+      rebalancePolicyApi.getRebalancePolicyDetail(String(selectedName), signal),
     enabled: Boolean(selectedName)
   });
 
@@ -673,7 +698,8 @@ function RebalancePolicyPanel() {
           <div>
             <CardTitle className="text-lg font-semibold">Rebalance Policy Editor</CardTitle>
             <CardDescription>
-              Define reusable calendar cadence, signal anchor, execution delay, drift, and turnover controls.
+              Define reusable calendar cadence, signal anchor, execution delay, drift, and turnover
+              controls.
             </CardDescription>
           </div>
           <CardAction>
@@ -1796,7 +1822,9 @@ function ExitRuleSetPanel() {
                             <Input
                               id={`exit-rule-value-${index}`}
                               type="number"
-                              step={ruleType === 'time_stop' || ruleType === 'rank_decay' ? 1 : 0.01}
+                              step={
+                                ruleType === 'time_stop' || ruleType === 'rank_decay' ? 1 : 0.01
+                              }
                               value={
                                 ruleType === 'rank_decay'
                                   ? typeof rule.rankThreshold === 'number'
@@ -1881,9 +1909,14 @@ export function StrategyConfigurationHubPage() {
     if (!isConfigTab(value)) {
       return;
     }
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('tab', value);
-    setSearchParams(nextParams, { replace: true });
+    setSearchParams(
+      (current) => {
+        const nextParams = new URLSearchParams(current);
+        nextParams.set('tab', value);
+        return nextParams;
+      },
+      { replace: true }
+    );
   };
 
   const tabMetrics = useMemo(
@@ -1935,23 +1968,8 @@ export function StrategyConfigurationHubPage() {
           </TabsList>
         </div>
 
-        <TabsContent value="universe">
-          <UniverseConfigPage embedded />
-        </TabsContent>
-        <TabsContent value="ranking">
-          <RankingConfigPage embedded />
-        </TabsContent>
-        <TabsContent value="rebalance-policy">
-          <RebalancePolicyPanel />
-        </TabsContent>
-        <TabsContent value="regime-policy">
-          <RegimePolicyPanel />
-        </TabsContent>
-        <TabsContent value="risk-policy">
-          <RiskPolicyPanel />
-        </TabsContent>
-        <TabsContent value="exit-rules">
-          <ExitRuleSetPanel />
+        <TabsContent key={activeTab} value={activeTab}>
+          <ConfigTabContent activeTab={activeTab} />
         </TabsContent>
       </Tabs>
     </div>

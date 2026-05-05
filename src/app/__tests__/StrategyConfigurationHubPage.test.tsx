@@ -63,13 +63,38 @@ describe('StrategyConfigurationHubPage', () => {
     expect(screen.queryByTestId('universe-tab-body')).not.toBeInTheDocument();
   });
 
+  it('keeps rendering panels after switching to and away from Universe', async () => {
+    const user = userEvent.setup();
+
+    renderHub('/strategy-configurations?tab=ranking');
+
+    expect(screen.getByTestId('ranking-tab-body')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Universe' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent(
+        '/strategy-configurations?tab=universe'
+      );
+    });
+    expect(screen.getByTestId('universe-tab-body')).toBeInTheDocument();
+    expect(screen.queryByTestId('ranking-tab-body')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Ranking' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent(
+        '/strategy-configurations?tab=ranking'
+      );
+    });
+    expect(screen.getByTestId('ranking-tab-body')).toBeInTheDocument();
+    expect(screen.queryByTestId('universe-tab-body')).not.toBeInTheDocument();
+  });
+
   it('renders the tab requested by the initial URL', () => {
     renderHub('/strategy-configurations?tab=ranking');
 
-    expect(screen.getByRole('tab', { name: 'Ranking' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    );
+    expect(screen.getByRole('tab', { name: 'Ranking' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('ranking-tab-body')).toBeInTheDocument();
     expect(screen.queryByTestId('universe-tab-body')).not.toBeInTheDocument();
   });
