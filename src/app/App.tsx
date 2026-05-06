@@ -9,6 +9,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { ErrorBoundary } from '@/app/components/common/ErrorBoundary';
 import { LeftNavigation } from '@/app/components/layout/LeftNavigation';
 import { RouteTransitionIndicator } from '@/app/components/layout/RouteTransitionIndicator';
+import { useNavigationClock } from '@/app/components/layout/useNavigationClock';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/app/components/ui/sidebar';
 import { AuthPage } from '@/app/components/auth/AuthPage';
 import { RequireSession } from '@/app/components/auth/RequireSession';
@@ -71,28 +72,65 @@ function resetRouteViewport(): void {
 }
 
 function AppShell({ children }: { children: ReactNode }) {
+  const centralClock = useNavigationClock();
+
   return (
     <SidebarProvider defaultOpen>
       <RouteTransitionIndicator />
-      <div className="flex min-h-screen w-full bg-background">
+      <div className="flex min-h-screen w-full overflow-hidden bg-background">
         <LeftNavigation />
 
-        <SidebarInset className="min-w-0 overflow-hidden">
-          <div className="border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur md:hidden">
+        <SidebarInset className="h-screen min-w-0 overflow-hidden">
+          <div className="hidden min-h-9 items-center justify-between gap-4 border-b border-border bg-[#10172b] px-3 text-xs text-muted-foreground md:flex">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="flex items-center gap-2 text-foreground">
+                <span className="h-3 w-3 rounded-sm bg-primary shadow-[0_0_12px_rgba(0,224,96,0.55)]" />
+                <span className="font-semibold">Asset Allocation Terminal</span>
+              </div>
+              <nav aria-label="Workspace mode" className="flex items-center gap-1">
+                <span className="border-b-2 border-primary px-3 py-2 text-foreground">Apps</span>
+                <span className="px-3 py-2">Trade</span>
+                <span className="px-3 py-2">Position Graph</span>
+              </nav>
+            </div>
+            <div className="flex shrink-0 items-center gap-4 font-mono">
+              <span>SIM</span>
+              <span>{centralClock.time}</span>
+              <span className="flex items-center gap-1 text-primary">
+                <span className="h-2 w-2 rounded-full bg-primary" />
+                Data
+              </span>
+            </div>
+          </div>
+
+          <div className="border-b border-border bg-[#10172b] px-3 py-2 md:hidden">
             <div className="flex items-center gap-3">
               <SidebarTrigger aria-label="Open navigation" />
               <div className="min-w-0">
-                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                <div className="text-[10px] font-bold uppercase text-muted-foreground">
                   Asset Allocation
                 </div>
-                <div className="font-display text-lg text-foreground">Operations Desk</div>
+                <div className="font-display text-base text-foreground">Terminal</div>
               </div>
             </div>
           </div>
 
-          <main data-app-scroll-container="true" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-[1800px] px-4 py-6 sm:px-6 lg:px-8">{children}</div>
-          </main>
+          <div data-app-scroll-container="true" className="min-w-0 flex-1 overflow-y-auto">
+            <div className="w-full px-2 py-2 sm:px-3 lg:px-4">{children}</div>
+          </div>
+
+          <div className="hidden min-h-8 items-center justify-between border-t border-border bg-[#080d1a] px-3 text-xs text-muted-foreground md:flex">
+            <div className="flex items-center gap-4">
+              <span>Open Positions 0</span>
+              <span>Buying Power $0</span>
+              <span>Open P/L $0</span>
+            </div>
+            <div className="flex items-center gap-3 font-mono">
+              <span>{centralClock.tz}</span>
+              <span>{centralClock.time}</span>
+              <span className="text-primary">SIM DATA</span>
+            </div>
+          </div>
         </SidebarInset>
       </div>
 

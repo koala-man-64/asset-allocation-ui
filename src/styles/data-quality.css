@@ -1,16 +1,16 @@
 /* Data Quality page — "Forensic QA Dossier" theme scope */
 
 .dq {
-  --dq-accent: var(--mcm-mustard);
-  --dq-danger: #b42318;
-  --dq-ok: #1f7a5b;
-  --dq-panel: var(--mcm-paper);
-  --dq-panel-2: color-mix(in srgb, var(--mcm-paper) 92%, var(--mcm-cream));
-  --dq-border: color-mix(in srgb, var(--mcm-walnut) 45%, transparent);
-  --dq-grid: color-mix(in srgb, var(--mcm-walnut) 10%, transparent);
-  --dq-grid-2: color-mix(in srgb, var(--mcm-walnut) 6%, transparent);
-  --dq-shadow: 8px 8px 0 rgba(119, 63, 26, 0.1);
-  --dq-radius: 1.5rem;
+  --dq-accent: var(--terminal-cyan);
+  --dq-danger: var(--terminal-red);
+  --dq-ok: var(--terminal-green);
+  --dq-panel: var(--terminal-panel);
+  --dq-panel-2: var(--terminal-panel-2);
+  --dq-border: var(--terminal-border);
+  --dq-grid: color-mix(in srgb, var(--terminal-grid) 62%, transparent);
+  --dq-grid-2: color-mix(in srgb, var(--terminal-grid) 38%, transparent);
+  --dq-shadow: var(--terminal-shadow);
+  --dq-radius: var(--terminal-radius-lg);
 
   color: var(--foreground);
   background: transparent;
@@ -58,7 +58,7 @@
 }
 
 .dq-hero-brand .dq-title {
-  font-size: clamp(2rem, 3vw, 2.55rem);
+  font-size: 2rem;
 }
 
 .dq-hero-subtitle {
@@ -126,7 +126,7 @@
   font-family: var(--font-display);
   font-weight: 800;
   letter-spacing: 0.08em;
-  font-size: clamp(1.75rem, 2.4vw, 2.2rem);
+  font-size: 1.75rem;
   line-height: 1.05;
   text-transform: uppercase;
 }

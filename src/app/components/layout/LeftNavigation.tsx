@@ -49,7 +49,7 @@ interface DragState {
 }
 
 const navActionButtonClass =
-  'inline-flex h-[1.125rem] w-[1.125rem] items-center justify-center rounded-sm text-sidebar-foreground/60 transition-colors hover:bg-sidebar hover:text-sidebar-foreground';
+  'inline-flex h-[1.125rem] w-[1.125rem] items-center justify-center rounded-sm text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-primary';
 
 export function LeftNavigation() {
   const { isMobile, setOpen, setOpenMobile, state } = useSidebar();
@@ -215,8 +215,9 @@ export function LeftNavigation() {
                 }
               }}
               className={cn(
-                'peer/menu-button flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-mcm-walnut outline-hidden ring-sidebar-ring transition-colors hover:bg-sidebar-accent hover:text-mcm-walnut focus-visible:ring-2',
-                isActive && 'bg-sidebar-accent font-medium text-mcm-walnut',
+                'peer/menu-button flex w-full items-center gap-2 rounded-sm border border-transparent px-2.5 py-1.5 text-xs text-sidebar-foreground/80 outline-hidden ring-sidebar-ring transition-colors hover:border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2',
+                isActive &&
+                  'border-sidebar-ring/50 bg-sidebar-accent font-semibold text-sidebar-foreground shadow-[inset_3px_0_0_var(--sidebar-primary)]',
                 !collapsed && (isMobile ? 'pr-10' : 'pr-[5.5rem]'),
                 collapsed && 'justify-center px-2'
               )}
@@ -247,10 +248,7 @@ export function LeftNavigation() {
                 event.stopPropagation();
                 togglePinnedNavItem(item.path);
               }}
-              className={cn(
-                navActionButtonClass,
-                isPinned && 'text-sidebar-primary'
-              )}
+              className={cn(navActionButtonClass, isPinned && 'text-sidebar-primary')}
               title={isPinned ? 'Unpin' : 'Pin to top'}
               aria-label={isPinned ? `Unpin ${item.label}` : `Pin ${item.label} to top`}
             >
@@ -267,7 +265,10 @@ export function LeftNavigation() {
                     moveItemUp();
                   }}
                   disabled={!canMoveUp}
-                  className={cn(navActionButtonClass, 'disabled:cursor-not-allowed disabled:opacity-40')}
+                  className={cn(
+                    navActionButtonClass,
+                    'disabled:cursor-not-allowed disabled:opacity-40'
+                  )}
                   title={`Move ${item.label} up`}
                   aria-label={`Move ${item.label} up`}
                 >
@@ -281,7 +282,10 @@ export function LeftNavigation() {
                     moveItemDown();
                   }}
                   disabled={!canMoveDown}
-                  className={cn(navActionButtonClass, 'disabled:cursor-not-allowed disabled:opacity-40')}
+                  className={cn(
+                    navActionButtonClass,
+                    'disabled:cursor-not-allowed disabled:opacity-40'
+                  )}
                   title={`Move ${item.label} down`}
                   aria-label={`Move ${item.label} down`}
                 >
@@ -319,7 +323,7 @@ export function LeftNavigation() {
       key={`subgroup-${itemPath}`}
       className={cn('px-3 pb-1 pt-3', isFirstSubgroup && 'pt-1', collapsed && 'hidden')}
     >
-      <span className="block truncate text-[10px] font-black uppercase tracking-[0.16em] text-mcm-walnut/60">
+      <span className="block truncate text-[10px] font-bold uppercase text-sidebar-foreground/75">
         {title}
       </span>
     </SidebarMenuItem>
@@ -346,8 +350,8 @@ export function LeftNavigation() {
   };
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border/40">
-      <SidebarHeader className="border-b border-sidebar-border/40 px-3 py-3">
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar">
+      <SidebarHeader className="border-b border-sidebar-border px-2 py-2">
         <div
           className={cn(
             'flex items-center gap-3',
@@ -356,10 +360,12 @@ export function LeftNavigation() {
         >
           {!collapsed && (
             <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/65">
+              <div className="text-[10px] font-bold uppercase text-sidebar-foreground/75">
                 Asset Allocation
               </div>
-              <div className="truncate font-display text-lg text-mcm-walnut">Operations Desk</div>
+              <div className="truncate font-display text-base font-semibold text-sidebar-foreground">
+                Operations Desk
+              </div>
             </div>
           )}
 
@@ -382,10 +388,10 @@ export function LeftNavigation() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="gap-4 py-4">
+      <SidebarContent className="gap-2 py-2">
         {pinnedItems.length > 0 && (
-          <SidebarGroup className="px-3">
-            <SidebarGroupLabel className="gap-2 px-2 text-[11px] font-semibold tracking-[0.18em] text-mcm-walnut/65">
+          <SidebarGroup className="px-2">
+            <SidebarGroupLabel className="gap-2 px-2 text-[10px] font-semibold text-sidebar-foreground/75">
               <Pin className="h-3 w-3" />
               <span>PINNED</span>
             </SidebarGroupLabel>
@@ -400,8 +406,8 @@ export function LeftNavigation() {
         )}
 
         {visibleSections.map((section) => (
-          <SidebarGroup key={section.title} className="px-3">
-            <SidebarGroupLabel className="px-2 text-[11px] font-semibold tracking-[0.18em] text-mcm-walnut/65">
+          <SidebarGroup key={section.title} className="px-2">
+            <SidebarGroupLabel className="px-2 text-[10px] font-semibold text-sidebar-foreground/75">
               {section.title}
             </SidebarGroupLabel>
             <SidebarGroupContent>
@@ -412,18 +418,16 @@ export function LeftNavigation() {
       </SidebarContent>
 
       {!collapsed && (
-        <SidebarFooter className="border-t border-sidebar-border/40 px-4 py-3">
+        <SidebarFooter className="border-t border-sidebar-border px-3 py-2">
           <div className="space-y-3">
             <div
               role="status"
               aria-live="polite"
               aria-atomic="true"
-              className="flex flex-col gap-1 text-left text-mcm-walnut/65"
+              className="flex flex-col gap-1 text-left text-sidebar-foreground/75"
             >
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em]">
-                UPTIME CLOCK
-              </span>
-              <span className="font-mono text-xs text-mcm-walnut">
+              <span className="text-[10px] font-semibold uppercase">UPTIME CLOCK</span>
+              <span className="font-mono text-xs text-sidebar-foreground">
                 {centralClock.time} {centralClock.tz}
               </span>
             </div>
@@ -435,7 +439,7 @@ export function LeftNavigation() {
                   void handleClearAuthCookies();
                 }}
                 disabled={isClearingAuthCookies}
-                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-mcm-walnut/65 underline-offset-4 transition-colors hover:text-mcm-walnut hover:underline disabled:cursor-not-allowed disabled:opacity-55"
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-sidebar-foreground/75 underline-offset-4 transition-colors hover:text-sidebar-primary hover:underline disabled:cursor-not-allowed disabled:opacity-55"
               >
                 <Cookie className="h-3 w-3" />
                 {isClearingAuthCookies ? 'Clearing cookies...' : 'Clear auth cookies'}
@@ -444,7 +448,7 @@ export function LeftNavigation() {
                 <p
                   role="status"
                   aria-live="polite"
-                  className="mt-1 text-[10px] leading-4 text-mcm-walnut/55"
+                  className="mt-1 text-[10px] leading-4 text-sidebar-foreground/75"
                 >
                   {authCookieStatus}
                 </p>

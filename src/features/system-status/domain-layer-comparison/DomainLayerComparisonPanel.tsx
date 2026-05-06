@@ -143,32 +143,32 @@ const FINANCE_SUBFOLDER_ITEMS = [
 ] as const;
 const LAYER_VISUALS: Record<LayerKey, LayerVisualConfig> = {
   bronze: {
-    accent: '#9a5b2d',
-    softBg: 'rgba(154, 91, 45, 0.14)',
-    strongBg: 'rgba(154, 91, 45, 0.22)',
-    border: 'rgba(154, 91, 45, 0.5)',
-    mutedText: 'rgba(122, 72, 34, 0.88)'
+    accent: '#ffe2c2',
+    softBg: 'rgba(255, 184, 108, 0.12)',
+    strongBg: 'rgba(255, 184, 108, 0.2)',
+    border: 'rgba(255, 184, 108, 0.55)',
+    mutedText: '#ffd6b0'
   },
   silver: {
-    accent: '#4b5563',
-    softBg: 'rgba(75, 85, 99, 0.14)',
-    strongBg: 'rgba(75, 85, 99, 0.22)',
-    border: 'rgba(75, 85, 99, 0.5)',
-    mutedText: 'rgba(55, 65, 81, 0.88)'
+    accent: '#dbe7ff',
+    softBg: 'rgba(219, 231, 255, 0.1)',
+    strongBg: 'rgba(219, 231, 255, 0.18)',
+    border: 'rgba(219, 231, 255, 0.5)',
+    mutedText: '#dbe7ff'
   },
   gold: {
-    accent: '#9a7400',
-    softBg: 'rgba(154, 116, 0, 0.14)',
-    strongBg: 'rgba(154, 116, 0, 0.22)',
-    border: 'rgba(154, 116, 0, 0.5)',
-    mutedText: 'rgba(120, 90, 0, 0.9)'
+    accent: '#fff3a6',
+    softBg: 'rgba(242, 211, 79, 0.12)',
+    strongBg: 'rgba(242, 211, 79, 0.2)',
+    border: 'rgba(242, 211, 79, 0.55)',
+    mutedText: '#f7e58a'
   },
   platinum: {
-    accent: '#0f766e',
-    softBg: 'rgba(15, 118, 110, 0.14)',
-    strongBg: 'rgba(15, 118, 110, 0.22)',
-    border: 'rgba(15, 118, 110, 0.5)',
-    mutedText: 'rgba(17, 94, 89, 0.9)'
+    accent: '#18d4ff',
+    softBg: 'rgba(24, 212, 255, 0.12)',
+    strongBg: 'rgba(24, 212, 255, 0.2)',
+    border: 'rgba(24, 212, 255, 0.55)',
+    mutedText: '#9eeeff'
   }
 };
 
