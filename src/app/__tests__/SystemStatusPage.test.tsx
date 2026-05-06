@@ -868,6 +868,151 @@ describe('SystemStatusPage', () => {
     expect(operationalNames).not.toContain('bronze-quiver-backfill-job');
   });
 
+  it('injects observed economic catalyst and quiver jobs when data layer metadata omits them', async () => {
+    const payload = buildSystemStatusView();
+    const domainJobNames = [
+      'bronze-economic-catalyst-job',
+      'silver-economic-catalyst-job',
+      'gold-economic-catalyst-job',
+      'bronze-quiver-data-job',
+      'silver-quiver-data-job',
+      'gold-quiver-data-job'
+    ];
+    const jobAzureId = (name: string) =>
+      `/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/${name}`;
+
+    vi.mocked(DataService.getSystemStatusView).mockResolvedValue(
+      buildSystemStatusView({
+        systemHealth: {
+          ...payload.systemHealth,
+          dataLayers: [
+            {
+              name: 'Bronze',
+              description: 'Raw ingestion layer',
+              status: 'healthy',
+              lastUpdated: MOCK_RUN_TIMESTAMPS.latest,
+              refreshFrequency: 'Multiple schedules',
+              domains: []
+            },
+            {
+              name: 'Silver',
+              description: 'Standardized layer',
+              status: 'healthy',
+              lastUpdated: MOCK_RUN_TIMESTAMPS.latest,
+              refreshFrequency: 'Manual trigger',
+              domains: []
+            },
+            {
+              name: 'Gold',
+              description: 'Feature store',
+              status: 'healthy',
+              lastUpdated: MOCK_RUN_TIMESTAMPS.latest,
+              refreshFrequency: 'Manual trigger',
+              domains: []
+            }
+          ],
+          recentJobs: [
+            ...domainJobNames.map((jobName) => ({
+              jobName,
+              jobType: 'data-ingest' as const,
+              status: 'success' as const,
+              startTime: MOCK_RUN_TIMESTAMPS.latest,
+              triggeredBy: 'azure'
+            })),
+            {
+              jobName: 'aca-job-backtest-runner',
+              jobType: 'backtest',
+              status: 'running',
+              startTime: MOCK_RUN_TIMESTAMPS.latest,
+              triggeredBy: 'manual'
+            }
+          ],
+          resources: [
+            ...domainJobNames.map((name) => ({
+              name,
+              azureId: jobAzureId(name),
+              resourceType: 'Microsoft.App/jobs' as const,
+              status: 'healthy' as const,
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Succeeded',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            })),
+            {
+              name: 'aca-job-backtest-runner',
+              resourceType: 'Microsoft.App/jobs',
+              status: 'healthy',
+              lastChecked: MOCK_RUN_TIMESTAMPS.latest,
+              runningState: 'Running',
+              lastModifiedAt: MOCK_RUN_TIMESTAMPS.latest
+            }
+          ]
+        }
+      })
+    );
+
+    renderWithProviders(<SystemStatusPage />);
+
+    await waitFor(() => {
+      expect(domainLayerCoverageSpy).toHaveBeenCalled();
+      expect(operationalJobSpy).toHaveBeenCalled();
+      expect(jobLogStreamSpy).toHaveBeenCalled();
+    });
+
+    const coverageProps = domainLayerCoverageSpy.mock.calls.at(-1)?.[0] as {
+      dataLayers: DataLayer[];
+      managedContainerJobs: Array<{ name: string }>;
+    };
+    const bronzeDomains = coverageProps.dataLayers.find(
+      (layer) => layer.name === 'Bronze'
+    )?.domains;
+    const goldQuiver = coverageProps.dataLayers
+      .find((layer) => layer.name === 'Gold')
+      ?.domains?.find((domain) => domain.name === 'quiver-data');
+
+    expect(bronzeDomains).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'economic-catalyst',
+          jobName: 'bronze-economic-catalyst-job',
+          status: 'stale',
+          lastUpdated: null,
+          jobUrl: jobAzureId('bronze-economic-catalyst-job')
+        }),
+        expect.objectContaining({
+          name: 'quiver-data',
+          jobName: 'bronze-quiver-data-job',
+          status: 'stale',
+          lastUpdated: null,
+          jobUrl: jobAzureId('bronze-quiver-data-job')
+        })
+      ])
+    );
+    expect(goldQuiver).toEqual(
+      expect.objectContaining({
+        name: 'quiver-data',
+        path: 'quiver',
+        jobName: 'gold-quiver-data-job'
+      })
+    );
+    expect(coverageProps.managedContainerJobs.map((job) => job.name)).toEqual(domainJobNames);
+
+    const operationalProps = operationalJobSpy.mock.calls.at(-1)?.[0] as {
+      jobs: Array<{ name: string }>;
+    };
+    const operationalNames = operationalProps.jobs.map((job) => job.name);
+    for (const jobName of domainJobNames) {
+      expect(operationalNames).not.toContain(jobName);
+    }
+    expect(operationalNames).toContain('aca-job-backtest-runner');
+
+    const jobStreamProps = jobLogStreamSpy.mock.calls.at(-1)?.[0] as {
+      jobs: Array<{ name: string }>;
+    };
+    expect(jobStreamProps.jobs.map((job) => job.name)).toEqual(
+      expect.arrayContaining(domainJobNames)
+    );
+  });
+
   it('passes domain and operational jobs to the job console stream panel', async () => {
     renderWithProviders(<SystemStatusPage />);
 

@@ -58,6 +58,7 @@ import {
   isExpectedOperationalJobName,
   type OperationalJobTarget
 } from '@/features/system-status/lib/operationalJobs';
+import { augmentDomainLayersWithCatalogJobs } from '@/features/system-status/lib/domainJobCatalog';
 import { isDomainLayerCoverageDomainVisible } from '@/features/system-status/lib/coverageDomains';
 import { normalizeDomainKey } from '@/features/system-status/components/SystemPurgeControls';
 import { JobStatusDebugOverlay } from '@/features/system-status/components/JobStatusDebugOverlay';
@@ -121,16 +122,6 @@ export function SystemStatusPage() {
 
   useEffect(() => addRealtimeStatusListener(setRealtimeStatus), []);
 
-  const displayDataLayers = useMemo(() => {
-    return (systemHealth?.dataLayers || []).map((layer) => ({
-      ...layer,
-      domains: (layer.domains || []).filter((domain) => {
-        const domainKey = normalizeDomainKey(String(domain?.name || ''));
-        return domainKey !== 'platinum' && isDomainLayerCoverageDomainVisible(domainKey);
-      })
-    }));
-  }, [systemHealth]);
-
   const jobResourcesByKey = useMemo(() => {
     const resources = new Map<string, JobResourceSummary>();
     for (const resource of systemHealth?.resources || []) {
@@ -188,6 +179,27 @@ export function SystemStatusPage() {
     }
     return items;
   }, [jobResourcesByKey]);
+
+  const augmentedDataLayers = useMemo(
+    () =>
+      augmentDomainLayersWithCatalogJobs({
+        dataLayers: systemHealth?.dataLayers || [],
+        recentJobs: systemHealth?.recentJobs || [],
+        managedContainerJobs,
+        jobStatusesByKey
+      }),
+    [jobStatusesByKey, managedContainerJobs, systemHealth?.dataLayers, systemHealth?.recentJobs]
+  );
+
+  const displayDataLayers = useMemo(() => {
+    return augmentedDataLayers.map((layer) => ({
+      ...layer,
+      domains: (layer.domains || []).filter((domain) => {
+        const domainKey = normalizeDomainKey(String(domain?.name || ''));
+        return domainKey !== 'platinum' && isDomainLayerCoverageDomainVisible(domainKey);
+      })
+    }));
+  }, [augmentedDataLayers]);
 
   const domainManagedContainerJobs = useMemo(() => {
     const domainJobKeys = buildDomainJobKeySet(displayDataLayers);
