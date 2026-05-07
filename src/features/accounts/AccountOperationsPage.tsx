@@ -78,6 +78,7 @@ import {
   titleCase
 } from '@/features/trade-desk/tradeDeskUtils';
 import { accountOperationsApi, accountOperationsKeys } from '@/services/accountOperationsApi';
+import type { ETradeConnectStartResponse } from '@/services/accountOperationsApi';
 import { ApiError } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
 import { tradeDeskApi, tradeDeskKeys } from '@/services/tradeDeskApi';
@@ -126,6 +127,7 @@ type AccountActionDialogPayload = {
 };
 
 type OnboardingStep = 'provider' | 'candidates' | 'setup' | 'review';
+type ETradeOnboardingEnvironment = Extract<BrokerAccountOnboardingEnvironment, 'sandbox' | 'live'>;
 
 type AccountMonitoringData = {
   tradeAccount: TradeAccountSummaryView | null;
@@ -1015,6 +1017,12 @@ function OnboardingDiscoveryFailure({ error }: { error: unknown }) {
   );
 }
 
+function isETradeOnboardingEnvironment(
+  environment: BrokerAccountOnboardingEnvironment
+): environment is ETradeOnboardingEnvironment {
+  return environment === 'sandbox' || environment === 'live';
+}
+
 function AccountOnboardingDialog({
   open,
   onOpenChange,
@@ -1035,6 +1043,10 @@ function AccountOnboardingDialog({
   const [initialRefresh, setInitialRefresh] = useState(true);
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
+  const [etradeConnectStart, setEtradeConnectStart] = useState<ETradeConnectStartResponse | null>(
+    null
+  );
+  const [etradeVerifier, setEtradeVerifier] = useState('');
 
   useEffect(() => {
     if (!open) {
@@ -1048,6 +1060,8 @@ function AccountOnboardingDialog({
       setInitialRefresh(true);
       setReason('');
       setReasonError(null);
+      setEtradeConnectStart(null);
+      setEtradeVerifier('');
     }
   }, [open]);
 
@@ -1063,6 +1077,47 @@ function AccountOnboardingDialog({
   const selectedCandidate =
     candidates.find((candidate) => candidate.candidateId === selectedCandidateId) ?? null;
   const environmentOptions = useMemo(() => onboardingEnvironmentOptions(provider), [provider]);
+  const etradeEnvironment = isETradeOnboardingEnvironment(environment) ? environment : null;
+
+  const startEtradeConnectMutation = useMutation({
+    mutationFn: () => {
+      if (!etradeEnvironment) {
+        throw new Error('E*TRADE onboarding supports sandbox and live environments.');
+      }
+      return accountOperationsApi.startETradeConnect(etradeEnvironment);
+    },
+    onSuccess: (response) => {
+      setEtradeConnectStart(response);
+      const opened = window.open(response.authorize_url, '_blank', 'noopener,noreferrer');
+      if (opened) {
+        opened.opener = null;
+      }
+      toast.success(
+        opened ? 'E*TRADE authorization opened.' : 'E*TRADE authorization link is ready.'
+      );
+    },
+    onError: (error) => {
+      toast.error(`Failed to start E*TRADE OAuth: ${String(error)}`);
+    }
+  });
+
+  const completeEtradeConnectMutation = useMutation({
+    mutationFn: (verifier: string) => {
+      if (!etradeEnvironment) {
+        throw new Error('E*TRADE onboarding supports sandbox and live environments.');
+      }
+      return accountOperationsApi.completeETradeConnect(etradeEnvironment, verifier);
+    },
+    onSuccess: async () => {
+      toast.success('E*TRADE OAuth connected.');
+      setEtradeConnectStart(null);
+      setEtradeVerifier('');
+      await candidatesQuery.refetch();
+    },
+    onError: (error) => {
+      toast.error(`Failed to complete E*TRADE OAuth: ${String(error)}`);
+    }
+  });
 
   const onboardMutation = useMutation({
     mutationFn: (payload: {
@@ -1112,11 +1167,15 @@ function AccountOnboardingDialog({
       supportedEnvironments.includes(current) ? current : defaultOnboardingEnvironment(nextProvider)
     );
     setSelectedCandidateId(null);
+    setEtradeConnectStart(null);
+    setEtradeVerifier('');
   };
 
   const handleEnvironmentChange = (value: string) => {
     setEnvironment(value as BrokerAccountOnboardingEnvironment);
     setSelectedCandidateId(null);
+    setEtradeConnectStart(null);
+    setEtradeVerifier('');
   };
 
   const goBack = () => {
@@ -1184,6 +1243,20 @@ function AccountOnboardingDialog({
     }
     await submit();
   };
+
+  const completeEtradeConnect = () => {
+    const verifier = etradeVerifier.trim();
+    if (!verifier) {
+      return;
+    }
+    completeEtradeConnectMutation.mutate(verifier);
+  };
+
+  const showEtradeConnectActions =
+    step === 'candidates' &&
+    provider === 'etrade' &&
+    candidatesQuery.data?.discoveryStatus === 'not_connected' &&
+    etradeEnvironment !== null;
 
   return (
     <Dialog
@@ -1273,11 +1346,71 @@ function AccountOnboardingDialog({
                   'The selected provider is not connected or configured for discovery.'
                 }
                 action={
-                  <Button asChild variant="outline">
-                    <Link to="/runtime-config">Runtime Config</Link>
-                  </Button>
+                  showEtradeConnectActions ? (
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        variant="default"
+                        className="gap-2"
+                        disabled={startEtradeConnectMutation.isPending}
+                        onClick={() => startEtradeConnectMutation.mutate()}
+                      >
+                        <Cable className="h-4 w-4" />
+                        Connect E*TRADE {titleCase(environment)}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        disabled={candidatesQuery.isFetching}
+                        onClick={() => void candidatesQuery.refetch()}
+                      >
+                        Refresh Discovery
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button asChild variant="outline">
+                      <Link to="/runtime-config">Runtime Config</Link>
+                    </Button>
+                  )
                 }
-              />
+              >
+                {showEtradeConnectActions ? (
+                  <div className="grid gap-3 rounded-[1.2rem] border border-mcm-walnut/15 bg-mcm-cream/55 p-3 md:grid-cols-[1fr_auto] md:items-end">
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="etrade-oauth-verifier"
+                        className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground"
+                      >
+                        Verifier
+                      </label>
+                      <Input
+                        id="etrade-oauth-verifier"
+                        value={etradeVerifier}
+                        onChange={(event) => setEtradeVerifier(event.target.value)}
+                        placeholder="Verifier code"
+                        disabled={completeEtradeConnectMutation.isPending}
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2 md:justify-end">
+                      {etradeConnectStart?.authorize_url ? (
+                        <Button asChild variant="outline">
+                          <a
+                            href={etradeConnectStart.authorize_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Open E*TRADE
+                          </a>
+                        </Button>
+                      ) : null}
+                      <Button
+                        disabled={!etradeVerifier.trim() || completeEtradeConnectMutation.isPending}
+                        onClick={completeEtradeConnect}
+                      >
+                        Complete OAuth
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </StatePanel>
             ) : candidates.length === 0 ? (
               <StatePanel
                 tone="empty"

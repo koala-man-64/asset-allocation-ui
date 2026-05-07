@@ -181,4 +181,22 @@ describe('accountOperationsApi', () => {
       signal: undefined
     });
   });
+
+  it('uses E*TRADE provider endpoints for onboarding OAuth', async () => {
+    mockedRequest.mockResolvedValue({});
+
+    await accountOperationsApi.startETradeConnect('live');
+    await accountOperationsApi.completeETradeConnect('live', 'verifier-123');
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/providers/etrade/connect/start', {
+      method: 'POST',
+      body: JSON.stringify({ environment: 'live' }),
+      signal: undefined
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, '/providers/etrade/connect/complete', {
+      method: 'POST',
+      body: JSON.stringify({ environment: 'live', verifier: 'verifier-123' }),
+      signal: undefined
+    });
+  });
 });
