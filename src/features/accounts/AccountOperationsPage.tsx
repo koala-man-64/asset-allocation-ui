@@ -372,7 +372,7 @@ const ONBOARDING_PROVIDER_ENVIRONMENTS: Record<BrokerVendor, BrokerAccountOnboar
     alpaca: ['paper', 'live'],
     etrade: ['sandbox', 'live'],
     schwab: ['live'],
-    kalshi: ['live']
+    kalshi: ['paper', 'live']
   };
 
 function defaultOnboardingEnvironment(provider: BrokerVendor): BrokerAccountOnboardingEnvironment {
