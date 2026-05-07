@@ -61,6 +61,19 @@
       "env": {
         "PLAYWRIGHT_PREVIEW_PORT": "4200"
       }
+    },
+    {
+      "name": "Playwright: Manual Page Picker (Headed)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "test:e2e"],
+      "console": "integratedTerminal",
+      "env": {
+        "PLAYWRIGHT_PREVIEW_PORT": "4201",
+        "PLAYWRIGHT_MANUAL_HOLD_MS": "60000"
+      }
     }
   ]
 }
