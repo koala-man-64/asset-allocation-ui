@@ -459,7 +459,12 @@ export function DataQualityPage() {
               : String(storageUsageQuery.error)}
           </div>
         ) : (
-          <div className="mt-4 dq-ledger-table">
+          <div
+            className="mt-4 dq-ledger-table"
+            role="region"
+            aria-label="ADLS storage usage table"
+            tabIndex={0}
+          >
             <Table className="dq-table">
               <TableHeader>
                 <TableRow className="dq-table-head">
@@ -556,7 +561,12 @@ export function DataQualityPage() {
           </div>
         </div>
 
-        <div className="mt-4 dq-ledger-table">
+        <div
+          className="mt-4 dq-ledger-table"
+          role="region"
+          aria-label="Validation ledger table"
+          tabIndex={0}
+        >
           <Table className="dq-table">
             <TableHeader>
               <TableRow className="dq-table-head">

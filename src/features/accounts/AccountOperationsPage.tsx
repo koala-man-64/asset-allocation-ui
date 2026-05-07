@@ -2864,7 +2864,10 @@ export function AccountOperationsPage() {
 
   return (
     <div className="page-shell">
-      <h1 className="sr-only">Account Operations</h1>
+      <header className="page-header">
+        <p className="page-kicker">Broker Operations</p>
+        <h1 className="page-title">Account Operations</h1>
+      </header>
 
       <section
         aria-label="Account operations summary"
