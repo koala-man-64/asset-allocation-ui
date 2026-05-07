@@ -117,7 +117,14 @@ const secondPageRows = [
 ];
 
 function withoutRanking(rows: typeof firstPageRows) {
-  return rows.map(({ rankingRank, rankingOverallScore, rankingComponents, ...row }) => row);
+  return rows.map(
+    ({
+      rankingRank: _rankingRank,
+      rankingOverallScore: _rankingOverallScore,
+      rankingComponents: _rankingComponents,
+      ...row
+    }) => row
+  );
 }
 
 describe('StockExplorerPage', () => {

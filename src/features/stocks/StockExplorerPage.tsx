@@ -16,7 +16,7 @@ import {
   FilterX,
   RefreshCcw,
   Search,
-  SlidersHorizontal,
+  SlidersHorizontal
 } from 'lucide-react';
 
 import { PageLoader } from '@/app/components/common/PageLoader';
@@ -61,6 +61,7 @@ const PAGE_SIZE = 250;
 const DEFAULT_SORT: ExtendedStockScreenerSortKey = 'return_5d';
 const DEFAULT_DIRECTION: StockScreenerSortDirection = 'desc';
 const RANKING_COMPONENT_COLUMN_WIDTH = 112;
+const EMPTY_RANKING_SCHEMAS: RankingSchemaSummary[] = [];
 
 interface RankingComponentScore {
   name: string;
@@ -453,7 +454,7 @@ export function StockExplorerPage() {
     retry: false
   });
 
-  const rankingSchemas = rankingSchemasQuery.data ?? [];
+  const rankingSchemas = rankingSchemasQuery.data ?? EMPTY_RANKING_SCHEMAS;
   const selectedRankingSchema = useMemo(
     () => rankingSchemas.find((schema) => schema.name === selectedRankingSchemaName) ?? null,
     [rankingSchemas, selectedRankingSchemaName]
@@ -625,15 +626,14 @@ export function StockExplorerPage() {
   }, [firstPage?.ranking?.componentNames, rows]);
   const hasRankingColumns = Boolean(
     selectedRankingSchema ||
-      firstPage?.ranking ||
-      rows.some((row) => row.rankingRank != null || row.rankingOverallScore != null)
+    firstPage?.ranking ||
+    rows.some((row) => row.rankingRank != null || row.rankingOverallScore != null)
   );
   const activeScreenerColumns = useMemo(
     () =>
       SCREENER_COLUMNS.filter(
         (column) =>
-          hasRankingColumns ||
-          (column.id !== 'rankingRank' && column.id !== 'rankingOverall')
+          hasRankingColumns || (column.id !== 'rankingRank' && column.id !== 'rankingOverall')
       ),
     [hasRankingColumns]
   );
@@ -646,7 +646,10 @@ export function StockExplorerPage() {
   const tableColSpan =
     activeScreenerColumns.length + (hasRankingColumns ? rankingComponentNames.length : 0);
   const activeFilterCount =
-    Object.keys(filterParams).length + (query ? 1 : 0) + (asOf ? 1 : 0) + (selectedRankingSchema ? 1 : 0);
+    Object.keys(filterParams).length +
+    (query ? 1 : 0) +
+    (asOf ? 1 : 0) +
+    (selectedRankingSchema ? 1 : 0);
 
   const onToggleSort = (nextSort: ExtendedStockScreenerSortKey) => {
     if (sort === nextSort) {

@@ -1,14 +1,8 @@
 /* global RequestInit */
 
 import type {
-  StockScreenerCoverageSummary,
-  StockScreenerFacetBucket,
-  StockScreenerFacets,
   StockScreenerRequest as ContractStockScreenerRequest,
   StockScreenerResponse,
-  StockScreenerRow,
-  StockScreenerSummary,
-  StockScreenerSortDirection,
   StockScreenerSortKey
 } from '@asset-allocation/contracts';
 
@@ -673,15 +667,7 @@ function serializeStockScreenerList(
 function buildStockScreenerQueryParams(
   params: StockScreenerRequestParams
 ): Record<string, RequestParamValue> {
-  const {
-    asOf,
-    as_of,
-    sectors,
-    industries,
-    countries,
-    q,
-    ...rest
-  } = params;
+  const { asOf, as_of, sectors, industries, countries, q, ...rest } = params;
   const queryParams: Record<string, RequestParamValue> = {
     ...rest,
     q: String(q ?? '').trim() || undefined,

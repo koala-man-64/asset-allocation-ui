@@ -10,12 +10,19 @@ import { buildStockDetailPath, STOCK_DETAIL_ROUTE } from './stockRoutes';
 const getStockScreener = vi.hoisted(() => vi.fn());
 const getMarketData = vi.hoisted(() => vi.fn());
 const getFinanceData = vi.hoisted(() => vi.fn());
+const listRankingSchemas = vi.hoisted(() => vi.fn());
 
 vi.mock('@/services/DataService', () => ({
   DataService: {
     getStockScreener,
     getMarketData,
     getFinanceData
+  }
+}));
+
+vi.mock('@/services/rankingApi', () => ({
+  rankingApi: {
+    listRankingSchemas
   }
 }));
 
@@ -37,7 +44,9 @@ function createTestQueryClient() {
 function LocationProbe() {
   const location = useLocation();
 
-  return <div data-testid="location-probe">{`${location.pathname}${location.search}${location.hash}`}</div>;
+  return (
+    <div data-testid="location-probe">{`${location.pathname}${location.search}${location.hash}`}</div>
+  );
 }
 
 function renderStockExplorer(initialPath = '/stock-explorer') {
@@ -84,6 +93,9 @@ function renderStockDetail(initialPath = buildStockDetailPath()) {
 describe('stock routing', () => {
   beforeEach(() => {
     getStockScreener.mockReset();
+    listRankingSchemas.mockReset();
+    listRankingSchemas.mockResolvedValue([]);
+
     getStockScreener.mockResolvedValue({
       asOf: '2026-04-18',
       total: 1,
@@ -144,9 +156,7 @@ describe('stock routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'LOAD' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('location-probe')).toHaveTextContent(
-        buildStockDetailPath('MSFT')
-      );
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(buildStockDetailPath('MSFT'));
     });
   });
 });
