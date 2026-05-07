@@ -254,6 +254,246 @@ const dataProfilingRows = [
   }
 ];
 
+const postgresSchemasPayload = ['public', 'information_schema', 'core', 'gold'];
+
+const postgresTablesBySchema = {
+  core: ['backtest_closed_positions', 'symbols', 'runtime_config'],
+  gold: ['market_features']
+};
+
+const postgresMetadataByTable = {
+  'core.backtest_closed_positions': {
+    schema_name: 'core',
+    table_name: 'backtest_closed_positions',
+    primary_key: ['run_id', 'position_id'],
+    can_edit: true,
+    edit_reason: null,
+    columns: [
+      {
+        name: 'run_id',
+        data_type: 'TEXT',
+        nullable: false,
+        primary_key: true,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'position_id',
+        data_type: 'TEXT',
+        nullable: false,
+        primary_key: true,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'symbol',
+        data_type: 'TEXT',
+        nullable: false,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'entry_date',
+        data_type: 'DATE',
+        nullable: false,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'exit_date',
+        data_type: 'DATE',
+        nullable: true,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'quantity',
+        data_type: 'NUMERIC',
+        nullable: false,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'entry_price',
+        data_type: 'NUMERIC',
+        nullable: false,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'exit_price',
+        data_type: 'NUMERIC',
+        nullable: true,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'realized_pnl',
+        data_type: 'NUMERIC',
+        nullable: true,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'holding_period_days',
+        data_type: 'INTEGER',
+        nullable: true,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'exit_reason',
+        data_type: 'TEXT',
+        nullable: true,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      }
+    ]
+  },
+  'core.symbols': {
+    schema_name: 'core',
+    table_name: 'symbols',
+    primary_key: ['symbol'],
+    can_edit: true,
+    edit_reason: null,
+    columns: [
+      {
+        name: 'symbol',
+        data_type: 'TEXT',
+        nullable: false,
+        primary_key: true,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'company_name',
+        data_type: 'TEXT',
+        nullable: true,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      }
+    ]
+  },
+  'core.runtime_config': {
+    schema_name: 'core',
+    table_name: 'runtime_config',
+    primary_key: ['key'],
+    can_edit: false,
+    edit_reason: 'Runtime configuration is read-only in browser mode.',
+    columns: [
+      {
+        name: 'key',
+        data_type: 'TEXT',
+        nullable: false,
+        primary_key: true,
+        editable: false,
+        edit_reason: 'Read only'
+      },
+      {
+        name: 'value',
+        data_type: 'JSONB',
+        nullable: true,
+        primary_key: false,
+        editable: false,
+        edit_reason: 'Read only'
+      }
+    ]
+  },
+  'gold.market_features': {
+    schema_name: 'gold',
+    table_name: 'market_features',
+    primary_key: ['symbol', 'as_of_date'],
+    can_edit: true,
+    edit_reason: null,
+    columns: [
+      {
+        name: 'symbol',
+        data_type: 'TEXT',
+        nullable: false,
+        primary_key: true,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'as_of_date',
+        data_type: 'DATE',
+        nullable: false,
+        primary_key: true,
+        editable: true,
+        edit_reason: null
+      },
+      {
+        name: 'return_20d',
+        data_type: 'NUMERIC',
+        nullable: true,
+        primary_key: false,
+        editable: true,
+        edit_reason: null
+      }
+    ]
+  }
+};
+
+const postgresRowsByTable = {
+  'core.backtest_closed_positions': [
+    {
+      run_id: 'run-playwright-completed',
+      position_id: 'pos-001',
+      symbol: 'SPY',
+      entry_date: '2026-01-08',
+      exit_date: '2026-02-14',
+      quantity: 125,
+      entry_price: 527.12,
+      exit_price: 548.79,
+      realized_pnl: 2708.75,
+      holding_period_days: 37,
+      exit_reason: 'rebalance'
+    },
+    {
+      run_id: 'run-playwright-completed',
+      position_id: 'pos-002',
+      symbol: 'QQQ',
+      entry_date: '2026-02-17',
+      exit_date: '2026-04-18',
+      quantity: 80,
+      entry_price: 451.25,
+      exit_price: 469.89,
+      realized_pnl: 1491.2,
+      holding_period_days: 61,
+      exit_reason: 'signal_exit'
+    }
+  ],
+  'core.symbols': [
+    {
+      symbol: 'AAPL',
+      company_name: 'Apple'
+    }
+  ],
+  'core.runtime_config': [
+    {
+      key: 'postgres_editor',
+      value: { enabled: false }
+    }
+  ],
+  'gold.market_features': [
+    {
+      symbol: 'SPY',
+      as_of_date: '2026-04-18',
+      return_20d: 0.032
+    }
+  ]
+};
+
 const dataProfilePayload = {
   layer: 'gold',
   domain: 'market',
@@ -1525,6 +1765,56 @@ function normalizeApiPath(url: URL) {
 async function handleApiRoute(route: Route) {
   const requestUrl = new URL(route.request().url());
   const apiPath = normalizeApiPath(requestUrl);
+
+  if (apiPath === '/system/postgres/schemas') {
+    return json(route, postgresSchemasPayload);
+  }
+
+  const postgresTablesMatch = apiPath.match(/^\/system\/postgres\/schemas\/([^/]+)\/tables$/);
+  if (postgresTablesMatch) {
+    const schema = decodeURIComponent(postgresTablesMatch[1] || '');
+    return json(route, postgresTablesBySchema[schema as keyof typeof postgresTablesBySchema] ?? []);
+  }
+
+  const postgresMetadataMatch = apiPath.match(
+    /^\/system\/postgres\/schemas\/([^/]+)\/tables\/([^/]+)\/metadata$/
+  );
+  if (postgresMetadataMatch) {
+    const schema = decodeURIComponent(postgresMetadataMatch[1] || '');
+    const table = decodeURIComponent(postgresMetadataMatch[2] || '');
+    const metadata =
+      postgresMetadataByTable[`${schema}.${table}` as keyof typeof postgresMetadataByTable];
+
+    return metadata ? json(route, metadata) : json(route, { detail: 'Unknown table' }, 404);
+  }
+
+  if (apiPath === '/system/postgres/query') {
+    const payload = requestJson(route);
+    const schema = String(payload.schema_name || '');
+    const table = String(payload.table_name || '');
+    const rows =
+      postgresRowsByTable[`${schema}.${table}` as keyof typeof postgresRowsByTable] ?? [];
+    return json(route, rows.slice(0, Number(payload.limit || rows.length)));
+  }
+
+  if (apiPath === '/system/postgres/update') {
+    const payload = requestJson(route);
+    return json(route, {
+      schema_name: payload.schema_name,
+      table_name: payload.table_name,
+      row_count: 1,
+      updated_columns: Object.keys((payload.values ?? {}) as Record<string, unknown>)
+    });
+  }
+
+  if (apiPath === '/system/postgres/purge') {
+    const payload = requestJson(route);
+    return json(route, {
+      schema_name: payload.schema_name,
+      table_name: payload.table_name,
+      row_count: 2
+    });
+  }
 
   if (apiPath === '/system/status-view') {
     return json(route, systemStatusViewPayload);

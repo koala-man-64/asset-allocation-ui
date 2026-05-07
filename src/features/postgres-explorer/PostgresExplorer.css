@@ -1,0 +1,512 @@
+.postgres-page-shell {
+  display: flex;
+  min-height: calc(100vh - 5.75rem);
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.postgres-command-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  border: 1px solid var(--terminal-border);
+  border-radius: var(--terminal-radius-sm);
+  background:
+    linear-gradient(180deg, rgb(24 35 59 / 0.98), rgb(9 14 28 / 0.98)), var(--terminal-chrome);
+  box-shadow: var(--terminal-shadow);
+  padding: 0.35rem 0.5rem;
+}
+
+.postgres-command-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--terminal-text);
+}
+
+.postgres-command-title svg {
+  color: var(--terminal-cyan);
+}
+
+.postgres-command-focus {
+  overflow: hidden;
+  color: var(--terminal-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.postgres-command-metrics {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.postgres-chip {
+  display: inline-flex;
+  min-height: 1.35rem;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--terminal-grid);
+  border-radius: var(--terminal-radius-sm);
+  background: rgb(8 13 26 / 0.92);
+  padding: 0.15rem 0.45rem;
+  font-family: var(--font-code);
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--terminal-text);
+  white-space: nowrap;
+}
+
+.postgres-chip[data-tone='live'] {
+  border-color: color-mix(in srgb, var(--terminal-green) 55%, transparent);
+  color: var(--terminal-green);
+}
+
+.postgres-chip[data-tone='read'] {
+  border-color: color-mix(in srgb, var(--terminal-yellow) 55%, transparent);
+  color: var(--terminal-yellow);
+}
+
+.postgres-chip[data-tone='busy'] {
+  border-color: color-mix(in srgb, var(--terminal-cyan) 55%, transparent);
+  color: var(--terminal-cyan);
+}
+
+.postgres-workstation {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-areas:
+    'result'
+    'browser'
+    'ticket';
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.postgres-left-stack {
+  grid-area: browser;
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.postgres-result-pane {
+  grid-area: result;
+}
+
+.postgres-ticket-pane {
+  grid-area: ticket;
+}
+
+.postgres-dock-window {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--terminal-border);
+  border-radius: var(--terminal-radius-sm);
+  background: rgb(8 13 26 / 0.96);
+  box-shadow: var(--terminal-shadow);
+}
+
+.postgres-dock-titlebar {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--terminal-grid);
+  background: linear-gradient(180deg, #1a2742 0%, #111a2f 100%);
+  padding: 0.25rem 0.45rem;
+}
+
+.postgres-dock-titlegroup {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.postgres-dock-icon {
+  display: inline-flex;
+  color: var(--terminal-cyan);
+}
+
+.postgres-dock-titlebar h2 {
+  overflow: hidden;
+  font-family: var(--font-code);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.postgres-dock-titlebar p {
+  overflow: hidden;
+  color: var(--terminal-muted);
+  font-family: var(--font-code);
+  font-size: 0.62rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.postgres-dock-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.postgres-dock-body {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 0.5rem;
+}
+
+.postgres-dock-footer {
+  border-top: 1px solid var(--terminal-grid);
+  background: #080d1a;
+  padding: 0.35rem 0.5rem;
+}
+
+.postgres-form-grid {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.postgres-field-row {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.postgres-field-row label,
+.postgres-field-row > span {
+  font-family: var(--font-code);
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--terminal-muted);
+  text-transform: uppercase;
+}
+
+.postgres-select,
+.postgres-input {
+  height: 1.9rem;
+  width: 100%;
+  border: 1px solid var(--terminal-border);
+  border-radius: var(--terminal-radius-sm);
+  background: #071023;
+  padding: 0.2rem 0.45rem;
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+  color: var(--terminal-text);
+  outline: none;
+}
+
+.postgres-select:focus-visible,
+.postgres-input:focus-visible {
+  border-color: var(--terminal-cyan);
+  box-shadow: 0 0 0 2px rgb(24 212 255 / 0.18);
+}
+
+.postgres-select:disabled,
+.postgres-input:disabled {
+  opacity: 0.55;
+}
+
+.postgres-object-list {
+  display: grid;
+  max-height: 12rem;
+  gap: 1px;
+  overflow: auto;
+  border: 1px solid var(--terminal-grid);
+  background: var(--terminal-grid);
+}
+
+.postgres-object-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  border: 0;
+  background: #0b1020;
+  padding: 0.35rem 0.45rem;
+  color: var(--terminal-text);
+  font-family: var(--font-code);
+  font-size: 0.72rem;
+  text-align: left;
+}
+
+.postgres-object-item:hover,
+.postgres-object-item:focus-visible {
+  background: #14213a;
+  outline: none;
+}
+
+.postgres-object-item[aria-pressed='true'] {
+  background: #0c2a55;
+  color: #ffffff;
+}
+
+.postgres-meta-grid,
+.postgres-ticket-grid {
+  display: grid;
+  gap: 1px;
+  border: 1px solid var(--terminal-grid);
+  background: var(--terminal-grid);
+}
+
+.postgres-meta-row,
+.postgres-ticket-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: #0b1020;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.72rem;
+}
+
+.postgres-meta-row span,
+.postgres-ticket-row span {
+  color: var(--terminal-muted);
+}
+
+.postgres-meta-row strong,
+.postgres-ticket-row strong {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-code);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.postgres-filter-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.postgres-filter-matrix {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--terminal-grid);
+  background: var(--terminal-grid);
+}
+
+.postgres-filter-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) minmax(6rem, 0.9fr) minmax(7rem, 1fr) auto;
+  gap: 0.35rem;
+  align-items: end;
+  background: #0b1020;
+  padding: 0.45rem;
+}
+
+.postgres-filter-empty,
+.postgres-empty-surface {
+  border: 1px dashed var(--terminal-grid);
+  background: rgb(17 26 47 / 0.54);
+  padding: 0.75rem;
+  color: var(--terminal-muted);
+  font-size: 0.78rem;
+}
+
+.postgres-result-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.postgres-status-strip {
+  border: 1px solid var(--terminal-grid);
+  border-left-width: 3px;
+  background: rgb(17 26 47 / 0.75);
+  padding: 0.45rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+.postgres-status-strip[data-tone='success'] {
+  border-left-color: var(--terminal-green);
+}
+
+.postgres-status-strip[data-tone='error'] {
+  border-left-color: var(--terminal-red);
+  color: #ff9bae;
+}
+
+.postgres-result-surface {
+  display: flex;
+  min-height: 24rem;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--terminal-grid);
+  background:
+    linear-gradient(rgb(35 49 79 / 0.34) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(35 49 79 / 0.28) 1px, transparent 1px), #070c19;
+  background-size: 32px 32px;
+}
+
+.postgres-result-table {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.postgres-result-table [data-slot='table-container'] {
+  min-height: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+}
+
+.postgres-result-table [data-slot='table-header'] th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.postgres-status-bar {
+  display: flex;
+  min-height: 1.55rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: var(--terminal-muted);
+  font-family: var(--font-code);
+  font-size: 0.66rem;
+}
+
+.postgres-ticket-actions {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.postgres-danger-zone {
+  border: 1px solid color-mix(in srgb, var(--terminal-red) 48%, transparent);
+  background: rgb(69 16 34 / 0.38);
+  padding: 0.5rem;
+}
+
+.postgres-ticket-note {
+  border: 1px solid var(--terminal-grid);
+  background: rgb(17 26 47 / 0.62);
+  padding: 0.5rem;
+  color: var(--terminal-muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.postgres-edit-ticket {
+  gap: 0;
+  border-color: var(--terminal-border);
+  background: #080d1a;
+  padding: 0;
+}
+
+.postgres-edit-header {
+  border-bottom: 1px solid var(--terminal-grid);
+  background: linear-gradient(180deg, #1a2742 0%, #111a2f 100%);
+  padding: 0.75rem 1rem;
+}
+
+.postgres-edit-body {
+  max-height: min(68vh, 44rem);
+  overflow: auto;
+  padding: 0.75rem 1rem;
+}
+
+.postgres-edit-match {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  border: 1px solid var(--terminal-grid);
+  background: #0b1020;
+  padding: 0.5rem;
+}
+
+.postgres-edit-grid {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.postgres-edit-field {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid var(--terminal-grid);
+  background: #0b1020;
+  padding: 0.55rem;
+}
+
+.postgres-edit-footer {
+  border-top: 1px solid var(--terminal-grid);
+  background: #080d1a;
+  padding: 0.75rem 1rem;
+}
+
+@media (max-width: 767px) {
+  .postgres-command-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .postgres-command-metrics {
+    justify-content: flex-start;
+  }
+
+  .postgres-filter-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 768px) {
+  .postgres-left-stack {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .postgres-edit-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .postgres-page-shell {
+    min-height: calc(100vh - 4.25rem);
+  }
+
+  .postgres-workstation {
+    grid-template-areas: 'browser result ticket';
+    grid-template-columns: minmax(16rem, 18rem) minmax(0, 1fr) minmax(18rem, 20rem);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .postgres-left-stack {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(13rem, 0.85fr) minmax(14rem, 1fr);
+  }
+
+  .postgres-result-surface {
+    min-height: 0;
+  }
+}

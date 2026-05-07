@@ -2,7 +2,8 @@ import { DataTable } from '@/app/components/common/DataTable';
 import { Badge } from '@/app/components/ui/badge';
 import type { PostgresTableMetadata } from '@/services/PostgresService';
 import type { RowData } from '@/features/postgres-explorer/lib/postgresExplorer';
-import { Database, Pencil } from 'lucide-react';
+import { PostgresDockWindow } from '@/features/postgres-explorer/components/PostgresDockWindow';
+import { Database, Pencil, Rows3 } from 'lucide-react';
 
 interface PostgresResultDossierProps {
   selectedSchema: string;
@@ -18,18 +19,6 @@ interface PostgresResultDossierProps {
   onRowClick?: (row: RowData) => void;
 }
 
-function SummaryTile({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return (
-    <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
-      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-2 font-display text-2xl text-foreground">{value}</div>
-      <div className="mt-2 text-sm text-muted-foreground">{detail}</div>
-    </div>
-  );
-}
-
 export function PostgresResultDossier({
   selectedSchema,
   selectedTable,
@@ -43,111 +32,85 @@ export function PostgresResultDossier({
   editCapabilityLabel,
   onRowClick
 }: PostgresResultDossierProps) {
+  const scopeLabel =
+    selectedSchema && selectedTable ? `${selectedSchema}.${selectedTable}` : 'No table in focus';
+  const rowStatus = loading ? 'Querying...' : data.length > 0 ? `Showing ${data.length}` : 'Ready';
+
   return (
-    <section className="desk-pane">
-      <div className="border-b border-border/40 px-6 py-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-              Result Dossier
-            </p>
-            <h2 className="font-display text-xl text-foreground">Table Readout</h2>
-            <p className="text-sm text-muted-foreground">
-              Read the selected table as a dossier, then edit only from rows you can see and verify.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {selectedSchema && selectedTable ? (
-              <Badge variant="secondary" className="font-mono">
-                {selectedSchema}.{selectedTable}
-              </Badge>
-            ) : null}
-            <Badge variant="outline" className="font-mono">
-              {queryFiltersCount} filter{queryFiltersCount === 1 ? '' : 's'}
-            </Badge>
-          </div>
-        </div>
-      </div>
-
-      <div className="desk-pane-scroll space-y-5 p-6">
-        <div className="grid gap-4 md:grid-cols-3">
-          <SummaryTile
-            label="Rows Visible"
-            value={String(data.length)}
-            detail="Rows currently loaded into the sortable result surface."
-          />
-          <SummaryTile
-            label="Columns"
-            value={String(tableMetadata?.columns.length || 0)}
-            detail="Column count from the active table metadata profile."
-          />
-          <SummaryTile
-            label="Primary Key"
-            value={String(tableMetadata?.primary_key.length || 0)}
-            detail="Primary-key columns used to anchor row updates."
-          />
-        </div>
-
-        {statusMessage ? (
-          <div className="rounded-[1.5rem] border border-mcm-teal/30 bg-mcm-teal/10 p-4 text-sm text-mcm-walnut">
-            <strong>Status:</strong> {statusMessage}
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="rounded-[1.5rem] border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-            <strong>Error:</strong> {error}
-          </div>
-        ) : null}
-
-        <div className="rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-                <Database className="h-3.5 w-3.5" />
-                Result surface
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Column sorting stays client-side after the query lands. Row editing remains tied to
-                the visible result set.
-              </p>
-            </div>
-            <Badge variant={editingEnabled ? 'default' : 'outline'} className="font-mono">
-              {editingEnabled ? 'Row click edits enabled' : 'Read only'}
-            </Badge>
-          </div>
-
-          <div className="mt-5 flex min-h-[420px] flex-col overflow-hidden">
-            {loading ? (
-              <div className="flex h-full min-h-[420px] items-center justify-center rounded-[1.6rem] border border-mcm-walnut/20 bg-mcm-cream/60 text-sm text-muted-foreground">
-                Querying selected table...
-              </div>
+    <PostgresDockWindow
+      title="Result Matrix"
+      subtitle={scopeLabel}
+      icon={<Rows3 className="h-4 w-4" />}
+      className="postgres-result-pane"
+      bodyClassName="flex flex-col gap-2"
+      testId="postgres-result-matrix"
+      actions={
+        <>
+          <Badge variant="secondary" className="font-mono">
+            {data.length} rows
+          </Badge>
+          <Badge variant="outline" className="font-mono">
+            {tableMetadata?.columns.length || 0} cols
+          </Badge>
+          <Badge variant="outline" className="font-mono">
+            {queryFiltersCount} filter{queryFiltersCount === 1 ? '' : 's'}
+          </Badge>
+        </>
+      }
+      footer={
+        <div className="postgres-status-bar" data-testid="postgres-status-bar">
+          <span>
+            {data.length > 0 && editingEnabled ? (
+              <span className="inline-flex items-center gap-1">
+                <Pencil className="h-3.5 w-3.5" />
+                Click a row to edit it.
+              </span>
             ) : (
-              <DataTable
-                data={data}
-                className="flex-1"
-                emptyMessage="Select a table and run Query Table to view data."
-                onRowClick={editingEnabled ? onRowClick : undefined}
-                enableColumnSorting
-              />
+              editCapabilityLabel
             )}
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-            <span>
-              {data.length > 0 && editingEnabled ? (
-                <span className="inline-flex items-center gap-1">
-                  <Pencil className="h-3.5 w-3.5" />
-                  Click a row to edit it.
-                </span>
-              ) : (
-                editCapabilityLabel
-              )}
-            </span>
-            <span>{data.length > 0 ? `Showing ${data.length} rows.` : 'Ready.'}</span>
-          </div>
+          </span>
+          <span>{rowStatus}</span>
         </div>
+      }
+    >
+      <div className="postgres-result-toolbar">
+        <span className="postgres-chip">
+          <Database className="h-3.5 w-3.5" />
+          {scopeLabel}
+        </span>
+        <span className="postgres-chip">PK {tableMetadata?.primary_key.length || 0}</span>
+        <span className="postgres-chip" data-tone={editingEnabled ? 'live' : 'read'}>
+          {editingEnabled ? 'Row Edit Enabled' : 'Read Only'}
+        </span>
       </div>
-    </section>
+
+      {statusMessage ? (
+        <div className="postgres-status-strip" data-tone="success" role="status">
+          <strong>Status:</strong> {statusMessage}
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="postgres-status-strip" data-tone="error" role="alert">
+          <strong>Error:</strong> {error}
+        </div>
+      ) : null}
+
+      <div className="postgres-result-surface">
+        {loading ? (
+          <div className="flex min-h-[24rem] flex-1 items-center justify-center text-sm text-muted-foreground">
+            Querying selected table...
+          </div>
+        ) : (
+          <DataTable
+            data={data}
+            className="postgres-result-table"
+            emptyMessage="Select a table and run Query Table to view data."
+            onRowClick={editingEnabled ? onRowClick : undefined}
+            enableColumnSorting
+          />
+        )}
+      </div>
+    </PostgresDockWindow>
   );
 }

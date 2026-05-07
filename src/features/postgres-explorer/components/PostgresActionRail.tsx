@@ -1,10 +1,13 @@
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
-import { Database, Pencil, Play, Trash2 } from 'lucide-react';
+import { Input } from '@/app/components/ui/input';
+import { PostgresDockWindow } from '@/features/postgres-explorer/components/PostgresDockWindow';
+import { AlertTriangle, Database, Pencil, Play, Trash2 } from 'lucide-react';
 
 interface PostgresActionRailProps {
   selectedSchema: string;
   selectedTable: string;
+  limit: number;
   dataCount: number;
   queryFiltersCount: number;
   editingEnabled: boolean;
@@ -13,6 +16,7 @@ interface PostgresActionRailProps {
   purging: boolean;
   tablesLoading: boolean;
   tableMetadataLoading: boolean;
+  onLimitChange: (limit: number) => void;
   onQuery: () => void;
   onPurge: () => void;
 }
@@ -20,6 +24,7 @@ interface PostgresActionRailProps {
 export function PostgresActionRail({
   selectedSchema,
   selectedTable,
+  limit,
   dataCount,
   queryFiltersCount,
   editingEnabled,
@@ -28,111 +33,97 @@ export function PostgresActionRail({
   purging,
   tablesLoading,
   tableMetadataLoading,
+  onLimitChange,
   onQuery,
   onPurge
 }: PostgresActionRailProps) {
   const actionDisabled = !selectedTable || tablesLoading || tableMetadataLoading;
+  const scopeLabel =
+    selectedSchema && selectedTable ? `${selectedSchema}.${selectedTable}` : 'No table in focus';
 
   return (
-    <aside className="desk-pane">
-      <div className="border-b border-border/40 px-5 py-5">
-        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-          Action Rail
-        </p>
-        <h2 className="mt-1 font-display text-xl text-foreground">Execution Control</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Keep read flow in the center and isolate operational actions on the side.
-        </p>
-      </div>
-
-      <div className="desk-pane-scroll space-y-5 p-5">
-        <div className="space-y-3 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-                Primary action
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Send the current scope and filter set to the result dossier.
-              </p>
-            </div>
-            <Badge variant="secondary">Query</Badge>
+    <PostgresDockWindow
+      title="Query Ticket"
+      subtitle="Execution controls"
+      icon={<Play className="h-4 w-4" />}
+      className="postgres-ticket-pane"
+      testId="postgres-query-ticket"
+      actions={
+        <Badge variant={editingEnabled ? 'default' : 'secondary'}>
+          {editingEnabled ? 'Live' : 'Read'}
+        </Badge>
+      }
+    >
+      <div className="postgres-form-grid">
+        <div className="postgres-ticket-grid">
+          <div className="postgres-ticket-row">
+            <span>Scope</span>
+            <strong title={scopeLabel}>{scopeLabel}</strong>
           </div>
+          <div className="postgres-ticket-row">
+            <span>Rows</span>
+            <strong>{dataCount}</strong>
+          </div>
+          <div className="postgres-ticket-row">
+            <span>Filters</span>
+            <strong>{queryFiltersCount}</strong>
+          </div>
+        </div>
 
+        <div className="postgres-field-row">
+          <label htmlFor="postgres-limit">Limit</label>
+          <Input
+            id="postgres-limit"
+            type="number"
+            min={1}
+            max={1000}
+            value={limit}
+            onChange={(event) => onLimitChange(Number(event.target.value))}
+            className="postgres-input"
+          />
+        </div>
+
+        <div className="postgres-ticket-actions">
           <Button
+            type="button"
             onClick={onQuery}
             disabled={loading || purging || actionDisabled}
-            className="w-full justify-center gap-2"
+            className="w-full justify-center"
           >
             <Play className="h-4 w-4" />
             {loading ? 'Querying...' : 'Query Table'}
           </Button>
         </div>
 
-        <div className="space-y-3 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-cream/70 p-4">
-          <div className="flex items-center justify-between gap-3">
+        <div className="postgres-ticket-note">
+          <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
+            <Pencil className="h-4 w-4" />
+            {editingEnabled ? 'Editable table' : 'Read-only table'}
+          </div>
+          {editCapabilityLabel}
+        </div>
+
+        <div className="postgres-ticket-note">
+          <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
+            <Database className="h-4 w-4" />
+            Ticket discipline
+          </div>
+          Query first, then edit from rows visible in the result matrix.
+        </div>
+
+        <div className="postgres-danger-zone">
+          <div className="mb-3 flex items-start gap-2 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" />
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-                Selected scope
-              </p>
-              <p className="mt-1 font-display text-lg text-foreground">
-                {selectedSchema && selectedTable
-                  ? `${selectedSchema}.${selectedTable}`
-                  : 'No table in focus'}
+              <div className="font-semibold text-destructive">Destructive action</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Purge remains isolated and still requires explicit confirmation.
               </p>
             </div>
-            <Badge variant="outline">{dataCount} rows</Badge>
-          </div>
-
-          <div className="space-y-2 text-sm text-muted-foreground">
-            <p>
-              {queryFiltersCount} filter{queryFiltersCount === 1 ? '' : 's'} configured.
-            </p>
-            <p>
-              {editingEnabled
-                ? 'Row editing is enabled for the current table.'
-                : editCapabilityLabel}
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-3 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-4">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-            Edit posture
-          </p>
-
-          <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-cream/60 p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <Pencil className="h-4 w-4" />
-              {editingEnabled ? 'Editable table' : 'Read-only table'}
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{editCapabilityLabel}</p>
-          </div>
-
-          <div className="rounded-[1.4rem] border border-mcm-walnut/20 bg-mcm-paper/75 p-4">
-            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-              <Database className="h-3.5 w-3.5" />
-              Workflow note
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              Query first, then edit from the result pane. That keeps table mutations anchored to an
-              explicit result set instead of guesswork.
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-3 rounded-[1.8rem] border border-destructive/25 bg-destructive/5 p-4">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-destructive">
-              Destructive action
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Purge stays isolated from ordinary querying. Confirmation still happens through the
-              existing browser prompt before any rows are removed.
-            </p>
           </div>
 
           <Button
+            type="button"
             onClick={onPurge}
             disabled={loading || purging || actionDisabled}
             variant="outline"
@@ -143,6 +134,6 @@ export function PostgresActionRail({
           </Button>
         </div>
       </div>
-    </aside>
+    </PostgresDockWindow>
   );
 }

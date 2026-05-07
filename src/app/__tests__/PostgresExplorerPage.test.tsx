@@ -154,6 +154,78 @@ describe('PostgresExplorerPage', () => {
     });
   });
 
+  it('omits filter values for null-check operators', async () => {
+    renderWithProviders(<PostgresExplorerPage />);
+
+    await waitFor(() => {
+      expect(PostgresService.getTableMetadata).toHaveBeenCalledWith('core', 'symbols');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /add filter/i }));
+    fireEvent.change(screen.getByLabelText(/operator/i), {
+      target: { value: 'is_null' }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /query table/i }));
+
+    await waitFor(() => {
+      expect(PostgresService.queryTable).toHaveBeenCalledWith({
+        schema_name: 'core',
+        table_name: 'symbols',
+        limit: 100,
+        filters: [
+          {
+            column_name: 'symbol',
+            operator: 'is_null'
+          }
+        ]
+      });
+    });
+  });
+
+  it('does not open the editor for read-only tables', async () => {
+    vi.mocked(PostgresService.getTableMetadata).mockResolvedValue({
+      schema_name: 'core',
+      table_name: 'symbols',
+      primary_key: ['symbol'],
+      can_edit: false,
+      edit_reason: 'Primary-key metadata is unavailable.',
+      columns: [
+        {
+          name: 'symbol',
+          data_type: 'TEXT',
+          nullable: false,
+          primary_key: true,
+          editable: false,
+          edit_reason: 'Read only'
+        },
+        {
+          name: 'company_name',
+          data_type: 'TEXT',
+          nullable: true,
+          primary_key: false,
+          editable: false,
+          edit_reason: 'Read only'
+        }
+      ]
+    });
+
+    renderWithProviders(<PostgresExplorerPage />);
+
+    await waitFor(() => {
+      expect(PostgresService.getTableMetadata).toHaveBeenCalledWith('core', 'symbols');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /query table/i }));
+    await screen.findByText('AAPL');
+
+    fireEvent.click(screen.getByText('AAPL'));
+
+    expect(screen.queryByRole('dialog', { name: /edit ticket/i })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Primary-key metadata is unavailable/i).length).toBeGreaterThan(0);
+    expect(PostgresService.updateRow).not.toHaveBeenCalled();
+  });
+
   it('sorts query results by column when a header is clicked', async () => {
     vi.mocked(PostgresService.queryTable).mockResolvedValue([
       { symbol: 'MSFT', company_name: 'Microsoft' },
@@ -170,19 +242,39 @@ describe('PostgresExplorerPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /query table/i }));
     await screen.findByText('MSFT');
 
-    fireEvent.click(screen.getByRole('button', { name: /symbol/i }));
+    const resultMatrix = within(screen.getByTestId('postgres-result-matrix'));
+
+    fireEvent.click(resultMatrix.getByRole('button', { name: /symbol/i }));
 
     const ascRows = screen.getAllByRole('button', { name: /open row/i });
     expect(within(ascRows[0]).getAllByRole('cell')[1]).toHaveTextContent('AAPL');
     expect(within(ascRows[1]).getAllByRole('cell')[1]).toHaveTextContent('GOOG');
     expect(within(ascRows[2]).getAllByRole('cell')[1]).toHaveTextContent('MSFT');
 
-    fireEvent.click(screen.getByRole('button', { name: /symbol/i }));
+    fireEvent.click(resultMatrix.getByRole('button', { name: /symbol/i }));
 
     const descRows = screen.getAllByRole('button', { name: /open row/i });
     expect(within(descRows[0]).getAllByRole('cell')[1]).toHaveTextContent('MSFT');
     expect(within(descRows[1]).getAllByRole('cell')[1]).toHaveTextContent('GOOG');
     expect(within(descRows[2]).getAllByRole('cell')[1]).toHaveTextContent('AAPL');
+  });
+
+  it('opens the row editor from keyboard row activation', async () => {
+    renderWithProviders(<PostgresExplorerPage />);
+
+    await waitFor(() => {
+      expect(PostgresService.getTableMetadata).toHaveBeenCalledWith('core', 'symbols');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /query table/i }));
+    await screen.findByText('AAPL');
+
+    fireEvent.keyDown(screen.getByRole('button', { name: /open row 1/i }), {
+      key: 'Enter'
+    });
+
+    expect(await screen.findByTestId('postgres-edit-ticket')).toBeInTheDocument();
+    expect(screen.getByLabelText(/company_name/i)).toHaveValue('Apple');
   });
 
   it('does not load metadata for the previously selected table after a schema change', async () => {

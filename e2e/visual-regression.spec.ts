@@ -189,6 +189,28 @@ test('@visual trade monitor passive desktop', async ({ page }) => {
   await expectVisualSnapshot(page, 'trade-monitor-passive-desktop');
 });
 
+test('@visual postgres explorer workstation desktop', async ({ page }) => {
+  await prepareVisualPage(page, desktopViewport);
+  await page.goto('/postgres-explorer', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('postgres-workstation')).toBeVisible();
+  await page.getByRole('button', { name: 'Query Table' }).click();
+  await expect(page.getByText('SPY')).toBeVisible();
+  await expect(page.getByTestId('postgres-result-matrix')).toBeVisible();
+  await expectVisualSnapshot(page, 'postgres-explorer-workstation-desktop');
+});
+
+test('@visual postgres explorer workstation mobile', async ({ page }) => {
+  await prepareVisualPage(page, mobileViewport);
+  await page.goto('/postgres-explorer', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('postgres-workstation')).toBeVisible();
+  await page.getByRole('button', { name: 'Query Table' }).click();
+  await expect(page.getByText('SPY')).toBeVisible();
+  await expect(page.getByTestId('postgres-result-matrix')).toBeVisible();
+  await expectVisualSnapshot(page, 'postgres-explorer-workstation-mobile');
+});
+
 const configurationTabs = [
   {
     path: '/strategy-configurations?tab=ranking',

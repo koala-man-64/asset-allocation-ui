@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useConfirmAction } from '@/app/components/common/ConfirmActionDialog';
-import { PageHero } from '@/app/components/common/PageHero';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import {
@@ -17,6 +16,7 @@ import { Textarea } from '@/app/components/ui/textarea';
 import { PostgresActionRail } from '@/features/postgres-explorer/components/PostgresActionRail';
 import { PostgresQueryDeck } from '@/features/postgres-explorer/components/PostgresQueryDeck';
 import { PostgresResultDossier } from '@/features/postgres-explorer/components/PostgresResultDossier';
+import '@/features/postgres-explorer/PostgresExplorer.css';
 import {
   buildEditState,
   coerceFieldValue,
@@ -466,45 +466,43 @@ export const PostgresExplorerPage: React.FC = () => {
     : editingEnabled
       ? 'Row editing enabled. Click a row to edit its fields.'
       : tableMetadata?.edit_reason || 'Row editing unavailable.';
+  const scopeLabel =
+    selectedSchema && selectedTable ? `${selectedSchema}.${selectedTable}` : 'No table';
+  const queryStateLabel = loading
+    ? 'Querying'
+    : purging
+      ? 'Purging'
+      : tableMetadataLoading || tablesLoading
+        ? 'Loading'
+        : 'Ready';
 
   return (
-    <div className="page-shell">
-      <PageHero
-        kicker="Live Operations"
-        title={
-          <span className="flex items-center gap-2">
-            <Database className="h-5 w-5 text-mcm-teal" />
-            Postgres Explorer
+    <div className="postgres-page-shell">
+      <div className="postgres-command-strip" data-testid="postgres-command-strip">
+        <div className="postgres-command-title">
+          <Database className="h-4 w-4" />
+          <span>Postgres Explorer</span>
+          <span className="postgres-command-focus">{scopeLabel}</span>
+        </div>
+        <div className="postgres-command-metrics" aria-label="Postgres command status">
+          <span className="postgres-chip">Rows {data.length}</span>
+          <span className="postgres-chip">Limit {limit}</span>
+          <span className="postgres-chip">Filters {queryFilters.length}</span>
+          <span className="postgres-chip" data-tone={editingEnabled ? 'live' : 'read'}>
+            {editingEnabled ? 'Edit Live' : 'Read Only'}
           </span>
-        }
-        subtitle="Review schema scope, query live tables, and edit primary-key-backed rows from a structured result dossier instead of a loose control slab."
-        metrics={[
-          {
-            label: 'Desk Focus',
-            value:
-              selectedSchema && selectedTable ? `${selectedSchema}.${selectedTable}` : 'No table',
-            detail: 'Current schema and table selection.'
-          },
-          {
-            label: 'Filters',
-            value: String(queryFilters.length).padStart(2, '0'),
-            detail: 'Server-side filters staged before query execution.'
-          },
-          {
-            label: 'Edit Status',
-            value: editingEnabled ? 'Live' : 'Read Only',
-            detail: tableMetadataLoading ? 'Metadata still loading.' : editCapabilityLabel
-          }
-        ]}
-      />
+          <span className="postgres-chip" data-tone={loading || purging ? 'busy' : undefined}>
+            {queryStateLabel}
+          </span>
+        </div>
+      </div>
 
-      <div className="desk-grid-standard flex-1">
+      <div className="postgres-workstation" data-testid="postgres-workstation">
         <PostgresQueryDeck
           schemas={schemas}
           selectedSchema={selectedSchema}
           tables={tables}
           selectedTable={selectedTable}
-          limit={limit}
           queryFilters={queryFilters}
           tableMetadata={tableMetadata}
           tablesLoading={tablesLoading}
@@ -513,7 +511,6 @@ export const PostgresExplorerPage: React.FC = () => {
           editCapabilityLabel={editCapabilityLabel}
           onSchemaChange={handleSchemaChange}
           onTableChange={handleTableChange}
-          onLimitChange={setLimit}
           onAddFilter={addQueryFilter}
           onClearFilters={clearQueryFilters}
           onRemoveFilter={removeQueryFilter}
@@ -539,6 +536,7 @@ export const PostgresExplorerPage: React.FC = () => {
         <PostgresActionRail
           selectedSchema={selectedSchema}
           selectedTable={selectedTable}
+          limit={limit}
           dataCount={data.length}
           queryFiltersCount={queryFilters.length}
           editingEnabled={editingEnabled}
@@ -547,6 +545,7 @@ export const PostgresExplorerPage: React.FC = () => {
           purging={purging}
           tablesLoading={tablesLoading}
           tableMetadataLoading={tableMetadataLoading}
+          onLimitChange={setLimit}
           onQuery={() => void fetchData()}
           onPurge={() => void purgeData()}
         />
@@ -560,30 +559,31 @@ export const PostgresExplorerPage: React.FC = () => {
           }
         }}
       >
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Edit Row</DialogTitle>
-            <DialogDescription>
+        <DialogContent
+          className="postgres-edit-ticket max-w-5xl"
+          data-testid="postgres-edit-ticket"
+        >
+          <DialogHeader className="postgres-edit-header">
+            <DialogTitle className="font-mono text-base">Edit Ticket</DialogTitle>
+            <DialogDescription className="font-mono text-xs">
               Editing {selectedSchema}.{selectedTable}. Primary-key columns identify the row being
               updated.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[70vh] overflow-y-auto pr-2">
-            <div className="mb-4 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs">
+          <div className="postgres-edit-body">
+            <div className="postgres-edit-match text-xs">
               <div className="font-mono uppercase tracking-wide text-muted-foreground">
                 Row Match
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {(tableMetadata?.primary_key || []).map((columnName) => (
-                  <Badge key={columnName} variant="outline" className="font-mono">
-                    {columnName}={normalizeFieldValue(editState?.match[columnName]) || 'null'}
-                  </Badge>
-                ))}
-              </div>
+              {(tableMetadata?.primary_key || []).map((columnName) => (
+                <Badge key={columnName} variant="outline" className="font-mono">
+                  {columnName}={normalizeFieldValue(editState?.match[columnName]) || 'null'}
+                </Badge>
+              ))}
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="postgres-edit-grid">
               {(tableMetadata?.columns || []).map((column) => {
                 const field = editState?.fields[column.name] || { raw: '', isNull: false };
                 const disabled = rowSaving || !column.editable;
@@ -591,10 +591,7 @@ export const PostgresExplorerPage: React.FC = () => {
                 const fieldId = `postgres-edit-${column.name}`;
 
                 return (
-                  <div
-                    key={column.name}
-                    className="space-y-2 rounded-lg border border-border/60 p-3"
-                  >
+                  <div key={column.name} className="postgres-edit-field">
                     <div className="flex items-start justify-between gap-3">
                       <label htmlFor={fieldId} className="space-y-1">
                         <div className="font-mono text-xs uppercase tracking-wide text-foreground">
@@ -667,7 +664,7 @@ export const PostgresExplorerPage: React.FC = () => {
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="postgres-edit-footer">
             <Button variant="outline" onClick={closeEditor} disabled={rowSaving}>
               Cancel
             </Button>
