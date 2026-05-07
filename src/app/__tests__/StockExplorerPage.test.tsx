@@ -106,21 +106,20 @@ describe('StockExplorerPage', () => {
         rows,
         summary: {
           universeCount: 3,
-          filteredCount: 3,
+          totalResultCount: 3,
+          returnedCount: rows.length,
           coverage: {
-            silverRows: 3,
-            goldRows: 3,
-            bothRows: 3,
-            silverPct: 1,
-            goldPct: 1
-          },
-          sectorCount: 1,
-          countryCount: 1
+            total: 3,
+            withSilver: 3,
+            withGold: 3,
+            missingSilver: 0,
+            missingGold: 0
+          }
         },
         facets: {
           sectors: [{ value: 'Technology', count: 3 }],
-          countries: [{ value: 'US', count: 3 }],
-          coverage: { silverRows: 3, goldRows: 3, bothRows: 3 }
+          industries: [{ value: 'Software', count: 1 }],
+          countries: [{ value: 'US', count: 3 }]
         }
       };
     });
