@@ -72,7 +72,7 @@ export const getStatusConfig = (status: string): StatusConfig => {
       return { ...StatusColors.CRITICAL, icon: AlertOctagon };
     case 'running':
       // Use Loader2 + Spin for active running states
-      return { ...StatusColors.NEUTRAL, icon: Loader2, animation: 'spin' };
+      return { ...StatusColors.ACTIVE, icon: Loader2, animation: 'spin' };
     case 'pending':
       return { ...StatusColors.NEUTRAL, icon: Clock };
     default:
@@ -108,16 +108,16 @@ export const getStatusIcon = (status: string) => {
  */
 export const getStatusBadge = (status: string) => {
   const styles: Record<string, string> = {
-    healthy: 'bg-green-100 text-green-800 hover:bg-green-100 border-green-200',
-    success: 'bg-green-100 text-green-800 hover:bg-green-100 border-green-200',
-    degraded: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100 border-yellow-200',
-    stale: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100 border-yellow-200',
-    warning: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100 border-yellow-200',
-    critical: 'bg-red-100 text-red-800 hover:bg-red-100 border-red-200',
-    error: 'bg-red-100 text-red-800 hover:bg-red-100 border-red-200',
-    failed: 'bg-red-100 text-red-800 hover:bg-red-100 border-red-200',
-    running: 'bg-blue-100 text-blue-800 hover:bg-blue-100 border-blue-200',
-    pending: 'bg-gray-100 text-gray-800 hover:bg-gray-100 border-gray-200'
+    healthy: 'bg-emerald-200 text-emerald-950 hover:bg-emerald-200 border-emerald-500',
+    success: 'bg-emerald-200 text-emerald-950 hover:bg-emerald-200 border-emerald-500',
+    degraded: 'bg-amber-200 text-amber-950 hover:bg-amber-200 border-amber-500',
+    stale: 'bg-amber-200 text-amber-950 hover:bg-amber-200 border-amber-500',
+    warning: 'bg-amber-200 text-amber-950 hover:bg-amber-200 border-amber-500',
+    critical: 'bg-red-200 text-red-950 hover:bg-red-200 border-red-500',
+    error: 'bg-red-200 text-red-950 hover:bg-red-200 border-red-500',
+    failed: 'bg-red-200 text-red-950 hover:bg-red-200 border-red-500',
+    running: 'bg-sky-200 text-sky-950 hover:bg-sky-200 border-sky-500',
+    pending: 'bg-slate-200 text-slate-950 hover:bg-slate-200 border-slate-500'
   };
 
   return React.createElement(

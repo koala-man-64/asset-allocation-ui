@@ -5,10 +5,11 @@
 
 export const StatusColors = {
   // Semantic States
-  HEALTHY: { bg: '#EAF7F0', text: '#187A3E', border: '#BFE6CD' }, // Soft green on light
-  WARNING: { bg: '#FFF7DF', text: '#9A6B00', border: '#F0D490' }, // Warm amber on light
-  CRITICAL: { bg: '#FDECEC', text: '#B3261E', border: '#F5B5B0' }, // Soft red on light
-  NEUTRAL: { bg: '#F5F5F7', text: '#52525B', border: '#E4E4E7' }, // Neutral
+  HEALTHY: { bg: '#CFF8DF', text: '#064E25', border: '#32C76F' },
+  WARNING: { bg: '#FFE59A', text: '#6F4700', border: '#E8AA00' },
+  CRITICAL: { bg: '#FFD8D2', text: '#8E1B13', border: '#EF5A4F' },
+  ACTIVE: { bg: '#D6E8FF', text: '#0754A6', border: '#3B82F6' },
+  NEUTRAL: { bg: '#E7E9EE', text: '#27272A', border: '#A1A1AA' },
 
   // UI Elements
   PANEL_BG: '#F8FAFC',
