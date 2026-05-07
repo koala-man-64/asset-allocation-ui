@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, ArrowDown, ArrowUp, ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { PageHero } from '@/app/components/common/PageHero';
@@ -130,6 +130,28 @@ const TAKE_PROFIT_ACTION_OPTIONS: Array<{ value: StrategyRiskTakeProfitAction; l
 
 function isConfigTab(value: string | null): value is ConfigTab {
   return CONFIG_TABS.includes(value as ConfigTab);
+}
+
+function getConfigTabFromSearch(search: string): ConfigTab {
+  const requestedTab = new URLSearchParams(search).get('tab');
+  return isConfigTab(requestedTab) ? requestedTab : 'universe';
+}
+
+function ConfigTabContent({ activeTab }: { activeTab: ConfigTab }) {
+  switch (activeTab) {
+    case 'universe':
+      return <UniverseConfigPage embedded />;
+    case 'ranking':
+      return <RankingConfigPage embedded />;
+    case 'rebalance-policy':
+      return <RebalancePolicyPanel />;
+    case 'regime-policy':
+      return <RegimePolicyPanel />;
+    case 'risk-policy':
+      return <RiskPolicyPanel />;
+    case 'exit-rules':
+      return <ExitRuleSetPanel />;
+  }
 }
 
 function formatTimestamp(value?: string | null): string {
@@ -1884,19 +1906,29 @@ function ExitRuleSetPanel() {
 }
 
 export function StrategyConfigurationHubPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const requestedTab = searchParams.get('tab');
-  const activeTab: ConfigTab = isConfigTab(requestedTab) ? requestedTab : 'universe';
+  const location = useLocation();
+  const navigate = useNavigate();
+  const urlTab = getConfigTabFromSearch(location.search);
+  const [activeTab, setActiveTab] = useState<ConfigTab>(urlTab);
+
+  useEffect(() => {
+    setActiveTab(urlTab);
+  }, [urlTab]);
 
   const handleTabChange = (value: string) => {
     if (!isConfigTab(value)) {
       return;
     }
-    setSearchParams(
-      (current) => {
-        const nextParams = new URLSearchParams(current);
-        nextParams.set('tab', value);
-        return nextParams;
+
+    setActiveTab(value);
+
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.set('tab', value);
+    navigate(
+      {
+        pathname: location.pathname,
+        search: `?${nextParams.toString()}`,
+        hash: location.hash
       },
       { replace: true }
     );
@@ -1928,23 +1960,8 @@ export function StrategyConfigurationHubPage() {
           </TabsList>
         </div>
 
-        <TabsContent value="universe">
-          <UniverseConfigPage embedded />
-        </TabsContent>
-        <TabsContent value="ranking">
-          <RankingConfigPage embedded />
-        </TabsContent>
-        <TabsContent value="rebalance-policy">
-          <RebalancePolicyPanel />
-        </TabsContent>
-        <TabsContent value="regime-policy">
-          <RegimePolicyPanel />
-        </TabsContent>
-        <TabsContent value="risk-policy">
-          <RiskPolicyPanel />
-        </TabsContent>
-        <TabsContent value="exit-rules">
-          <ExitRuleSetPanel />
+        <TabsContent key={activeTab} value={activeTab} forceMount>
+          <ConfigTabContent activeTab={activeTab} />
         </TabsContent>
       </Tabs>
     </div>
