@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 
 import { StockExplorerPage } from '@/features/stocks/StockExplorerPage';
 import { DataService } from '@/services/DataService';
+import { rankingApi } from '@/services/rankingApi';
 import { renderWithProviders } from '@/test/utils';
 
 const navigateMock = vi.fn();
@@ -19,6 +20,12 @@ vi.mock('react-router-dom', async () => {
 vi.mock('@/services/DataService', () => ({
   DataService: {
     getStockScreener: vi.fn()
+  }
+}));
+
+vi.mock('@/services/rankingApi', () => ({
+  rankingApi: {
+    listRankingSchemas: vi.fn()
   }
 }));
 
@@ -42,7 +49,13 @@ const firstPageRows = [
     compressionScore: 0.22,
     volumePctRank252d: 0.88,
     hasSilver: 1,
-    hasGold: 1
+    hasGold: 1,
+    rankingRank: 2,
+    rankingOverallScore: 0.82,
+    rankingComponents: [
+      { name: 'Momentum', score: 0.91 },
+      { name: 'Liquidity', score: 0.73 }
+    ]
   },
   {
     symbol: 'MSFT',
@@ -63,7 +76,13 @@ const firstPageRows = [
     compressionScore: 0.35,
     volumePctRank252d: 0.63,
     hasSilver: 1,
-    hasGold: 1
+    hasGold: 1,
+    rankingRank: 1,
+    rankingOverallScore: 0.91,
+    rankingComponents: [
+      { name: 'Momentum', score: 0.88 },
+      { name: 'Liquidity', score: 0.94 }
+    ]
   }
 ];
 
@@ -87,17 +106,36 @@ const secondPageRows = [
     compressionScore: 0.4,
     volumePctRank252d: 0.91,
     hasSilver: 1,
-    hasGold: 1
+    hasGold: 1,
+    rankingRank: 3,
+    rankingOverallScore: 0.79,
+    rankingComponents: [
+      { name: 'Momentum', score: 0.86 },
+      { name: 'Liquidity', score: 0.72 }
+    ]
   }
 ];
+
+function withoutRanking(rows: typeof firstPageRows) {
+  return rows.map(({ rankingRank, rankingOverallScore, rankingComponents, ...row }) => row);
+}
 
 describe('StockExplorerPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     navigateMock.mockReset();
+    vi.mocked(rankingApi.listRankingSchemas).mockResolvedValue([
+      {
+        name: 'quality_momentum',
+        description: 'Quality and momentum',
+        version: 2,
+        updated_at: '2026-04-18T14:30:00Z'
+      }
+    ]);
     vi.mocked(DataService.getStockScreener).mockImplementation(async (params = {}) => {
       const offset = params.offset ?? 0;
-      const rows = offset === 0 ? firstPageRows : secondPageRows;
+      const rankedRows = offset === 0 ? firstPageRows : secondPageRows;
+      const rows = params.ranking_schema_name ? rankedRows : withoutRanking(rankedRows);
       return {
         asOf: '2026-04-18',
         total: 3,
@@ -120,7 +158,14 @@ describe('StockExplorerPage', () => {
           sectors: [{ value: 'Technology', count: 3 }],
           industries: [{ value: 'Software', count: 1 }],
           countries: [{ value: 'US', count: 3 }]
-        }
+        },
+        ranking: params.ranking_schema_name
+          ? {
+              schemaName: String(params.ranking_schema_name),
+              schemaVersion: Number(params.ranking_schema_version ?? 1),
+              componentNames: ['Momentum', 'Liquidity']
+            }
+          : null
       };
     });
   });
@@ -134,15 +179,22 @@ describe('StockExplorerPage', () => {
 
     expect((await screen.findAllByText('Apple Inc.')).length).toBeGreaterThan(0);
     expect(screen.getByText('Microsoft Corp.')).toBeInTheDocument();
-    expect(vi.mocked(DataService.getStockScreener).mock.calls[0]?.[0]).toMatchObject({
-      q: undefined,
-      limit: 250,
-      offset: 0,
-      asOf: undefined,
-      sort: 'return_5d',
-      direction: 'desc',
-      has_gold: true
+    expect(await screen.findByRole('button', { name: /quality_momentum/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(vi.mocked(DataService.getStockScreener).mock.calls.at(-1)?.[0]).toMatchObject({
+        q: undefined,
+        limit: 250,
+        offset: 0,
+        asOf: undefined,
+        sort: 'ranking_score',
+        direction: 'desc',
+        ranking_schema_name: 'quality_momentum',
+        ranking_schema_version: 2
+      });
     });
+    expect(screen.getByRole('columnheader', { name: /Rank/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Overall/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Momentum/i })).toBeInTheDocument();
   });
 
   it('toggles sort direction when a sortable column is selected twice', async () => {
@@ -172,23 +224,53 @@ describe('StockExplorerPage', () => {
     });
   });
 
-  it('applies a factor preset as server-side screener filters', async () => {
+  it('selects a ranking schema as server-side ranking params', async () => {
     const user = userEvent.setup();
+    vi.mocked(rankingApi.listRankingSchemas).mockResolvedValue([
+      {
+        name: 'quality_momentum',
+        description: 'Quality and momentum',
+        version: 2,
+        updated_at: '2026-04-18T14:30:00Z'
+      },
+      {
+        name: 'defensive_value',
+        description: 'Defensive value',
+        version: 4,
+        updated_at: '2026-04-18T14:30:00Z'
+      }
+    ]);
 
     renderWithProviders(<StockExplorerPage />);
     await screen.findAllByText('Apple Inc.');
     vi.mocked(DataService.getStockScreener).mockClear();
 
-    await user.click(screen.getByRole('button', { name: /Compression/i }));
+    await user.click(screen.getByRole('button', { name: /defensive_value/i }));
 
     await waitFor(() => {
       expect(vi.mocked(DataService.getStockScreener).mock.calls.at(-1)?.[0]).toMatchObject({
-        sort: 'compression_score',
-        direction: 'asc',
-        has_gold: true,
-        max_compression_score: 0.5
+        sort: 'ranking_score',
+        direction: 'desc',
+        ranking_schema_name: 'defensive_value',
+        ranking_schema_version: 4
       });
     });
+  });
+
+  it('falls back to a non-ranking screener when no schemas exist', async () => {
+    vi.mocked(rankingApi.listRankingSchemas).mockResolvedValue([]);
+
+    renderWithProviders(<StockExplorerPage />);
+
+    expect((await screen.findAllByText('Apple Inc.')).length).toBeGreaterThan(0);
+    expect(screen.getByText('No ranking schemas')).toBeInTheDocument();
+    expect(vi.mocked(DataService.getStockScreener).mock.calls.at(-1)?.[0]).toMatchObject({
+      sort: 'return_5d',
+      direction: 'desc'
+    });
+    expect(vi.mocked(DataService.getStockScreener).mock.calls.at(-1)?.[0]).not.toHaveProperty(
+      'ranking_schema_name'
+    );
   });
 
   it('debounces search input before refetching', async () => {

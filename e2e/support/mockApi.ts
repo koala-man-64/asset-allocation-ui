@@ -254,6 +254,100 @@ const dataProfilingRows = [
   }
 ];
 
+const stockScreenerRows = [
+  {
+    symbol: 'AAPL',
+    name: 'Apple Inc.',
+    sector: 'Technology',
+    industry: 'Consumer Electronics',
+    country: 'US',
+    isOptionable: true,
+    close: 182.31,
+    volume: 1300000,
+    return1d: 0.011,
+    return5d: 0.028,
+    vol20d: 0.24,
+    drawdown1y: -0.08,
+    atr14d: 4.2,
+    trend50_200: 0.12,
+    aboveSma50: 1,
+    compressionScore: 0.22,
+    volumePctRank252d: 0.88,
+    hasSilver: 1,
+    hasGold: 1,
+    rankingRank: 2,
+    rankingOverallScore: 0.82,
+    rankingComponents: [
+      { name: 'Quality', score: 0.74 },
+      { name: 'Momentum', score: 0.9 }
+    ]
+  },
+  {
+    symbol: 'MSFT',
+    name: 'Microsoft Corp.',
+    sector: 'Technology',
+    industry: 'Software',
+    country: 'US',
+    isOptionable: true,
+    close: 421.03,
+    volume: 990000,
+    return1d: -0.004,
+    return5d: 0.012,
+    vol20d: 0.18,
+    drawdown1y: -0.05,
+    atr14d: 5.3,
+    trend50_200: 0.06,
+    aboveSma50: 0,
+    compressionScore: 0.35,
+    volumePctRank252d: 0.63,
+    hasSilver: 1,
+    hasGold: 1,
+    rankingRank: 1,
+    rankingOverallScore: 0.91,
+    rankingComponents: [
+      { name: 'Quality', score: 0.88 },
+      { name: 'Momentum', score: 0.94 }
+    ]
+  }
+];
+
+function stockScreenerPayload(includeRanking: boolean) {
+  const rows = includeRanking
+    ? stockScreenerRows
+    : stockScreenerRows.map(({ rankingRank, rankingOverallScore, rankingComponents, ...row }) => row);
+  return {
+    asOf: '2026-04-18',
+    total: rows.length,
+    limit: 250,
+    offset: 0,
+    rows,
+    summary: {
+      universeCount: rows.length,
+      totalResultCount: rows.length,
+      returnedCount: rows.length,
+      coverage: {
+        total: rows.length,
+        withSilver: rows.length,
+        withGold: rows.length,
+        missingSilver: 0,
+        missingGold: 0
+      }
+    },
+    facets: {
+      sectors: [{ value: 'Technology', count: rows.length }],
+      industries: [{ value: 'Software', count: 1 }],
+      countries: [{ value: 'US', count: rows.length }]
+    },
+    ranking: includeRanking
+      ? {
+          schemaName: 'quality-momentum',
+          schemaVersion: 1,
+          componentNames: ['Quality', 'Momentum']
+        }
+      : null
+  };
+}
+
 const postgresSchemasPayload = ['public', 'information_schema', 'core', 'gold'];
 
 const postgresTablesBySchema = {
@@ -1931,6 +2025,10 @@ async function handleApiRoute(route: Route) {
 
   if (apiPath === '/data/gold/market') {
     return json(route, dataProfilingRows);
+  }
+
+  if (apiPath === '/data/screener') {
+    return json(route, stockScreenerPayload(requestUrl.searchParams.has('ranking_schema_name')));
   }
 
   if (apiPath === '/data/gold/profile') {

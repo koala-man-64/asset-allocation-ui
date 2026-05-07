@@ -640,12 +640,17 @@ export type {
 } from '@asset-allocation/contracts';
 
 type StockScreenerStringFilter = string | readonly string[] | null;
+export type StockScreenerRankingSortKey = 'ranking_rank' | 'ranking_score';
+export type ExtendedStockScreenerSortKey = StockScreenerSortKey | StockScreenerRankingSortKey;
 
 export type StockScreenerRequestParams = Partial<
-  Omit<ContractStockScreenerRequest, 'as_of' | 'sectors' | 'industries' | 'countries'>
+  Omit<ContractStockScreenerRequest, 'as_of' | 'sectors' | 'industries' | 'countries' | 'sort'>
 > & {
   asOf?: string | null;
   as_of?: string | null;
+  sort?: ExtendedStockScreenerSortKey;
+  ranking_schema_name?: string | null;
+  ranking_schema_version?: number | null;
   sectors?: StockScreenerStringFilter;
   industries?: StockScreenerStringFilter;
   countries?: StockScreenerStringFilter;

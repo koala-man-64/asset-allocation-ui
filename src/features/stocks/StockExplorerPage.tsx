@@ -1,5 +1,4 @@
 import {
-  type ComponentType,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -7,23 +6,17 @@ import {
   useMemo,
   useState
 } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity,
   ArrowRight,
   ArrowUpDown,
-  BarChart3,
   CheckCircle2,
   Database,
   FilterX,
-  LineChart,
   RefreshCcw,
   Search,
   SlidersHorizontal,
-  TrendingDown,
-  TrendingUp,
-  TriangleAlert
 } from 'lucide-react';
 
 import { PageLoader } from '@/app/components/common/PageLoader';
@@ -50,30 +43,29 @@ import {
 import { cn } from '@/app/components/ui/utils';
 import { buildStockDetailPath } from '@/features/stocks/stockRoutes';
 import type {
+  ExtendedStockScreenerSortKey,
   StockScreenerRequestParams,
   StockScreenerResponse,
   StockScreenerRow,
-  StockScreenerSortDirection,
-  StockScreenerSortKey
+  StockScreenerSortDirection
 } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
+import { rankingApi } from '@/services/rankingApi';
+import { rankingKeys } from '@/services/queryKeyFactories';
+import type { RankingSchemaSummary } from '@/types/strategy';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
-type ScreenerPresetId = 'momentum' | 'trend' | 'compression' | 'risk' | 'liquidity' | 'data-gaps';
-type ActivePresetId = ScreenerPresetId | 'custom';
 type CoverageMode = 'all' | 'complete' | 'missing-silver' | 'missing-gold';
 
-interface ScreenerPreset {
-  id: ScreenerPresetId;
-  label: string;
-  icon: ComponentType<{ className?: string }>;
-  sort: StockScreenerSortKey;
-  direction: StockScreenerSortDirection;
-  filters: Partial<StockScreenerRequestParams>;
-}
-
 const PAGE_SIZE = 250;
-const DEFAULT_PRESET_ID: ScreenerPresetId = 'momentum';
+const DEFAULT_SORT: ExtendedStockScreenerSortKey = 'return_5d';
+const DEFAULT_DIRECTION: StockScreenerSortDirection = 'desc';
+const RANKING_COMPONENT_COLUMN_WIDTH = 112;
+
+interface RankingComponentScore {
+  name: string;
+  score?: number | null;
+}
 
 const SCREENER_COLUMNS = [
   { id: 'symbol', defaultWidth: 118, minWidth: 88 },
@@ -90,13 +82,14 @@ const SCREENER_COLUMNS = [
   { id: 'volume', defaultWidth: 106, minWidth: 86 },
   { id: 'volumePct', defaultWidth: 94, minWidth: 76 },
   { id: 'compression', defaultWidth: 104, minWidth: 86 },
+  { id: 'rankingRank', defaultWidth: 82, minWidth: 68 },
+  { id: 'rankingOverall', defaultWidth: 98, minWidth: 78 },
   { id: 'coverage', defaultWidth: 116, minWidth: 92 },
   { id: 'actions', defaultWidth: 58, minWidth: 48 }
 ] as const;
 
 type ScreenerColumnId = (typeof SCREENER_COLUMNS)[number]['id'];
 
-const TABLE_COL_SPAN = SCREENER_COLUMNS.length;
 const SCREENER_COLUMN_MAX_WIDTH = 520;
 const SCREENER_COLUMN_RESIZE_STEP = 12;
 
@@ -116,58 +109,22 @@ const SCREENER_COLUMN_MIN_WIDTHS = SCREENER_COLUMNS.reduce(
   {} as Record<ScreenerColumnId, number>
 );
 
-const PRESETS: ScreenerPreset[] = [
-  {
-    id: 'momentum',
-    label: 'Momentum',
-    icon: TrendingUp,
-    sort: 'return_5d',
-    direction: 'desc',
-    filters: { has_gold: true }
-  },
-  {
-    id: 'trend',
-    label: 'Trend',
-    icon: LineChart,
-    sort: 'trend_50_200',
-    direction: 'desc',
-    filters: { above_sma_50: true, has_gold: true }
-  },
-  {
-    id: 'compression',
-    label: 'Compression',
-    icon: BarChart3,
-    sort: 'compression_score',
-    direction: 'asc',
-    filters: { has_gold: true, max_compression_score: 0.5 }
-  },
-  {
-    id: 'risk',
-    label: 'Volatility/Risk',
-    icon: TrendingDown,
-    sort: 'drawdown_1y',
-    direction: 'asc',
-    filters: { has_gold: true }
-  },
-  {
-    id: 'liquidity',
-    label: 'Liquidity',
-    icon: Activity,
-    sort: 'volume_pct_rank_252d',
-    direction: 'desc',
-    filters: { has_silver: true, min_volume_pct_rank_252d: 0.6 }
-  },
-  {
-    id: 'data-gaps',
-    label: 'Data Gaps',
-    icon: TriangleAlert,
-    sort: 'symbol',
-    direction: 'asc',
-    filters: { has_gold: false }
-  }
-];
+interface StockScreenerRankingMetadata {
+  schemaName?: string | null;
+  schemaVersion?: number | null;
+  componentNames?: string[] | null;
+}
 
-const DEFAULT_PRESET = PRESETS.find((preset) => preset.id === DEFAULT_PRESET_ID) ?? PRESETS[0];
+type RankedStockScreenerRow = StockScreenerRow & {
+  rankingRank?: number | null;
+  rankingOverallScore?: number | null;
+  rankingComponents?: RankingComponentScore[] | null;
+};
+
+type RankedStockScreenerResponse = StockScreenerResponse & {
+  ranking?: StockScreenerRankingMetadata | null;
+  rows: RankedStockScreenerRow[];
+};
 
 function clampScreenerColumnWidth(columnId: ScreenerColumnId, width: number): number {
   return Math.min(
@@ -327,7 +284,7 @@ function coverageParams(mode: CoverageMode): Partial<StockScreenerRequestParams>
   return {};
 }
 
-function metricLabel(sort: StockScreenerSortKey): string {
+function metricLabel(sort: ExtendedStockScreenerSortKey): string {
   return sort.replaceAll('_', ' ');
 }
 
@@ -374,9 +331,9 @@ export function StockExplorerPage() {
   const [rawQuery, setRawQuery] = useState('');
   const [query, setQuery] = useState('');
   const [asOf, setAsOf] = useState('');
-  const [sort, setSort] = useState<StockScreenerSortKey>(DEFAULT_PRESET.sort);
-  const [direction, setDirection] = useState<StockScreenerSortDirection>(DEFAULT_PRESET.direction);
-  const [activePresetId, setActivePresetId] = useState<ActivePresetId>(DEFAULT_PRESET_ID);
+  const [sort, setSort] = useState<ExtendedStockScreenerSortKey>(DEFAULT_SORT);
+  const [direction, setDirection] = useState<StockScreenerSortDirection>(DEFAULT_DIRECTION);
+  const [selectedRankingSchemaName, setSelectedRankingSchemaName] = useState('');
   const [sectorFilter, setSectorFilter] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [coverageMode, setCoverageMode] = useState<CoverageMode>('all');
@@ -391,11 +348,6 @@ export function StockExplorerPage() {
     const handle = window.setTimeout(() => setQuery(rawQuery.trim()), 250);
     return () => window.clearTimeout(handle);
   }, [rawQuery]);
-
-  const tableWidth = useMemo(
-    () => SCREENER_COLUMNS.reduce((width, column) => width + columnWidths[column.id], 0),
-    [columnWidths]
-  );
 
   const updateColumnWidth = (columnId: ScreenerColumnId, width: number) => {
     setColumnWidths((current) => ({
@@ -494,10 +446,48 @@ export function StockExplorerPage() {
     onResetColumnWidth: resetColumnWidth
   };
 
-  const activePreset = PRESETS.find((preset) => preset.id === activePresetId);
+  const rankingSchemasQuery = useQuery({
+    queryKey: rankingKeys.all(),
+    queryFn: ({ signal }) => rankingApi.listRankingSchemas(signal),
+    staleTime: 60_000,
+    retry: false
+  });
+
+  const rankingSchemas = rankingSchemasQuery.data ?? [];
+  const selectedRankingSchema = useMemo(
+    () => rankingSchemas.find((schema) => schema.name === selectedRankingSchemaName) ?? null,
+    [rankingSchemas, selectedRankingSchemaName]
+  );
+
+  useEffect(() => {
+    if (rankingSchemasQuery.isLoading) {
+      return;
+    }
+    if (rankingSchemas.length === 0) {
+      if (selectedRankingSchemaName) {
+        setSelectedRankingSchemaName('');
+      }
+      if (sort === 'ranking_rank' || sort === 'ranking_score') {
+        setSort(DEFAULT_SORT);
+        setDirection(DEFAULT_DIRECTION);
+      }
+      return;
+    }
+
+    if (!selectedRankingSchema) {
+      setSelectedRankingSchemaName(rankingSchemas[0]?.name ?? '');
+      setSort('ranking_score');
+      setDirection('desc');
+    }
+  }, [
+    rankingSchemas,
+    rankingSchemasQuery.isLoading,
+    selectedRankingSchema,
+    selectedRankingSchemaName,
+    sort
+  ]);
 
   const filterParams = useMemo(() => {
-    const presetFilters = activePreset?.filters ?? {};
     const manualNumericFilters: Partial<StockScreenerRequestParams> = {};
     const parsedMinReturn5d = parseOptionalNumber(minReturn5d);
     const parsedMaxCompression = parseOptionalNumber(maxCompression);
@@ -512,7 +502,6 @@ export function StockExplorerPage() {
       manualNumericFilters.min_volume_pct_rank_252d = parsedMinVolumeRank;
     }
     return compactParams({
-      ...presetFilters,
       ...coverageParams(coverageMode),
       sectors: sectorFilter.trim() || undefined,
       countries: countryFilter.trim() || undefined,
@@ -520,7 +509,6 @@ export function StockExplorerPage() {
       ...manualNumericFilters
     });
   }, [
-    activePreset?.filters,
     countryFilter,
     coverageMode,
     maxCompression,
@@ -530,9 +518,30 @@ export function StockExplorerPage() {
     sectorFilter
   ]);
 
+  const rankingRequestParams = useMemo(
+    () =>
+      selectedRankingSchema
+        ? {
+            ranking_schema_name: selectedRankingSchema.name,
+            ranking_schema_version: selectedRankingSchema.version
+          }
+        : {},
+    [selectedRankingSchema]
+  );
+
   const queryKey = useMemo(
-    () => ['stockScreener', query || '-', sort, direction, asOf || '-', filterParams] as const,
-    [asOf, direction, filterParams, query, sort]
+    () =>
+      [
+        'stockScreener',
+        query || '-',
+        sort,
+        direction,
+        asOf || '-',
+        selectedRankingSchema?.name ?? '-',
+        selectedRankingSchema?.version ?? '-',
+        filterParams
+      ] as const,
+    [asOf, direction, filterParams, query, selectedRankingSchema, sort]
   );
 
   const screenerQuery = useInfiniteQuery({
@@ -546,26 +555,30 @@ export function StockExplorerPage() {
           asOf: asOf || undefined,
           sort,
           direction,
+          ...rankingRequestParams,
           ...filterParams
         },
         signal
       ),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => {
-      const page = lastPage as StockScreenerResponse;
+      const page = lastPage as RankedStockScreenerResponse;
       const nextOffset = page.offset + (page.rows?.length ?? 0);
       if (nextOffset >= page.total) {
         return undefined;
       }
       return nextOffset;
     },
+    enabled:
+      !rankingSchemasQuery.isLoading &&
+      (rankingSchemas.length === 0 || Boolean(selectedRankingSchema)),
     staleTime: 15_000,
     retry: false
   });
 
   const rows = useMemo(() => {
     const pages = screenerQuery.data?.pages ?? [];
-    return pages.flatMap((page) => page.rows ?? []) as StockScreenerRow[];
+    return pages.flatMap((page) => (page as RankedStockScreenerResponse).rows ?? []);
   }, [screenerQuery.data]);
 
   useEffect(() => {
@@ -578,7 +591,7 @@ export function StockExplorerPage() {
     }
   }, [rows, selectedSymbol]);
 
-  const firstPage = screenerQuery.data?.pages?.[0] as StockScreenerResponse | undefined;
+  const firstPage = screenerQuery.data?.pages?.[0] as RankedStockScreenerResponse | undefined;
   const total = firstPage?.total ?? 0;
   const summary = firstPage?.summary ?? null;
   const facets = firstPage?.facets ?? null;
@@ -594,10 +607,48 @@ export function StockExplorerPage() {
   const selectedRow =
     rows.find((row) => String(row.symbol).toUpperCase() === selectedSymbol) ?? rows[0];
   const selectedTicker = String(selectedRow?.symbol ?? '').toUpperCase();
-  const activeFilterCount = Object.keys(filterParams).length + (query ? 1 : 0) + (asOf ? 1 : 0);
+  const rankingComponentNames = useMemo(() => {
+    const metadataNames = firstPage?.ranking?.componentNames?.filter(Boolean) ?? [];
+    if (metadataNames.length > 0) {
+      return metadataNames;
+    }
+    const seen = new Set<string>();
+    rows.forEach((row) => {
+      row.rankingComponents?.forEach((component) => {
+        const name = String(component.name || '').trim();
+        if (name) {
+          seen.add(name);
+        }
+      });
+    });
+    return Array.from(seen);
+  }, [firstPage?.ranking?.componentNames, rows]);
+  const hasRankingColumns = Boolean(
+    selectedRankingSchema ||
+      firstPage?.ranking ||
+      rows.some((row) => row.rankingRank != null || row.rankingOverallScore != null)
+  );
+  const activeScreenerColumns = useMemo(
+    () =>
+      SCREENER_COLUMNS.filter(
+        (column) =>
+          hasRankingColumns ||
+          (column.id !== 'rankingRank' && column.id !== 'rankingOverall')
+      ),
+    [hasRankingColumns]
+  );
+  const tableWidth = useMemo(
+    () =>
+      activeScreenerColumns.reduce((width, column) => width + columnWidths[column.id], 0) +
+      (hasRankingColumns ? rankingComponentNames.length * RANKING_COMPONENT_COLUMN_WIDTH : 0),
+    [activeScreenerColumns, columnWidths, hasRankingColumns, rankingComponentNames.length]
+  );
+  const tableColSpan =
+    activeScreenerColumns.length + (hasRankingColumns ? rankingComponentNames.length : 0);
+  const activeFilterCount =
+    Object.keys(filterParams).length + (query ? 1 : 0) + (asOf ? 1 : 0) + (selectedRankingSchema ? 1 : 0);
 
-  const onToggleSort = (nextSort: StockScreenerSortKey) => {
-    setActivePresetId('custom');
+  const onToggleSort = (nextSort: ExtendedStockScreenerSortKey) => {
     if (sort === nextSort) {
       setDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
       return;
@@ -606,10 +657,10 @@ export function StockExplorerPage() {
     setDirection('desc');
   };
 
-  const applyPreset = (preset: ScreenerPreset) => {
-    setActivePresetId(preset.id);
-    setSort(preset.sort);
-    setDirection(preset.direction);
+  const applyRankingSchema = (schema: RankingSchemaSummary) => {
+    setSelectedRankingSchemaName(schema.name);
+    setSort('ranking_score');
+    setDirection('desc');
   };
 
   const resetFilters = () => {
@@ -623,7 +674,15 @@ export function StockExplorerPage() {
     setMinReturn5d('');
     setMaxCompression('');
     setMinVolumeRank('');
-    applyPreset(DEFAULT_PRESET);
+    if (rankingSchemas.length > 0) {
+      setSelectedRankingSchemaName(rankingSchemas[0]?.name ?? '');
+      setSort('ranking_score');
+      setDirection('desc');
+    } else {
+      setSelectedRankingSchemaName('');
+      setSort(DEFAULT_SORT);
+      setDirection(DEFAULT_DIRECTION);
+    }
   };
 
   const openDetail = (ticker: string) => {
@@ -722,24 +781,41 @@ export function StockExplorerPage() {
           </div>
 
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-            {PRESETS.map((preset) => {
-              const Icon = preset.icon;
-              const isActive = activePresetId === preset.id;
+            {rankingSchemas.map((schema) => {
+              const isActive = selectedRankingSchemaName === schema.name;
               return (
                 <Button
-                  key={preset.id}
+                  key={`${schema.name}:${schema.version}`}
                   type="button"
                   variant={isActive ? 'default' : 'outline'}
                   size="sm"
                   className="h-9 shrink-0 gap-2"
-                  onClick={() => applyPreset(preset)}
+                  onClick={() => applyRankingSchema(schema)}
                 >
-                  <Icon className="h-4 w-4" />
-                  {preset.label}
+                  <SlidersHorizontal className="h-4 w-4" />
+                  <span className="max-w-[12rem] truncate">{schema.name}</span>
+                  <span className="font-mono text-[10px] opacity-75">v{schema.version}</span>
                 </Button>
               );
             })}
-            {activePresetId === 'custom' ? (
+            {rankingSchemasQuery.isLoading ? (
+              <Badge variant="secondary" className="h-9 rounded-md px-3 font-mono text-[11px]">
+                Loading ranking configs
+              </Badge>
+            ) : null}
+            {!rankingSchemasQuery.isLoading && rankingSchemasQuery.isError ? (
+              <Badge variant="outline" className="h-9 rounded-md px-3 font-mono text-[11px]">
+                Ranking configs unavailable
+              </Badge>
+            ) : null}
+            {!rankingSchemasQuery.isLoading &&
+            !rankingSchemasQuery.isError &&
+            rankingSchemas.length === 0 ? (
+              <Badge variant="outline" className="h-9 rounded-md px-3 font-mono text-[11px]">
+                No ranking schemas
+              </Badge>
+            ) : null}
+            {selectedRankingSchema && sort !== 'ranking_score' ? (
               <Badge variant="secondary" className="h-9 rounded-md px-3 font-mono text-[11px]">
                 Custom sort
               </Badge>
@@ -862,13 +938,22 @@ export function StockExplorerPage() {
                 style={{ minWidth: `${tableWidth}px` }}
               >
                 <colgroup>
-                  {SCREENER_COLUMNS.map((column) => (
+                  {activeScreenerColumns.map((column) => (
                     <col
                       key={column.id}
                       data-column-id={column.id}
                       style={{ width: `${columnWidths[column.id]}px` }}
                     />
                   ))}
+                  {hasRankingColumns
+                    ? rankingComponentNames.map((name) => (
+                        <col
+                          key={`ranking-component:${name}`}
+                          data-ranking-component={name}
+                          style={{ width: `${RANKING_COMPONENT_COLUMN_WIDTH}px` }}
+                        />
+                      ))
+                    : null}
                 </colgroup>
                 <TableHeader>
                   <TableRow className="hover:bg-muted/20">
@@ -973,6 +1058,36 @@ export function StockExplorerPage() {
                       onToggleSort={onToggleSort}
                       {...columnResizeProps}
                     />
+                    {hasRankingColumns ? (
+                      <>
+                        <SortableHead
+                          columnId="rankingRank"
+                          label="Rank"
+                          sortKey="ranking_rank"
+                          onToggleSort={onToggleSort}
+                          {...columnResizeProps}
+                        />
+                        <SortableHead
+                          columnId="rankingOverall"
+                          label="Overall"
+                          sortKey="ranking_score"
+                          onToggleSort={onToggleSort}
+                          {...columnResizeProps}
+                        />
+                        {rankingComponentNames.map((name) => (
+                          <TableHead
+                            key={name}
+                            style={{
+                              width: `${RANKING_COMPONENT_COLUMN_WIDTH}px`,
+                              minWidth: `${RANKING_COMPONENT_COLUMN_WIDTH}px`
+                            }}
+                            className="sticky top-0 z-20 bg-mcm-paper text-right font-mono text-[10px] uppercase tracking-[0.18em]"
+                          >
+                            {name}
+                          </TableHead>
+                        ))}
+                      </>
+                    ) : null}
                     <ScreenerHeaderCell
                       columnId="coverage"
                       resizeLabel="Coverage"
@@ -1069,6 +1184,29 @@ export function StockExplorerPage() {
                         <HeatCell className={compressionHeatClass(row.compressionScore)}>
                           {formatNumber(row.compressionScore, 2)}
                         </HeatCell>
+                        {hasRankingColumns ? (
+                          <>
+                            <TableCell className="overflow-hidden text-ellipsis text-right font-mono font-semibold">
+                              {row.rankingRank == null ? '--' : row.rankingRank.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="overflow-hidden text-ellipsis text-right font-mono font-semibold">
+                              {formatNumber(row.rankingOverallScore, 4)}
+                            </TableCell>
+                            {rankingComponentNames.map((name) => {
+                              const componentScore = row.rankingComponents?.find(
+                                (component) => component.name === name
+                              )?.score;
+                              return (
+                                <TableCell
+                                  key={`${symbol}:${name}`}
+                                  className="overflow-hidden text-ellipsis text-right font-mono text-muted-foreground"
+                                >
+                                  {formatNumber(componentScore, 4)}
+                                </TableCell>
+                              );
+                            })}
+                          </>
+                        ) : null}
                         <TableCell className="overflow-hidden text-center">
                           <div className="flex justify-center gap-1">
                             <CoverageBadge label="S" active={hasSilver} title="Silver coverage" />
@@ -1096,7 +1234,7 @@ export function StockExplorerPage() {
 
                   {screenerQuery.isFetching && rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={TABLE_COL_SPAN} className="p-0">
+                      <TableCell colSpan={tableColSpan} className="p-0">
                         <PageLoader text="Loading snapshot..." className="h-[52vh] border-0" />
                       </TableCell>
                     </TableRow>
@@ -1104,7 +1242,7 @@ export function StockExplorerPage() {
 
                   {!screenerQuery.isFetching && rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={TABLE_COL_SPAN} className="py-16 text-center">
+                      <TableCell colSpan={tableColSpan} className="py-16 text-center">
                         <div className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
                           No rows found
                         </div>
@@ -1332,8 +1470,8 @@ function ScreenerHeaderCell({
 interface SortableHeadProps extends ScreenerColumnResizeProps {
   columnId: ScreenerColumnId;
   label: string;
-  sortKey: StockScreenerSortKey;
-  onToggleSort: (sortKey: StockScreenerSortKey) => void;
+  sortKey: ExtendedStockScreenerSortKey;
+  onToggleSort: (sortKey: ExtendedStockScreenerSortKey) => void;
 }
 
 function SortableHead({
