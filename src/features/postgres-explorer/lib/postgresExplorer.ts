@@ -102,7 +102,9 @@ export function buildEditState(row: RowData, metadata: PostgresTableMetadata): E
 }
 
 export function isJsonType(dataType: string): boolean {
-  return String(dataType || '').toLowerCase().includes('json');
+  return String(dataType || '')
+    .toLowerCase()
+    .includes('json');
 }
 
 export function isArrayType(dataType: string): boolean {
@@ -111,19 +113,23 @@ export function isArrayType(dataType: string): boolean {
 }
 
 export function isBooleanType(dataType: string): boolean {
-  return String(dataType || '').toLowerCase().includes('bool');
+  return String(dataType || '')
+    .toLowerCase()
+    .includes('bool');
 }
 
 export function isNumericType(dataType: string): boolean {
   const normalized = String(dataType || '').toLowerCase();
-  return ['int', 'numeric', 'decimal', 'real', 'double', 'float', 'serial', 'money'].some(
-    (token) => normalized.includes(token)
+  return ['int', 'numeric', 'decimal', 'real', 'double', 'float', 'serial', 'money'].some((token) =>
+    normalized.includes(token)
   );
 }
 
 export function isDateType(dataType: string): boolean {
   const normalized = String(dataType || '').toLowerCase();
-  return normalized.includes('date') && !normalized.includes('time') && !normalized.includes('stamp');
+  return (
+    normalized.includes('date') && !normalized.includes('time') && !normalized.includes('stamp')
+  );
 }
 
 export function isDateTimeType(dataType: string): boolean {
@@ -173,7 +179,9 @@ export function createQueryFilterId(): string {
   return `filter-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function createQueryFilterDraft(metadata: PostgresTableMetadata | null): QueryFilterDraft | null {
+export function createQueryFilterDraft(
+  metadata: PostgresTableMetadata | null
+): QueryFilterDraft | null {
   const firstColumn = metadata?.columns?.[0];
   if (!firstColumn) {
     return null;
