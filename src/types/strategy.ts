@@ -27,6 +27,10 @@ export type {
   RegimePolicy,
   RegimePolicyMode,
   StrategyConfig,
+  StrategyPositionAssetClass,
+  StrategyPositionPolicy,
+  StrategyPositionSizeLimit,
+  StrategyPositionSizeMode,
   UniverseSource,
   UniverseValue
 } from '@asset-allocation/contracts';

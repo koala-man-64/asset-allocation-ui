@@ -6,6 +6,8 @@ import { PageLoader } from '@/app/components/common/PageLoader';
 import type { RunRecordResponse } from '@/services/backtestApi';
 import type { StrategyDetail } from '@/types/strategy';
 import {
+  describePositionPolicy,
+  describePositionPolicyDetail,
   describeRegimePolicy,
   describeStrategyExecution,
   describeStrategySelection,
@@ -152,6 +154,11 @@ export function StrategyDossier({
                 label="Execution"
                 value={describeStrategyExecution(strategy)}
                 detail={`Rebalance ${strategy.config.rebalance} | conflict policy ${strategy.config.intrabarConflictPolicy}`}
+              />
+              <DossierTile
+                label="Positions"
+                value={describePositionPolicy(strategy.config.positionPolicy)}
+                detail={describePositionPolicyDetail(strategy.config.positionPolicy)}
               />
               <DossierTile
                 label="Cost Model"

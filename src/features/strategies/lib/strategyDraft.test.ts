@@ -15,6 +15,10 @@ describe('strategyDraft helpers', () => {
     expect(draft.type).toBe('configured');
     expect(draft.config.rebalance).toBe('monthly');
     expect(draft.config.longOnly).toBe(true);
+    expect(draft.config.positionPolicy).toEqual({
+      allowedAssetClasses: ['equity'],
+      requireOrderConfirmation: false
+    });
     expect(draft.config.exits).toEqual([]);
   });
 
@@ -31,6 +35,12 @@ describe('strategyDraft helpers', () => {
         holdingPeriod: 21,
         costModel: 'default',
         intrabarConflictPolicy: 'stop_first',
+        positionPolicy: {
+          targetPositionSize: { mode: 'notional_base_ccy', value: 5000 },
+          maxOpenPositions: 4,
+          allowedAssetClasses: ['equity', 'option'],
+          requireOrderConfirmation: true
+        },
         exits: [],
         regimePolicy: {
           modelName: 'desk-regime',
@@ -41,6 +51,8 @@ describe('strategyDraft helpers', () => {
 
     expect(strategy.config.regimePolicy?.modelName).toBe('desk-regime');
     expect(strategy.config.regimePolicy?.mode).toBe('observe_only');
+    expect(strategy.config.positionPolicy?.targetPositionSize?.mode).toBe('notional_base_ccy');
+    expect(strategy.config.positionPolicy?.allowedAssetClasses).toEqual(['equity', 'option']);
   });
 
   it('builds exit rules with type-specific defaults', () => {
@@ -78,6 +90,11 @@ describe('strategyDraft helpers', () => {
         holdingPeriod: 21,
         costModel: 'default',
         intrabarConflictPolicy: 'stop_first',
+        positionPolicy: {
+          maxOpenPositions: 3,
+          allowedAssetClasses: ['equity'],
+          requireOrderConfirmation: true
+        },
         exits: []
       }
     });
@@ -86,5 +103,7 @@ describe('strategyDraft helpers', () => {
     expect(duplicate.output_table_name).toBeUndefined();
     expect(duplicate.updated_at).toBeUndefined();
     expect(duplicate.config.rebalance).toBe('weekly');
+    expect(duplicate.config.positionPolicy?.maxOpenPositions).toBe(3);
+    expect(duplicate.config.positionPolicy?.requireOrderConfirmation).toBe(true);
   });
 });

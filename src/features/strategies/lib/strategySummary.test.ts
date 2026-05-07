@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  describePositionPolicy,
+  describePositionPolicyDetail,
   describeRegimePolicy,
   sortStrategies,
   summarizeExitStack
@@ -72,5 +74,18 @@ describe('strategySummary helpers', () => {
 
     expect(description).toContain('desk-regime');
     expect(description).toContain('observe only');
+  });
+
+  it('describes strategy position policy sizing and confirmation', () => {
+    const policy = {
+      targetPositionSize: { mode: 'pct_of_allocatable_capital' as const, value: 5 },
+      maxPositionSize: { mode: 'notional_base_ccy' as const, value: 25000 },
+      maxOpenPositions: 8,
+      allowedAssetClasses: ['equity' as const, 'option' as const],
+      requireOrderConfirmation: true
+    };
+
+    expect(describePositionPolicy(policy)).toBe('5% capital | cap $25,000 | max 8 open');
+    expect(describePositionPolicyDetail(policy)).toBe('equity, option | order confirmation required');
   });
 });

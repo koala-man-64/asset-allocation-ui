@@ -14,6 +14,7 @@ import {
 } from '@/app/components/ui/alert-dialog';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
+import { Checkbox } from '@/app/components/ui/checkbox';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import {
@@ -33,11 +34,16 @@ import type {
   ExitRuleType,
   IntrabarConflictPolicy,
   RegimePolicyMode,
+  StrategyPositionAssetClass,
+  StrategyPositionPolicy,
+  StrategyPositionSizeMode,
   StrategyDetail
 } from '@/types/strategy';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import {
   buildDefaultRegimePolicy,
+  buildDefaultPositionPolicy,
+  buildDefaultPositionSize,
   buildEmptyStrategy,
   buildExitRule,
   buildStrategyDraft,
@@ -45,6 +51,8 @@ import {
   getNextRuleId,
   getRuleValueLabel,
   INTRABAR_OPTIONS,
+  POSITION_ASSET_CLASS_OPTIONS,
+  POSITION_SIZE_MODES,
   PRICE_FIELD_OPTIONS,
   REGIME_POLICY_MODES,
   toOptionalNumber,
@@ -63,10 +71,11 @@ interface StrategyEditorWorkspaceProps {
   onSaved: (strategy: StrategyDetail) => void;
 }
 
-const SECTION_IDS = ['metadata', 'config', 'regime', 'exits'] as const;
+const SECTION_IDS = ['metadata', 'config', 'positions', 'regime', 'exits'] as const;
 const SECTION_LABELS: Record<(typeof SECTION_IDS)[number], string> = {
   metadata: 'Desk Identity',
   config: 'Core Setup',
+  positions: 'Positions',
   regime: 'Regime Gates',
   exits: 'Exit Stack'
 };
@@ -172,6 +181,9 @@ export function StrategyEditorWorkspace({
   const watchedRankingSchema = watchedRankingSchemaName || '__none__';
   const watchedPolicy = watch('config.intrabarConflictPolicy');
   const watchedLongOnly = watch('config.longOnly');
+  const watchedPositionPolicy = watch('config.positionPolicy') || buildDefaultPositionPolicy();
+  const watchedTargetPositionSize = watchedPositionPolicy.targetPositionSize;
+  const watchedMaxPositionSize = watchedPositionPolicy.maxPositionSize;
   const watchedRegimePolicy = watch('config.regimePolicy');
   const hasRegimePolicy = Boolean(watchedRegimePolicy);
   const effectiveRegimePolicy = watchedRegimePolicy || buildDefaultRegimePolicy();
@@ -243,6 +255,51 @@ export function StrategyEditorWorkspace({
 
   const jumpToSection = (sectionId: (typeof SECTION_IDS)[number]) => {
     document.getElementById(sectionId)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  };
+
+  const setPositionPolicyField = <TKey extends keyof StrategyPositionPolicy>(
+    key: TKey,
+    value: StrategyPositionPolicy[TKey]
+  ) => {
+    setValue(
+      'config.positionPolicy',
+      {
+        ...buildDefaultPositionPolicy(),
+        ...getValues('config.positionPolicy'),
+        [key]: value
+      },
+      { shouldDirty: true, shouldTouch: true }
+    );
+  };
+
+  const setPositionSizeEnabled = (field: 'targetPositionSize' | 'maxPositionSize', enabled: boolean) => {
+    setPositionPolicyField(field, enabled ? buildDefaultPositionSize() : undefined);
+  };
+
+  const setPositionSizeMode = (
+    field: 'targetPositionSize' | 'maxPositionSize',
+    mode: StrategyPositionSizeMode
+  ) => {
+    const currentSize = getValues(`config.positionPolicy.${field}` as const);
+    setPositionPolicyField(field, {
+      ...buildDefaultPositionSize(mode),
+      ...(currentSize || {}),
+      mode
+    });
+  };
+
+  const toggleAllowedAssetClass = (assetClass: StrategyPositionAssetClass, enabled: boolean) => {
+    const current = new Set(watchedPositionPolicy.allowedAssetClasses || []);
+    if (enabled) {
+      current.add(assetClass);
+    } else {
+      current.delete(assetClass);
+    }
+
+    setPositionPolicyField(
+      'allowedAssetClasses',
+      current.size ? Array.from(current) : ['equity']
+    );
   };
 
   return (
@@ -564,6 +621,7 @@ export function StrategyEditorWorkspace({
                   <Switch
                     aria-label="Toggle long only strategy"
                     checked={Boolean(watchedLongOnly)}
+                    disabled
                     onCheckedChange={(checked) =>
                       setValue('config.longOnly', Boolean(checked), {
                         shouldDirty: true,
@@ -571,6 +629,181 @@ export function StrategyEditorWorkspace({
                       })
                     }
                   />
+                </div>
+              </div>
+            </section>
+
+            <section id="positions" className="space-y-4 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-5">
+              <div>
+                <h3 className="font-display text-lg text-foreground">Position Policy</h3>
+                <p className="text-sm text-muted-foreground">
+                  Sizing, breadth, asset class, and confirmation controls live with the strategy draft.
+                </p>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="max-open-positions">Max Open Positions</Label>
+                  <Input
+                    id="max-open-positions"
+                    type="number"
+                    min={1}
+                    placeholder="Use Top N"
+                    {...register('config.positionPolicy.maxOpenPositions', {
+                      setValueAs: toOptionalNumber
+                    })}
+                  />
+                </div>
+
+                <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-foreground">Order Confirmation</p>
+                      <p className="text-sm text-muted-foreground">
+                        Strategy-scoped orders can require explicit desk confirmation.
+                      </p>
+                    </div>
+                    <Switch
+                      aria-label="Require order confirmation"
+                      checked={Boolean(watchedPositionPolicy.requireOrderConfirmation)}
+                      onCheckedChange={(checked) =>
+                        setPositionPolicyField('requireOrderConfirmation', Boolean(checked))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="space-y-4 rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-foreground">Target Position Size</p>
+                      <p className="text-sm text-muted-foreground">
+                        Leave off to keep equal-weight sizing across selected names.
+                      </p>
+                    </div>
+                    <Switch
+                      aria-label="Enable target position size"
+                      checked={Boolean(watchedTargetPositionSize)}
+                      onCheckedChange={(checked) => setPositionSizeEnabled('targetPositionSize', checked)}
+                    />
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_140px]">
+                    <div className="grid gap-2">
+                      <Label htmlFor="target-position-size-mode">Target Mode</Label>
+                      <Select
+                        value={watchedTargetPositionSize?.mode || 'pct_of_allocatable_capital'}
+                        disabled={!watchedTargetPositionSize}
+                        onValueChange={(value) =>
+                          setPositionSizeMode('targetPositionSize', value as StrategyPositionSizeMode)
+                        }
+                      >
+                        <SelectTrigger id="target-position-size-mode">
+                          <SelectValue placeholder="Select mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {POSITION_SIZE_MODES.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="target-position-size-value">Target Value</Label>
+                      <Input
+                        id="target-position-size-value"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        disabled={!watchedTargetPositionSize}
+                        {...register('config.positionPolicy.targetPositionSize.value', {
+                          setValueAs: toOptionalNumber
+                        })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-foreground">Max Position Size</p>
+                      <p className="text-sm text-muted-foreground">
+                        Optional cap applied after target sizing.
+                      </p>
+                    </div>
+                    <Switch
+                      aria-label="Enable max position size"
+                      checked={Boolean(watchedMaxPositionSize)}
+                      onCheckedChange={(checked) => setPositionSizeEnabled('maxPositionSize', checked)}
+                    />
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_140px]">
+                    <div className="grid gap-2">
+                      <Label htmlFor="max-position-size-mode">Cap Mode</Label>
+                      <Select
+                        value={watchedMaxPositionSize?.mode || 'pct_of_allocatable_capital'}
+                        disabled={!watchedMaxPositionSize}
+                        onValueChange={(value) =>
+                          setPositionSizeMode('maxPositionSize', value as StrategyPositionSizeMode)
+                        }
+                      >
+                        <SelectTrigger id="max-position-size-mode">
+                          <SelectValue placeholder="Select mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {POSITION_SIZE_MODES.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="max-position-size-value">Cap Value</Label>
+                      <Input
+                        id="max-position-size-value"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        disabled={!watchedMaxPositionSize}
+                        {...register('config.positionPolicy.maxPositionSize.value', {
+                          setValueAs: toOptionalNumber
+                        })}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-cream/65 p-4">
+                <div className="mb-3">
+                  <p className="font-medium text-foreground">Allowed Asset Classes</p>
+                  <p className="text-sm text-muted-foreground">
+                    Equity execution is supported in v1; option selections are retained for policy review.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {POSITION_ASSET_CLASS_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className="flex items-center gap-3 rounded-[1.2rem] border border-mcm-walnut/20 bg-mcm-paper/70 px-3 py-3 text-sm font-medium text-foreground"
+                    >
+                      <Checkbox
+                        checked={(watchedPositionPolicy.allowedAssetClasses || []).includes(option.value)}
+                        onCheckedChange={(checked) =>
+                          toggleAllowedAssetClass(option.value, checked === true)
+                        }
+                      />
+                      {option.label}
+                    </label>
+                  ))}
                 </div>
               </div>
             </section>

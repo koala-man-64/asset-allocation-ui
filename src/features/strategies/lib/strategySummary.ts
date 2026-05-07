@@ -1,4 +1,10 @@
-import type { ExitRule, StrategyDetail, StrategySummary } from '@/types/strategy';
+import type {
+  ExitRule,
+  StrategyDetail,
+  StrategyPositionPolicy,
+  StrategyPositionSizeLimit,
+  StrategySummary
+} from '@/types/strategy';
 
 export type StrategyLibrarySort = 'updated-desc' | 'name-asc' | 'type-asc';
 
@@ -65,6 +71,47 @@ export function describeStrategySelection(strategy: StrategyDetail): string {
 
 export function describeStrategyExecution(strategy: StrategyDetail): string {
   return `${strategy.config.longOnly ? 'Long only' : 'Long/short'} | hold ${strategy.config.holdingPeriod} bars`;
+}
+
+function formatPositionSize(size?: StrategyPositionSizeLimit | null): string {
+  if (!size) {
+    return 'Equal weight';
+  }
+
+  if (size.mode === 'pct_of_allocatable_capital') {
+    return `${size.value}% capital`;
+  }
+
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0
+  }).format(size.value);
+}
+
+export function describePositionPolicy(policy?: StrategyPositionPolicy | null): string {
+  if (!policy) {
+    return 'Equity only | equal weight';
+  }
+
+  const target = formatPositionSize(policy.targetPositionSize);
+  const cap = policy.maxPositionSize ? `cap ${formatPositionSize(policy.maxPositionSize)}` : 'no per-position cap';
+  const openLimit = policy.maxOpenPositions ? `max ${policy.maxOpenPositions} open` : 'top N open';
+  return [target, cap, openLimit].join(' | ');
+}
+
+export function describePositionPolicyDetail(policy?: StrategyPositionPolicy | null): string {
+  const normalizedPolicy: StrategyPositionPolicy = policy || {
+    allowedAssetClasses: ['equity'],
+    requireOrderConfirmation: false
+  };
+  const assets = normalizedPolicy.allowedAssetClasses?.length
+    ? normalizedPolicy.allowedAssetClasses.join(', ')
+    : 'equity';
+  const confirmation = normalizedPolicy.requireOrderConfirmation
+    ? 'order confirmation required'
+    : 'order confirmation optional';
+  return `${assets} | ${confirmation}`;
 }
 
 export function describeRegimePolicy(strategy: StrategyDetail): string {

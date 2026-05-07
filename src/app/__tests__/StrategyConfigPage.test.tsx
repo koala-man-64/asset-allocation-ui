@@ -70,6 +70,13 @@ function buildStrategyDetail(name: string, overrides: Partial<Record<string, unk
       costModel: 'default',
       rankingSchemaName: 'quality-momentum',
       intrabarConflictPolicy: 'stop_first',
+      positionPolicy: {
+        targetPositionSize: { mode: 'pct_of_allocatable_capital', value: 4 },
+        maxPositionSize: { mode: 'pct_of_allocatable_capital', value: 8 },
+        maxOpenPositions: 10,
+        allowedAssetClasses: ['equity', 'option'],
+        requireOrderConfirmation: true
+      },
       regimePolicy: {
         modelName: 'default-regime',
         mode: 'observe_only'
@@ -152,6 +159,7 @@ describe('StrategyConfigPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'quality-trend' })).toBeInTheDocument();
     expect(screen.getAllByText(/top 25 with 90-bar lookback/i)).toHaveLength(2);
+    expect(screen.getByText(/4% capital \| cap 8% capital \| max 10 open/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /duplicate as new/i }));
     expect(await screen.findByRole('heading', { name: /duplicate strategy/i })).toBeInTheDocument();
@@ -299,9 +307,22 @@ describe('StrategyConfigPage', () => {
     fireEvent.change(screen.getByLabelText(/desk note/i), {
       target: { value: 'Updated desk note' }
     });
+    fireEvent.change(screen.getByLabelText(/max open positions/i), {
+      target: { value: '8' }
+    });
     fireEvent.click(screen.getByRole('button', { name: /save strategy/i }));
 
     await waitFor(() => {
+      expect(strategyApi.saveStrategy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({
+            positionPolicy: expect.objectContaining({
+              maxOpenPositions: 8,
+              requireOrderConfirmation: true
+            })
+          })
+        })
+      );
       expect(screen.getAllByText(/updated desk note/i).length).toBeGreaterThan(0);
     });
   });

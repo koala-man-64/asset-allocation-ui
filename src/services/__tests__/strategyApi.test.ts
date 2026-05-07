@@ -84,6 +84,12 @@ describe('strategyApi', () => {
         holdingPeriod: 21,
         costModel: 'default',
         intrabarConflictPolicy: 'stop_first',
+        positionPolicy: {
+          targetPositionSize: { mode: 'pct_of_allocatable_capital', value: 5 },
+          maxOpenPositions: 10,
+          allowedAssetClasses: ['equity'],
+          requireOrderConfirmation: false
+        },
         exits: []
       }
     };

@@ -6,6 +6,9 @@ import type {
   RegimePolicy,
   RegimePolicyMode,
   StrategyDetail,
+  StrategyPositionAssetClass,
+  StrategyPositionPolicy,
+  StrategyPositionSizeMode,
 } from '@/types/strategy';
 
 export type StrategyEditorMode = 'create' | 'edit' | 'duplicate';
@@ -37,13 +40,63 @@ export const REGIME_POLICY_MODES: Array<{ value: RegimePolicyMode; label: string
   { value: 'observe_only', label: 'Observe Only' }
 ];
 
+export const POSITION_SIZE_MODES: Array<{ value: StrategyPositionSizeMode; label: string }> = [
+  { value: 'pct_of_allocatable_capital', label: '% Allocatable Capital' },
+  { value: 'notional_base_ccy', label: 'Base Currency Notional' }
+];
+
+export const POSITION_ASSET_CLASS_OPTIONS: Array<{ value: StrategyPositionAssetClass; label: string }> = [
+  { value: 'equity', label: 'Equity' },
+  { value: 'option', label: 'Option' }
+];
+
 const DEFAULT_REGIME_POLICY: RegimePolicy = {
   modelName: 'default-regime',
   mode: 'observe_only'
 };
 
+const DEFAULT_POSITION_POLICY: StrategyPositionPolicy = {
+  allowedAssetClasses: ['equity'],
+  requireOrderConfirmation: false
+};
+
 export function buildDefaultRegimePolicy(): RegimePolicy {
   return { ...DEFAULT_REGIME_POLICY };
+}
+
+export function buildDefaultPositionPolicy(): StrategyPositionPolicy {
+  return {
+    ...DEFAULT_POSITION_POLICY,
+    allowedAssetClasses: [...DEFAULT_POSITION_POLICY.allowedAssetClasses]
+  };
+}
+
+export function buildDefaultPositionSize(
+  mode: StrategyPositionSizeMode = 'pct_of_allocatable_capital'
+) {
+  return {
+    mode,
+    value: mode === 'pct_of_allocatable_capital' ? 5 : 1000
+  };
+}
+
+export function normalizePositionPolicy(
+  policy?: StrategyPositionPolicy | null
+): StrategyPositionPolicy {
+  const defaultPolicy = buildDefaultPositionPolicy();
+  if (!policy) {
+    return defaultPolicy;
+  }
+
+  const allowedAssetClasses = policy.allowedAssetClasses?.length
+    ? policy.allowedAssetClasses
+    : defaultPolicy.allowedAssetClasses;
+
+  return {
+    ...defaultPolicy,
+    ...policy,
+    allowedAssetClasses: [...new Set(allowedAssetClasses)]
+  };
 }
 
 export function buildEmptyStrategy(): StrategyDetail {
@@ -61,6 +114,7 @@ export function buildEmptyStrategy(): StrategyDetail {
       costModel: 'default',
       intrabarConflictPolicy: 'stop_first',
       regimePolicy: undefined,
+      positionPolicy: buildDefaultPositionPolicy(),
       exits: []
     }
   };
@@ -82,6 +136,7 @@ export function normalizeStrategyDetail(strategy: StrategyDetailDraftInput): Str
             ...incomingPolicy
           }
         : undefined,
+      positionPolicy: normalizePositionPolicy(strategy.config.positionPolicy),
       exits: strategy.config.exits || []
     }
   };
