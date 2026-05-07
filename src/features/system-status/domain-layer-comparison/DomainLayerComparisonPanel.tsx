@@ -125,6 +125,8 @@ type LayerVisualConfig = {
   accent: string;
   softBg: string;
   strongBg: string;
+  chipBg: string;
+  cellBg: string;
   border: string;
   mutedText: string;
 };
@@ -143,30 +145,38 @@ const FINANCE_SUBFOLDER_ITEMS = [
 ] as const;
 const LAYER_VISUALS: Record<LayerKey, LayerVisualConfig> = {
   bronze: {
-    accent: '#ffe2c2',
-    softBg: 'rgba(255, 184, 108, 0.12)',
-    strongBg: 'rgba(255, 184, 108, 0.2)',
-    border: 'rgba(255, 184, 108, 0.55)',
-    mutedText: '#ffd6b0'
+    accent: '#ffbf86',
+    softBg: 'rgba(255, 184, 108, 0.1)',
+    strongBg: 'rgba(74, 46, 31, 0.72)',
+    chipBg: 'rgba(24, 18, 16, 0.78)',
+    cellBg: 'rgba(17, 18, 28, 0.98)',
+    border: 'rgba(255, 184, 108, 0.5)',
+    mutedText: '#ffd9b3'
   },
   silver: {
     accent: '#dbe7ff',
-    softBg: 'rgba(219, 231, 255, 0.1)',
-    strongBg: 'rgba(219, 231, 255, 0.18)',
-    border: 'rgba(219, 231, 255, 0.5)',
-    mutedText: '#dbe7ff'
+    softBg: 'rgba(142, 166, 214, 0.12)',
+    strongBg: 'rgba(55, 68, 96, 0.72)',
+    chipBg: 'rgba(11, 18, 35, 0.82)',
+    cellBg: 'rgba(15, 21, 36, 0.98)',
+    border: 'rgba(219, 231, 255, 0.42)',
+    mutedText: '#e4ecff'
   },
   gold: {
-    accent: '#fff3a6',
-    softBg: 'rgba(242, 211, 79, 0.12)',
-    strongBg: 'rgba(242, 211, 79, 0.2)',
-    border: 'rgba(242, 211, 79, 0.55)',
-    mutedText: '#f7e58a'
+    accent: '#ffe46e',
+    softBg: 'rgba(242, 211, 79, 0.1)',
+    strongBg: 'rgba(68, 60, 25, 0.72)',
+    chipBg: 'rgba(23, 21, 12, 0.8)',
+    cellBg: 'rgba(18, 20, 23, 0.98)',
+    border: 'rgba(242, 211, 79, 0.5)',
+    mutedText: '#fff0a6'
   },
   platinum: {
     accent: '#18d4ff',
-    softBg: 'rgba(24, 212, 255, 0.12)',
-    strongBg: 'rgba(24, 212, 255, 0.2)',
+    softBg: 'rgba(24, 212, 255, 0.1)',
+    strongBg: 'rgba(18, 79, 98, 0.72)',
+    chipBg: 'rgba(7, 22, 32, 0.82)',
+    cellBg: 'rgba(11, 22, 32, 0.98)',
     border: 'rgba(24, 212, 255, 0.55)',
     mutedText: '#9eeeff'
   }
@@ -1890,7 +1900,7 @@ export function DomainLayerComparisonPanel({
                                   <CoverageMetricChip
                                     className="font-semibold uppercase tracking-[0.14em]"
                                     style={{
-                                      backgroundColor: 'rgba(255, 247, 233, 0.72)',
+                                      backgroundColor: layerVisual.chipBg,
                                       borderColor: layerVisual.border,
                                       color: layerVisual.mutedText
                                     }}
@@ -1903,7 +1913,7 @@ export function DomainLayerComparisonPanel({
                                   <div className="mt-2 flex flex-wrap gap-1.5">
                                     <CoverageMetricChip
                                       style={{
-                                        backgroundColor: 'rgba(255, 247, 233, 0.7)',
+                                        backgroundColor: layerVisual.chipBg,
                                         borderColor: layerVisual.border,
                                         color: layerVisual.mutedText
                                       }}
@@ -1912,7 +1922,7 @@ export function DomainLayerComparisonPanel({
                                     </CoverageMetricChip>
                                     <CoverageMetricChip
                                       style={{
-                                        backgroundColor: 'rgba(255, 247, 233, 0.7)',
+                                        backgroundColor: layerVisual.chipBg,
                                         borderColor: layerVisual.border,
                                         color: layerVisual.mutedText
                                       }}
@@ -1921,7 +1931,7 @@ export function DomainLayerComparisonPanel({
                                     </CoverageMetricChip>
                                     <CoverageMetricChip
                                       style={{
-                                        backgroundColor: 'rgba(255, 247, 233, 0.7)',
+                                        backgroundColor: layerVisual.chipBg,
                                         borderColor: layerVisual.border,
                                         color: layerVisual.mutedText
                                       }}
@@ -2348,9 +2358,9 @@ export function DomainLayerComparisonPanel({
                               <div
                                 className="flex h-full min-h-[132px] flex-col rounded-[0.95rem] border px-3 py-3 transition-colors duration-150"
                                 style={{
-                                  background: `linear-gradient(180deg, rgba(255, 247, 233, 0.9), ${model.layerVisual.softBg})`,
+                                  background: `linear-gradient(180deg, ${model.layerVisual.cellBg} 0%, rgba(10, 16, 30, 0.96) 48%, ${model.layerVisual.softBg} 100%)`,
                                   borderColor: model.layerVisual.border,
-                                  boxShadow: `inset 3px 0 0 ${model.layerVisual.border}`
+                                  boxShadow: `inset 3px 0 0 ${model.layerVisual.accent}, 0 14px 32px rgba(0, 0, 0, 0.18)`
                                 }}
                               >
                                 <div className="flex items-start justify-between gap-3">
