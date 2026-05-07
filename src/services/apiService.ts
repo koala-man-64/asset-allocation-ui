@@ -1,14 +1,8 @@
 /* global RequestInit */
 
 import type {
-  StockScreenerCoverageSummary,
-  StockScreenerFacetBucket,
-  StockScreenerFacets,
   StockScreenerRequest as ContractStockScreenerRequest,
   StockScreenerResponse,
-  StockScreenerRow,
-  StockScreenerSummary,
-  StockScreenerSortDirection,
   StockScreenerSortKey
 } from '@asset-allocation/contracts';
 
@@ -640,12 +634,17 @@ export type {
 } from '@asset-allocation/contracts';
 
 type StockScreenerStringFilter = string | readonly string[] | null;
+export type StockScreenerRankingSortKey = 'ranking_rank' | 'ranking_score';
+export type ExtendedStockScreenerSortKey = StockScreenerSortKey | StockScreenerRankingSortKey;
 
 export type StockScreenerRequestParams = Partial<
-  Omit<ContractStockScreenerRequest, 'as_of' | 'sectors' | 'industries' | 'countries'>
+  Omit<ContractStockScreenerRequest, 'as_of' | 'sectors' | 'industries' | 'countries' | 'sort'>
 > & {
   asOf?: string | null;
   as_of?: string | null;
+  sort?: ExtendedStockScreenerSortKey;
+  ranking_schema_name?: string | null;
+  ranking_schema_version?: number | null;
   sectors?: StockScreenerStringFilter;
   industries?: StockScreenerStringFilter;
   countries?: StockScreenerStringFilter;
@@ -668,15 +667,7 @@ function serializeStockScreenerList(
 function buildStockScreenerQueryParams(
   params: StockScreenerRequestParams
 ): Record<string, RequestParamValue> {
-  const {
-    asOf,
-    as_of,
-    sectors,
-    industries,
-    countries,
-    q,
-    ...rest
-  } = params;
+  const { asOf, as_of, sectors, industries, countries, q, ...rest } = params;
   const queryParams: Record<string, RequestParamValue> = {
     ...rest,
     q: String(q ?? '').trim() || undefined,

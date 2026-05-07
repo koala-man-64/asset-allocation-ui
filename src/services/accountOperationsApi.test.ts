@@ -27,11 +27,9 @@ describe('accountOperationsApi', () => {
     expect(mockedRequest).toHaveBeenNthCalledWith(2, '/broker-accounts/acct%2F1', {
       signal: undefined
     });
-    expect(mockedRequest).toHaveBeenNthCalledWith(
-      3,
-      '/broker-accounts/acct%2F1/configuration',
-      { signal: undefined }
-    );
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, '/broker-accounts/acct%2F1/configuration', {
+      signal: undefined
+    });
     for (const [path] of mockedRequest.mock.calls) {
       expect(path).not.toContain('/trade-accounts');
     }
@@ -51,42 +49,26 @@ describe('accountOperationsApi', () => {
     await accountOperationsApi.refreshAccount('acct/1', refreshPayload);
     await accountOperationsApi.acknowledgeAlert('acct/1', 'alert/1', acknowledgePayload);
 
-    expect(mockedRequest).toHaveBeenNthCalledWith(
-      1,
-      '/broker-accounts/acct%2F1/reconnect',
-      {
-        method: 'POST',
-        body: JSON.stringify(reconnectPayload),
-        signal: undefined
-      }
-    );
-    expect(mockedRequest).toHaveBeenNthCalledWith(
-      2,
-      '/broker-accounts/acct%2F1/sync/pause',
-      {
-        method: 'POST',
-        body: JSON.stringify(pausePayload),
-        signal: undefined
-      }
-    );
-    expect(mockedRequest).toHaveBeenNthCalledWith(
-      3,
-      '/broker-accounts/acct%2F1/sync/resume',
-      {
-        method: 'POST',
-        body: JSON.stringify(resumePayload),
-        signal: undefined
-      }
-    );
-    expect(mockedRequest).toHaveBeenNthCalledWith(
-      4,
-      '/broker-accounts/acct%2F1/refresh',
-      {
-        method: 'POST',
-        body: JSON.stringify(refreshPayload),
-        signal: undefined
-      }
-    );
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/broker-accounts/acct%2F1/reconnect', {
+      method: 'POST',
+      body: JSON.stringify(reconnectPayload),
+      signal: undefined
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, '/broker-accounts/acct%2F1/sync/pause', {
+      method: 'POST',
+      body: JSON.stringify(pausePayload),
+      signal: undefined
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, '/broker-accounts/acct%2F1/sync/resume', {
+      method: 'POST',
+      body: JSON.stringify(resumePayload),
+      signal: undefined
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(4, '/broker-accounts/acct%2F1/refresh', {
+      method: 'POST',
+      body: JSON.stringify(refreshPayload),
+      signal: undefined
+    });
     expect(mockedRequest).toHaveBeenNthCalledWith(
       5,
       '/broker-accounts/acct%2F1/alerts/alert%2F1/acknowledge',
@@ -131,24 +113,16 @@ describe('accountOperationsApi', () => {
     await accountOperationsApi.saveTradingPolicy('acct/1', policyPayload);
     await accountOperationsApi.saveAllocation('acct/1', allocationPayload);
 
-    expect(mockedRequest).toHaveBeenNthCalledWith(
-      1,
-      '/broker-accounts/acct%2F1/trading-policy',
-      {
-        method: 'PUT',
-        body: JSON.stringify(policyPayload),
-        signal: undefined
-      }
-    );
-    expect(mockedRequest).toHaveBeenNthCalledWith(
-      2,
-      '/broker-accounts/acct%2F1/allocation',
-      {
-        method: 'PUT',
-        body: JSON.stringify(allocationPayload),
-        signal: undefined
-      }
-    );
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/broker-accounts/acct%2F1/trading-policy', {
+      method: 'PUT',
+      body: JSON.stringify(policyPayload),
+      signal: undefined
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, '/broker-accounts/acct%2F1/allocation', {
+      method: 'PUT',
+      body: JSON.stringify(allocationPayload),
+      signal: undefined
+    });
   });
 
   it('uses broker account endpoints for onboarding discovery and create', async () => {
@@ -167,14 +141,10 @@ describe('accountOperationsApi', () => {
     await accountOperationsApi.listOnboardingCandidates('alpaca', 'paper');
     await accountOperationsApi.onboardAccount(payload);
 
-    expect(mockedRequest).toHaveBeenNthCalledWith(
-      1,
-      '/broker-accounts/onboarding/candidates',
-      {
-        params: { provider: 'alpaca', environment: 'paper' },
-        signal: undefined
-      }
-    );
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/broker-accounts/onboarding/candidates', {
+      params: { provider: 'alpaca', environment: 'paper' },
+      signal: undefined
+    });
     expect(mockedRequest).toHaveBeenNthCalledWith(2, '/broker-accounts/onboarding', {
       method: 'POST',
       body: JSON.stringify(payload),
