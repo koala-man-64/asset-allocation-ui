@@ -15,6 +15,9 @@
     "format:check": "node ./scripts/check-prettier-diff.mjs",
     "test": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:functional": "playwright test --grep-invert @visual",
+    "test:e2e:visual": "playwright test --config playwright.visual.config.ts --grep @visual",
+    "test:e2e:visual:update": "playwright test --config playwright.visual.config.ts --grep @visual --update-snapshots",
     "test:e2e:headed": "playwright test --headed",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage"
