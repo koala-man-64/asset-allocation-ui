@@ -314,9 +314,9 @@ function makeSnapshotKey(layerKey: LayerKey, domainKey: string): string {
   return `${layerKey}/${domainKey}`;
 }
 
-type JobDurationSummary = {
-  averageDurationSeconds: number;
-  sampleCount: number;
+type JobRuntimeSummary = {
+  latestDurationSeconds: number;
+  latestStartTime?: string;
 };
 
 function formatInt(value: number | null | undefined): string {
@@ -341,8 +341,13 @@ function formatColumnCount(value: number | null | undefined): string {
   return `${numberFormatter.format(value)} cols`;
 }
 
-function buildJobDurationSummaryIndex(recentJobs: JobRun[] = []): Map<string, JobDurationSummary> {
-  const totals = new Map<string, { totalSeconds: number; sampleCount: number }>();
+function buildJobRuntimeSummaryIndex(recentJobs: JobRun[] = []): Map<string, JobRuntimeSummary> {
+  const latestByJob = new Map<
+    string,
+    JobRuntimeSummary & {
+      latestStartMs: number;
+    }
+  >();
 
   for (const job of recentJobs) {
     const jobKey = normalizeAzureJobName(job?.jobName);
@@ -351,20 +356,25 @@ function buildJobDurationSummaryIndex(recentJobs: JobRun[] = []): Map<string, Jo
       continue;
     }
 
-    const current = totals.get(jobKey) || { totalSeconds: 0, sampleCount: 0 };
-    current.totalSeconds += duration;
-    current.sampleCount += 1;
-    totals.set(jobKey, current);
-  }
-
-  const summary = new Map<string, JobDurationSummary>();
-  for (const [jobKey, current] of totals) {
-    if (current.sampleCount <= 0) {
+    const startTime = typeof job?.startTime === 'string' ? job.startTime : '';
+    const parsedStartMs = Date.parse(startTime);
+    const latestStartMs = Number.isFinite(parsedStartMs) ? parsedStartMs : Number.NEGATIVE_INFINITY;
+    const current = latestByJob.get(jobKey);
+    if (current && current.latestStartMs >= latestStartMs) {
       continue;
     }
+    latestByJob.set(jobKey, {
+      latestDurationSeconds: duration,
+      latestStartTime: startTime || undefined,
+      latestStartMs
+    });
+  }
+
+  const summary = new Map<string, JobRuntimeSummary>();
+  for (const [jobKey, current] of latestByJob) {
     summary.set(jobKey, {
-      averageDurationSeconds: current.totalSeconds / current.sampleCount,
-      sampleCount: current.sampleCount
+      latestDurationSeconds: current.latestDurationSeconds,
+      latestStartTime: current.latestStartTime
     });
   }
 
@@ -799,8 +809,8 @@ export function DomainLayerComparisonPanel({
   const jobIndex = useMemo(() => {
     return buildLatestJobRunIndex(displayRecentJobs);
   }, [displayRecentJobs]);
-  const jobDurationSummaryIndex = useMemo(() => {
-    return buildJobDurationSummaryIndex(displayRecentJobs);
+  const jobRuntimeSummaryIndex = useMemo(() => {
+    return buildJobRuntimeSummaryIndex(displayRecentJobs);
   }, [displayRecentJobs]);
 
   const managedJobIndex = useMemo(() => {
@@ -2029,7 +2039,7 @@ export function DomainLayerComparisonPanel({
                       const jobKey = normalizeAzureJobName(jobName);
                       const statusEntry = jobKey ? jobStatusesByKey.get(jobKey) : null;
                       const run = statusEntry?.latestRun ?? (jobKey ? jobIndex.get(jobKey) : null);
-                      const durationSummary = jobKey ? jobDurationSummaryIndex.get(jobKey) : null;
+                      const runtimeSummary = jobKey ? jobRuntimeSummaryIndex.get(jobKey) : null;
                       const managedJob = jobKey ? managedJobIndex.get(jobKey) : null;
                       const liveUsageDisplay = buildRunningUsageDisplay(managedJob?.signals);
                       const lastStartDisplay = (() => {
@@ -2037,14 +2047,16 @@ export function DomainLayerComparisonPanel({
                         if (!run?.startTime) return 'NO RUN';
                         return formatTimeAgo(run.startTime);
                       })();
-                      const averageRuntimeSummary = durationSummary
-                        ? `avg runtime ${formatDuration(durationSummary.averageDurationSeconds)}`
+                      const latestRuntimeSummary = runtimeSummary
+                        ? `Latest runtime ${formatDuration(runtimeSummary.latestDurationSeconds)}`
                         : null;
-                      const averageRuntimeDetail = durationSummary
-                        ? `${formatDuration(durationSummary.averageDurationSeconds)} (${durationSummary.sampleCount} run${durationSummary.sampleCount === 1 ? '' : 's'})`
+                      const latestRuntimeDetail = runtimeSummary
+                        ? formatDuration(runtimeSummary.latestDurationSeconds)
                         : 'N/A';
-                      const averageRuntimeTitle = durationSummary
-                        ? `Average from ${durationSummary.sampleCount} recent execution${durationSummary.sampleCount === 1 ? '' : 's'}`
+                      const latestRuntimeTitle = runtimeSummary
+                        ? runtimeSummary.latestStartTime
+                          ? `Latest completed execution duration, started ${runtimeSummary.latestStartTime}`
+                          : 'Latest completed execution duration'
                         : undefined;
                       const jobUpdatedAt = managedJob?.lastModifiedAt || null;
                       const jobUpdatedDisplay = jobUpdatedAt ? formatTimeAgo(jobUpdatedAt) : 'N/A';
@@ -2183,9 +2195,9 @@ export function DomainLayerComparisonPanel({
                         jobLabel,
                         jobStatusCode,
                         lastStartDisplay,
-                        averageRuntimeSummary,
-                        averageRuntimeDetail,
-                        averageRuntimeTitle,
+                        latestRuntimeSummary,
+                        latestRuntimeDetail,
+                        latestRuntimeTitle,
                         jobUpdatedAt,
                         jobUpdatedDisplay,
                         scheduleRaw,
@@ -2388,9 +2400,9 @@ export function DomainLayerComparisonPanel({
                                           {`updated ${formatMetadataTimestamp(model.metadataUpdatedAt)}`}
                                         </CoverageMetricChip>
                                       ) : null}
-                                      {model.averageRuntimeSummary ? (
-                                        <CoverageMetricChip title={model.averageRuntimeTitle}>
-                                          {model.averageRuntimeSummary}
+                                      {model.latestRuntimeSummary ? (
+                                        <CoverageMetricChip title={model.latestRuntimeTitle}>
+                                          {model.latestRuntimeSummary}
                                         </CoverageMetricChip>
                                       ) : null}
                                       {model.isRunning && model.liveUsageDisplay?.compactText ? (
@@ -2494,12 +2506,12 @@ export function DomainLayerComparisonPanel({
                                       >
                                         {model.lastStartDisplay}
                                       </dd>
-                                      <dt className="text-mcm-walnut/70">avg runtime:</dt>
+                                      <dt className="text-mcm-walnut/70">Latest runtime:</dt>
                                       <dd
                                         className="min-w-0 truncate text-right text-mcm-walnut/90"
-                                        title={model.averageRuntimeTitle}
+                                        title={model.latestRuntimeTitle}
                                       >
-                                        {model.averageRuntimeDetail}
+                                        {model.latestRuntimeDetail}
                                       </dd>
                                       {model.isRunning ? (
                                         <>
