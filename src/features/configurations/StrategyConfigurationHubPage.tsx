@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, ArrowDown, ArrowUp, ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -1908,6 +1909,7 @@ function ExitRuleSetPanel() {
 export function StrategyConfigurationHubPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const shouldReduceMotion = useReducedMotion();
   const urlTab = getConfigTabFromSearch(location.search);
   const [activeTab, setActiveTab] = useState<ConfigTab>(urlTab);
 
@@ -1960,8 +1962,27 @@ export function StrategyConfigurationHubPage() {
           </TabsList>
         </div>
 
-        <TabsContent key={activeTab} value={activeTab} forceMount>
-          <ConfigTabContent activeTab={activeTab} />
+        <TabsContent value={activeTab} forceMount className="outline-none">
+          <AnimatePresence initial={false} mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={
+                shouldReduceMotion ? { opacity: 1 } : { opacity: 0, y: 12, filter: 'blur(2px)' }
+              }
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              exit={
+                shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -8, filter: 'blur(2px)' }
+              }
+              transition={
+                shouldReduceMotion
+                  ? { duration: 0.01 }
+                  : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }
+              }
+              className="will-change-[opacity,transform,filter] motion-reduce:will-change-auto"
+            >
+              <ConfigTabContent activeTab={activeTab} />
+            </motion.div>
+          </AnimatePresence>
         </TabsContent>
       </Tabs>
     </div>

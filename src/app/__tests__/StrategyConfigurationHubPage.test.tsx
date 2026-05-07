@@ -59,7 +59,7 @@ describe('StrategyConfigurationHubPage', () => {
         '/strategy-configurations?tab=ranking'
       );
     });
-    expect(screen.getByTestId('ranking-tab-body')).toBeInTheDocument();
+    expect(await screen.findByTestId('ranking-tab-body')).toBeInTheDocument();
     expect(screen.queryByTestId('universe-tab-body')).not.toBeInTheDocument();
   });
 
@@ -77,7 +77,7 @@ describe('StrategyConfigurationHubPage', () => {
         '/strategy-configurations?tab=universe'
       );
     });
-    expect(screen.getByTestId('universe-tab-body')).toBeInTheDocument();
+    expect(await screen.findByTestId('universe-tab-body')).toBeInTheDocument();
     expect(screen.queryByTestId('ranking-tab-body')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'Ranking' }));
@@ -87,7 +87,7 @@ describe('StrategyConfigurationHubPage', () => {
         '/strategy-configurations?tab=ranking'
       );
     });
-    expect(screen.getByTestId('ranking-tab-body')).toBeInTheDocument();
+    expect(await screen.findByTestId('ranking-tab-body')).toBeInTheDocument();
     expect(screen.queryByTestId('universe-tab-body')).not.toBeInTheDocument();
   });
 
