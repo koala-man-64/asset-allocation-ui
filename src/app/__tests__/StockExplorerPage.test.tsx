@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { StockExplorerPage } from '@/features/stocks/StockExplorerPage';
@@ -200,11 +200,14 @@ describe('StockExplorerPage', () => {
 
     await user.type(screen.getByPlaceholderText('Search symbol or name...'), 'AAPL');
 
-    await waitFor(() => {
-      expect(vi.mocked(DataService.getStockScreener).mock.calls.at(-1)?.[0]).toMatchObject({
-        q: 'AAPL'
-      });
-    }, { timeout: 2000 });
+    await waitFor(
+      () => {
+        expect(vi.mocked(DataService.getStockScreener).mock.calls.at(-1)?.[0]).toMatchObject({
+          q: 'AAPL'
+        });
+      },
+      { timeout: 2000 }
+    );
   });
 
   it('fetches the next page when the user requests more rows', async () => {
@@ -232,5 +235,36 @@ describe('StockExplorerPage', () => {
     await user.click(screen.getByRole('button', { name: 'Open AAPL' }));
 
     expect(navigateMock).toHaveBeenCalledWith('/stock-detail/AAPL');
+  });
+
+  it('resizes blotter columns with keyboard and pointer controls', async () => {
+    renderWithProviders(<StockExplorerPage />);
+
+    await screen.findAllByText('Apple Inc.');
+
+    const nameResizer = screen.getByRole('separator', { name: 'Resize Name column' });
+    const sectorResizer = screen.getByRole('separator', { name: 'Resize Sector column' });
+    const table = screen.getByTestId('stock-screener-table');
+    const nameColumn = table.querySelector('col[data-column-id="name"]');
+    const sectorColumn = table.querySelector('col[data-column-id="sector"]');
+
+    expect(nameResizer).toHaveAttribute('aria-valuenow', '230');
+    expect(nameColumn).toHaveStyle({ width: '230px' });
+
+    fireEvent.keyDown(nameResizer, { key: 'ArrowRight' });
+
+    await waitFor(() => {
+      expect(nameResizer).toHaveAttribute('aria-valuenow', '242');
+    });
+    expect(nameColumn).toHaveStyle({ width: '242px' });
+
+    fireEvent.pointerDown(sectorResizer, { button: 0, clientX: 100 });
+    fireEvent.pointerMove(window, { clientX: 135 });
+    fireEvent.pointerUp(window);
+
+    await waitFor(() => {
+      expect(sectorResizer).toHaveAttribute('aria-valuenow', '185');
+    });
+    expect(sectorColumn).toHaveStyle({ width: '185px' });
   });
 });
