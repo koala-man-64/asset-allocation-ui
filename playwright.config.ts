@@ -2,6 +2,8 @@ import { defineConfig } from '@playwright/test';
 
 const requestedPreviewPort = Number(process.env.PLAYWRIGHT_PREVIEW_PORT);
 const previewPort = Number.isInteger(requestedPreviewPort) ? requestedPreviewPort : 4173;
+const requestedBaseUrl = process.env.PLAYWRIGHT_BASE_URL?.trim().replace(/\/+$/, '');
+const baseUrl = requestedBaseUrl || `http://127.0.0.1:${previewPort}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -10,16 +12,18 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: `http://127.0.0.1:${previewPort}`,
+    baseURL: baseUrl,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     browserName: 'chromium'
   },
-  webServer: {
-    command: `node ./scripts/e2e-preview-server.mjs --port ${previewPort}`,
-    url: `http://127.0.0.1:${previewPort}`,
-    reuseExistingServer: false,
-    timeout: 120000
-  }
+  webServer: requestedBaseUrl
+    ? undefined
+    : {
+        command: `node ./scripts/e2e-preview-server.mjs --port ${previewPort}`,
+        url: `http://127.0.0.1:${previewPort}`,
+        reuseExistingServer: false,
+        timeout: 120000
+      }
 });

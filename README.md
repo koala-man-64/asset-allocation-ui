@@ -25,6 +25,21 @@ corepack pnpm build
 corepack pnpm vitest run src\app\__tests__\App.auth.test.tsx src\contexts\__tests__\AuthContext.test.tsx
 ```
 
+Manual Playwright page checks:
+
+```powershell
+corepack pnpm test:e2e
+```
+
+The runner lists registered app pages, prompts for one page, asks whether to use the local preview server or Azure, and launches Playwright headed. Set `PLAYWRIGHT_AZURE_BASE_URL` when the Azure UI hostname is not available in local env files.
+
+Repeatable runs can pass selections directly:
+
+```powershell
+corepack pnpm test:e2e -- --page=system-status --target=local
+corepack pnpm test:e2e -- --page=/trade-desk --target=azure --azure-url=https://your-ui-host
+```
+
 Lockfile refresh after a contracts version bump:
 
 ```powershell
