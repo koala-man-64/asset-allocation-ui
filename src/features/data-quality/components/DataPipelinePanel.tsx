@@ -291,7 +291,12 @@ export function DataPipelinePanel({ drift, rows }: DataPipelinePanelProps) {
   }, [rows]);
 
   return (
-    <div className="dq-pipeline-wrapper">
+    <div
+      className="dq-pipeline-wrapper"
+      role="region"
+      aria-label="Data pipeline progression"
+      tabIndex={0}
+    >
       <div className="dq-pipeline-container flex">
         {/* Source Status */}
         <SourceStatus sources={syncState?.last_refreshed_sources} />

@@ -115,7 +115,13 @@ function AppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <div data-app-scroll-container="true" className="min-w-0 flex-1 overflow-y-auto">
+          <div
+            data-app-scroll-container="true"
+            role="region"
+            aria-label="Primary application content"
+            tabIndex={0}
+            className="min-w-0 flex-1 overflow-y-auto"
+          >
             <div className="w-full px-2 py-2 sm:px-3 lg:px-4">{children}</div>
           </div>
 
