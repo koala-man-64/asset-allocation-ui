@@ -5,6 +5,7 @@ const previewPort = Number.isInteger(requestedPreviewPort) ? requestedPreviewPor
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: /visual-regression\.spec\.ts/,
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',

@@ -17,6 +17,50 @@
       "url": "http://localhost:5173",
       "webRoot": "${workspaceFolder}",
       "sourceMaps": true
+    },
+    {
+      "name": "Playwright: Visual Tests (Headed)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": [
+        "pnpm",
+        "exec",
+        "playwright",
+        "test",
+        "--config",
+        "playwright.visual.config.ts",
+        "--grep",
+        "@visual",
+        "--headed",
+        "--workers=1"
+      ],
+      "console": "integratedTerminal",
+      "env": {
+        "PLAYWRIGHT_PREVIEW_PORT": "4199"
+      }
+    },
+    {
+      "name": "Playwright: Functional E2E (Headed)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": [
+        "pnpm",
+        "exec",
+        "playwright",
+        "test",
+        "--grep-invert",
+        "@visual",
+        "--headed",
+        "--workers=1"
+      ],
+      "console": "integratedTerminal",
+      "env": {
+        "PLAYWRIGHT_PREVIEW_PORT": "4200"
+      }
     }
   ]
 }
