@@ -949,6 +949,9 @@ describe('AccountOperationsPage', () => {
     renderWithProviders(<AccountOperationsPage />);
 
     expect(await screen.findByText(/account board/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Account Operations' })
+    ).toBeInTheDocument();
     expect(screen.getByText('Configured Accounts')).toBeInTheDocument();
     expect(screen.getAllByText('Trade Ready').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Needs Action').length).toBeGreaterThan(0);
