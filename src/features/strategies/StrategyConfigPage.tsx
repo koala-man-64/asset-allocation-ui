@@ -4,6 +4,8 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { strategyApi } from '@/services/strategyApi';
 import { backtestApi } from '@/services/backtestApi';
+import { backtestKeys } from '@/services/backtestHooks';
+import { strategyKeys } from '@/services/queryKeyFactories';
 import type { StrategyDetail, StrategySummary } from '@/types/strategy';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import {
@@ -63,7 +65,7 @@ export function StrategyConfigPage() {
     isLoading: isStrategiesLoading,
     error: strategiesError
   } = useQuery({
-    queryKey: ['strategies'],
+    queryKey: strategyKeys.all(),
     queryFn: () => strategyApi.listStrategies()
   });
 
@@ -71,7 +73,7 @@ export function StrategyConfigPage() {
     strategies.find((strategy) => strategy.name === selectedStrategyName) || null;
 
   const detailQuery = useQuery({
-    queryKey: ['strategies', 'detail', selectedStrategyName],
+    queryKey: strategyKeys.detail(selectedStrategyName),
     queryFn: () => strategyApi.getStrategyDetail(String(selectedStrategyName)),
     enabled: Boolean(selectedStrategyName)
   });
@@ -81,7 +83,7 @@ export function StrategyConfigPage() {
   );
 
   const recentRunsQuery = useQuery({
-    queryKey: ['backtest', 'runs', selectedStrategyName],
+    queryKey: backtestKeys.runList({ q: String(selectedStrategyName), limit: 6, offset: 0 }),
     queryFn: () =>
       backtestApi.listRuns({
         q: String(selectedStrategyName),
@@ -117,7 +119,7 @@ export function StrategyConfigPage() {
   const deleteMutation = useMutation({
     mutationFn: (name: string) => strategyApi.deleteStrategy(name),
     onSuccess: async (_, name) => {
-      await queryClient.invalidateQueries({ queryKey: ['strategies'] });
+      await queryClient.invalidateQueries({ queryKey: strategyKeys.all() });
       setStrategyPendingDelete(null);
       setEditorState((current) => (current?.strategyName === name ? null : current));
       setSelectedStrategyName((current) => (current === name ? null : current));
@@ -150,7 +152,7 @@ export function StrategyConfigPage() {
       });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['backtest'] });
+      await queryClient.invalidateQueries({ queryKey: backtestKeys.all });
       setIsBacktestOpen(false);
       setBacktestDraft(DEFAULT_BACKTEST_DRAFT);
       toast.success('Strategy backtest submitted to the queue');

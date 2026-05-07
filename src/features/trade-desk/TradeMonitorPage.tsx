@@ -17,6 +17,7 @@ import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { tradeDeskApi, tradeDeskKeys } from '@/services/tradeDeskApi';
+import { queryTiming } from '@/services/queryTiming';
 import type { TradeAccountDetailView, TradeAccountSummaryView } from '@/services/tradeDeskModels';
 import {
   ActivityTimeline,
@@ -372,7 +373,7 @@ export function TradeMonitorPage() {
   const accountsQuery = useQuery({
     queryKey: tradeDeskKeys.accounts(),
     queryFn: ({ signal }) => tradeDeskApi.listAccounts(signal),
-    refetchInterval: 30_000
+    refetchInterval: queryTiming.tradeDesk.accountsMs
   });
   const accounts = accountsQuery.data?.accounts ?? EMPTY_ACCOUNTS;
 
@@ -413,31 +414,31 @@ export function TradeMonitorPage() {
     queryKey: tradeDeskKeys.detail(activeAccountId),
     queryFn: ({ signal }) => tradeDeskApi.getAccountDetail(activeAccountId ?? '', signal),
     enabled: Boolean(activeAccountId),
-    refetchInterval: 30_000
+    refetchInterval: queryTiming.tradeDesk.detailMs
   });
   const positionsQuery = useQuery({
     queryKey: tradeDeskKeys.positions(activeAccountId),
     queryFn: ({ signal }) => tradeDeskApi.listPositions(activeAccountId ?? '', signal),
     enabled: Boolean(activeAccountId),
-    refetchInterval: 30_000
+    refetchInterval: queryTiming.tradeDesk.positionsMs
   });
   const ordersQuery = useQuery({
     queryKey: tradeDeskKeys.orders(activeAccountId),
     queryFn: ({ signal }) => tradeDeskApi.listOrders(activeAccountId ?? '', signal),
     enabled: Boolean(activeAccountId),
-    refetchInterval: 15_000
+    refetchInterval: queryTiming.tradeDesk.ordersMs
   });
   const historyQuery = useQuery({
     queryKey: tradeDeskKeys.history(activeAccountId),
     queryFn: ({ signal }) => tradeDeskApi.listHistory(activeAccountId ?? '', signal),
     enabled: Boolean(activeAccountId),
-    refetchInterval: 30_000
+    refetchInterval: queryTiming.tradeDesk.historyMs
   });
   const blotterQuery = useQuery({
     queryKey: tradeDeskKeys.blotter(activeAccountId),
     queryFn: ({ signal }) => tradeDeskApi.listBlotter(activeAccountId ?? '', signal),
     enabled: Boolean(activeAccountId),
-    refetchInterval: 30_000
+    refetchInterval: queryTiming.tradeDesk.blotterMs
   });
 
   const totals = useMemo(() => {

@@ -48,6 +48,9 @@ export function DataExplorerHierarchyNavigator({
           <div key={folderPath}>
             <button
               type="button"
+              role="treeitem"
+              aria-expanded={isExpanded}
+              aria-level={depth + 1}
               onClick={() => onToggleFolder(folderPath)}
               className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left font-mono text-sm transition-colors hover:bg-accent"
               style={{ paddingLeft: `${depth * 14 + 8}px` }}
@@ -62,9 +65,10 @@ export function DataExplorerHierarchyNavigator({
             </button>
 
             {isExpanded ? (
-              <div>
+              <div role="group">
                 {isLoading ? (
                   <div
+                    role="status"
                     className="py-1 font-mono text-xs text-muted-foreground"
                     style={{ paddingLeft: `${depth * 14 + 34}px` }}
                   >
@@ -94,6 +98,9 @@ export function DataExplorerHierarchyNavigator({
         <button
           key={normalizedFilePath}
           type="button"
+          role="treeitem"
+          aria-level={depth + 1}
+          aria-selected={isSelected}
           onClick={() => onSelectFile(normalizedFilePath)}
           className={`flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left font-mono text-sm transition-colors hover:bg-accent ${
             isSelected ? 'bg-accent/80' : ''
@@ -101,7 +108,7 @@ export function DataExplorerHierarchyNavigator({
           style={{ paddingLeft: `${depth * 14 + 26}px` }}
         >
           {textLike ? (
-            <FileText className="h-4 w-4 shrink-0 text-mcm-copper" />
+            <FileText className="h-4 w-4 shrink-0 text-mcm-rust" />
           ) : (
             <File className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
@@ -148,7 +155,11 @@ export function DataExplorerHierarchyNavigator({
             Loading tree...
           </div>
         ) : rootEntries.length ? (
-          <div className="space-y-1 rounded-[1.8rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-3">
+          <div
+            role="tree"
+            aria-label="ADLS hierarchy"
+            className="space-y-1 rounded-[1.8rem] border border-mcm-walnut/20 bg-mcm-paper/80 p-3"
+          >
             {renderEntries(rootEntries, 0)}
           </div>
         ) : (

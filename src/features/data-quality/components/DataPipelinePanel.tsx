@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { DataService } from '@/services/DataService';
 import { ValidationReport } from '@/services/apiService';
+import { dataQualityKeys } from '@/services/queryKeyFactories';
 import { cn } from '@/app/components/ui/utils';
 import {
   normalizeDomainName,
@@ -101,7 +102,7 @@ function StatusIcon({ status }: { status: string }) {
 function PipelineNode({ layer, domain, label, lastUpdated }: PipelineNodeProps) {
   const [isColumnsOpen, setIsColumnsOpen] = useState(false);
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['data-quality', 'validation', layer, domain],
+    queryKey: dataQualityKeys.validation(layer, domain),
     queryFn: ({ signal }) => DataService.getDataQualityValidation(layer, domain, signal),
     staleTime: 1000 * 60 * 5, // 5 minutes
     retry: 1
@@ -264,7 +265,7 @@ function SourceStatus({ sources }: SourceStatusProps) {
 
 export function DataPipelinePanel({ drift, rows }: DataPipelinePanelProps) {
   const { data: syncState } = useQuery({
-    queryKey: ['symbol-sync-state'],
+    queryKey: dataQualityKeys.symbolSyncState(),
     queryFn: () => DataService.getSymbolSyncState(), // Assuming this exists or will be added
     staleTime: 1000 * 60 * 5
   });

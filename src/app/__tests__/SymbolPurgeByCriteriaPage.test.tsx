@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { SymbolPurgeByCriteriaPage } from '@/features/symbol-purge/SymbolPurgeByCriteriaPage';
 import { DataService } from '@/services/DataService';
@@ -217,8 +218,14 @@ async function waitForColumns(): Promise<void> {
     expect(DataService.getDomainColumns).toHaveBeenCalled();
   });
   await waitFor(() => {
-    expect(screen.getByDisplayValue('Close')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /column/i })).toHaveTextContent('Close');
   });
+}
+
+async function chooseSelectOption(label: RegExp, optionName: string): Promise<void> {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('combobox', { name: label }));
+  await user.click(await screen.findByRole('option', { name: optionName }));
 }
 
 async function previewCandidates(): Promise<void> {
@@ -279,7 +286,7 @@ describe('SymbolPurgeByCriteriaPage', () => {
     renderWithProviders(<SymbolPurgeByCriteriaPage />);
     await waitForColumns();
 
-    fireEvent.change(screen.getByDisplayValue('Numeric >'), { target: { value: 'lt' } });
+    await chooseSelectOption(/rule type/i, 'Numeric <');
     fireEvent.change(screen.getByDisplayValue('90'), { target: { value: '1' } });
 
     await previewCandidates();
@@ -324,7 +331,7 @@ describe('SymbolPurgeByCriteriaPage', () => {
     renderWithProviders(<SymbolPurgeByCriteriaPage />);
     await waitForColumns();
 
-    fireEvent.change(screen.getByDisplayValue('Numeric >'), { target: { value: 'top_percent' } });
+    await chooseSelectOption(/rule type/i, 'Top N%');
     fireEvent.change(screen.getByDisplayValue('90'), { target: { value: '101' } });
     const previewButton = screen.getByRole('button', { name: /preview symbols/i });
     expect(previewButton).toBeDisabled();
@@ -342,7 +349,7 @@ describe('SymbolPurgeByCriteriaPage', () => {
     renderWithProviders(<SymbolPurgeByCriteriaPage />);
     await waitForColumns();
 
-    fireEvent.change(screen.getByDisplayValue('SILVER'), { target: { value: 'bronze' } });
+    await chooseSelectOption(/medallion layer/i, 'BRONZE');
     await waitFor(() => {
       expect(vi.mocked(DataService.getDomainColumns).mock.calls.length).toBeGreaterThanOrEqual(2);
     });
@@ -584,6 +591,8 @@ describe('SymbolPurgeByCriteriaPage', () => {
         sample_limit: 500
       });
     });
-    expect(await screen.findByDisplayValue('Close')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /column/i })).toHaveTextContent('Close');
+    });
   });
 });

@@ -1,5 +1,14 @@
 import React, { useMemo, useState } from 'react';
 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from '@/app/components/ui/table';
+
 interface DataTableProps<T> {
   data: T[];
   className?: string;
@@ -41,15 +50,9 @@ export const DataTable = <T extends Record<string, unknown>>({
       const leftValue = leftRow[sortState.accessorKey as keyof T];
       const rightValue = rightRow[sortState.accessorKey as keyof T];
 
-      if (leftValue == null && rightValue == null) {
-        return 0;
-      }
-      if (leftValue == null) {
-        return 1;
-      }
-      if (rightValue == null) {
-        return -1;
-      }
+      if (leftValue == null && rightValue == null) return 0;
+      if (leftValue == null) return 1;
+      if (rightValue == null) return -1;
 
       const leftComparable =
         typeof leftValue === 'number'
@@ -64,12 +67,8 @@ export const DataTable = <T extends Record<string, unknown>>({
             ? Number(rightValue)
             : String(rightValue).toLowerCase();
 
-      if (leftComparable < rightComparable) {
-        return sortState.direction === 'asc' ? -1 : 1;
-      }
-      if (leftComparable > rightComparable) {
-        return sortState.direction === 'asc' ? 1 : -1;
-      }
+      if (leftComparable < rightComparable) return sortState.direction === 'asc' ? -1 : 1;
+      if (leftComparable > rightComparable) return sortState.direction === 'asc' ? 1 : -1;
       return 0;
     });
   }, [data, sortState]);
@@ -92,54 +91,59 @@ export const DataTable = <T extends Record<string, unknown>>({
 
   if (!data || data.length === 0) {
     return (
-      <div className={`terminal-panel p-3 text-xs text-muted-foreground font-body ${className}`}>
+      <div className={`terminal-panel p-3 font-body text-xs text-muted-foreground ${className}`}>
         {emptyMessage}
       </div>
     );
   }
 
   return (
-    <div className={`overflow-x-auto rounded-sm border border-border bg-card ${className}`}>
-      <table className="min-w-full border-collapse text-xs font-mono">
-        <thead>
-          <tr>
-            <th className="w-12 border-b border-r border-border bg-[#121c32] px-2 py-1.5 text-left text-[10px] font-bold uppercase text-muted-foreground">
-              #
-            </th>
-            {tableColumns.map((col) => (
-              <th
-                key={String(col.accessorKey)}
-                className="border-b border-r border-border bg-[#121c32] px-2 py-1.5 text-left text-[10px] font-bold uppercase text-muted-foreground whitespace-nowrap last:border-r-0"
-              >
-                <button
-                  type="button"
-                  className={`inline-flex items-center gap-1 ${enableColumnSorting ? 'hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm px-0.5 py-0.5' : 'cursor-default'}`}
-                  onClick={() => toggleColumnSort(String(col.accessorKey))}
-                  disabled={!enableColumnSorting}
-                >
-                  <span>{col.header}</span>
-                  {enableColumnSorting &&
-                    sortState?.accessorKey === String(col.accessorKey) &&
-                    (sortState.direction === 'asc' ? <span>↑</span> : <span>↓</span>)}
-                </button>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
+    <div className={className}>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-12">#</TableHead>
+            {tableColumns.map((col) => {
+              const accessorKey = String(col.accessorKey);
+              const sortLabel =
+                sortState?.accessorKey === accessorKey
+                  ? sortState.direction === 'asc'
+                    ? 'Asc'
+                    : 'Desc'
+                  : null;
+
+              return (
+                <TableHead key={accessorKey}>
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1 ${
+                      enableColumnSorting
+                        ? 'rounded-sm px-0.5 py-0.5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40'
+                        : 'cursor-default'
+                    }`}
+                    onClick={() => toggleColumnSort(accessorKey)}
+                    disabled={!enableColumnSorting}
+                  >
+                    <span>{col.header}</span>
+                    {sortLabel ? <span>{sortLabel}</span> : null}
+                  </button>
+                </TableHead>
+              );
+            })}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {sortedData.map((row, idx) => (
-            <tr
+            <TableRow
               key={idx}
-              className={`group border-b border-border/80 transition-colors hover:[&>td]:bg-[#14213a] ${
+              className={
                 onRowClick
                   ? 'cursor-pointer focus-visible:outline-none focus-visible:[&>td]:bg-[#14213a]'
-                  : ''
-              }`}
+                  : undefined
+              }
               onClick={() => onRowClick?.(row)}
               onKeyDown={(event) => {
-                if (!onRowClick) {
-                  return;
-                }
+                if (!onRowClick) return;
 
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
@@ -152,36 +156,29 @@ export const DataTable = <T extends Record<string, unknown>>({
                 onRowClick ? (getRowAriaLabel?.(row) ?? `Open row ${idx + 1}`) : undefined
               }
             >
-              <td className="border-r border-border bg-[#10172b] px-2 py-1.5 text-right text-[11px] font-semibold text-muted-foreground select-none">
+              <TableCell className="bg-[#10172b] text-right text-[11px] font-semibold text-muted-foreground select-none">
                 {idx + 1}
-              </td>
+              </TableCell>
               {tableColumns.map((col) => {
-                const val = row[col.accessorKey as keyof T];
-                let displayVal: React.ReactNode = '-';
+                const value = row[col.accessorKey as keyof T];
+                let displayValue: React.ReactNode = '-';
 
-                if (val !== null && val !== undefined) {
-                  if (typeof val === 'object') {
-                    displayVal = JSON.stringify(val);
-                  } else if (typeof val === 'boolean') {
-                    displayVal = val ? 'true' : 'false';
+                if (value !== null && value !== undefined) {
+                  if (typeof value === 'object') {
+                    displayValue = JSON.stringify(value);
+                  } else if (typeof value === 'boolean') {
+                    displayValue = value ? 'true' : 'false';
                   } else {
-                    displayVal = String(val);
+                    displayValue = String(value);
                   }
                 }
 
-                return (
-                  <td
-                    key={String(col.accessorKey)}
-                    className="border-r border-border/80 bg-card px-2 py-1.5 text-foreground whitespace-nowrap last:border-r-0"
-                  >
-                    {displayVal}
-                  </td>
-                );
+                return <TableCell key={String(col.accessorKey)}>{displayValue}</TableCell>;
               })}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 };

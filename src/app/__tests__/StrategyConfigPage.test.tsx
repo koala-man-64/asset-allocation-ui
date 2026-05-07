@@ -437,6 +437,9 @@ describe('StrategyConfigPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /delete strategy/i }));
     expect(await screen.findByRole('heading', { name: /delete strategy/i })).toBeInTheDocument();
 
+    fireEvent.change(screen.getByLabelText(/type quality-trend to confirm/i), {
+      target: { value: 'quality-trend' }
+    });
     fireEvent.click(screen.getByRole('button', { name: /delete from postgres/i }));
 
     await waitFor(() => {
@@ -560,6 +563,9 @@ describe('StrategyConfigPage', () => {
     const deleteHeading = await screen.findByRole('heading', { name: /delete strategy/i });
     expect(deleteHeading).toBeInTheDocument();
 
+    fireEvent.change(screen.getByLabelText(/type quality-trend to confirm/i), {
+      target: { value: 'quality-trend' }
+    });
     fireEvent.click(screen.getByRole('button', { name: /delete from postgres/i }));
 
     await waitFor(() => {

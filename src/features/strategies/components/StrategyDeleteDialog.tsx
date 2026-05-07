@@ -1,13 +1,4 @@
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/app/components/ui/alert-dialog';
-import { Button } from '@/app/components/ui/button';
+import { ConfirmActionDialog } from '@/app/components/common/ConfirmActionDialog';
 
 interface StrategyDeleteDialogProps {
   open: boolean;
@@ -24,37 +15,32 @@ export function StrategyDeleteDialog({
   onOpenChange,
   onConfirm
 }: StrategyDeleteDialogProps) {
+  const confirmationName = strategyName ?? '';
+
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="border-2 border-mcm-walnut bg-mcm-paper">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="font-display text-2xl text-foreground">
-            Delete Strategy
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            Delete <span className="font-semibold text-foreground">{strategyName}</span> from
-            Postgres. This permanently removes the saved strategy record from the library and the
-            desk dossier view.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <div className="rounded-[1.5rem] border border-destructive/25 bg-destructive/5 p-4 text-sm text-muted-foreground">
-          This action is hard delete because that is the current backend contract. It is intentionally
-          isolated behind this confirmation step.
-        </div>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
-          <Button
-            type="button"
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={isPending}
-            onClick={onConfirm}
-          >
-            {isPending ? 'Deleting...' : 'Delete from Postgres'}
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmActionDialog
+      open={open}
+      busy={isPending}
+      tone="destructive"
+      title="Delete Strategy"
+      description={
+        <>
+          Delete <span className="font-semibold text-foreground">{strategyName}</span> from
+          Postgres. This permanently removes the saved strategy record from the library and the desk
+          dossier view.
+        </>
+      }
+      confirmLabel={isPending ? 'Deleting...' : 'Delete from Postgres'}
+      requiredConfirmationText={confirmationName}
+      confirmationLabel={`Type ${confirmationName} to confirm`}
+      onOpenChange={onOpenChange}
+      onCancel={() => onOpenChange(false)}
+      onConfirm={onConfirm}
+    >
+      <div className="rounded-sm border border-destructive/25 bg-destructive/5 p-4">
+        This action is hard delete because that is the current backend contract. It is intentionally
+        isolated behind this typed confirmation step.
+      </div>
+    </ConfirmActionDialog>
   );
 }
