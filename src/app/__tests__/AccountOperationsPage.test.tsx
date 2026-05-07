@@ -42,6 +42,8 @@ vi.mock('@/services/accountOperationsApi', () => ({
     setSyncPaused: vi.fn(),
     refreshAccount: vi.fn(),
     acknowledgeAlert: vi.fn(),
+    startETradeConnect: vi.fn(),
+    completeETradeConnect: vi.fn(),
     saveTradingPolicy: vi.fn(),
     saveAllocation: vi.fn()
   },
@@ -301,6 +303,38 @@ const kalshiOnboardingCandidatesResponse: BrokerAccountOnboardingCandidateListRe
   discoveryStatus: 'completed',
   message: '',
   generatedAt: '2026-04-20T13:50:00Z'
+};
+
+const etradeNotConnectedResponse: BrokerAccountOnboardingCandidateListResponse = {
+  candidates: [],
+  discoveryStatus: 'not_connected',
+  message: 'E*TRADE live OAuth session is not connected.',
+  generatedAt: '2026-04-20T13:50:00Z'
+};
+
+const etradeOnboardingCandidatesResponse: BrokerAccountOnboardingCandidateListResponse = {
+  candidates: [
+    {
+      candidateId: 'etrade:live:123',
+      provider: 'etrade',
+      environment: 'live',
+      suggestedAccountId: 'etrade-live-123',
+      displayName: 'E*TRADE Live Account 1',
+      accountNumberMasked: 'GEN-1234',
+      baseCurrency: 'USD',
+      state: 'available',
+      stateReason: null,
+      existingAccountId: null,
+      allowedExecutionPostures: ['monitor_only', 'live'],
+      blockedExecutionPostureReasons: {
+        paper: 'Paper posture requires environment=paper.'
+      },
+      canOnboard: true
+    }
+  ],
+  discoveryStatus: 'completed',
+  message: '',
+  generatedAt: '2026-04-20T13:51:00Z'
 };
 
 const onboardedAccount: BrokerAccountSummary = {
@@ -919,6 +953,19 @@ describe('AccountOperationsPage', () => {
     vi.mocked(accountOperationsApi.acknowledgeAlert).mockResolvedValue(
       buildActionResponse('acknowledge_alert')
     );
+    vi.mocked(accountOperationsApi.startETradeConnect).mockResolvedValue({
+      environment: 'live',
+      authorize_url: 'https://us.etrade.com/e/t/etws/authorize?key=test-key&token=request-token',
+      callback_confirmed: true,
+      callback_url: 'https://api.example.com/api/providers/etrade/connect/callback',
+      request_token_expires_at: '2026-04-20T13:55:00Z'
+    });
+    vi.mocked(accountOperationsApi.completeETradeConnect).mockResolvedValue({
+      environment: 'live',
+      connected: true,
+      expires_at: '2026-04-21T04:00:00Z',
+      last_activity_at: '2026-04-20T13:51:00Z'
+    });
     vi.mocked(accountOperationsApi.saveTradingPolicy).mockResolvedValue(configurationResponse);
     vi.mocked(accountOperationsApi.saveAllocation).mockResolvedValue(configurationResponse);
     vi.mocked(tradeDeskApi.listAccounts).mockResolvedValue(tradeAccountList);
@@ -1508,6 +1555,62 @@ describe('AccountOperationsPage', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('req-403')).toBeInTheDocument();
     expect(screen.queryByText(/ApiError: API Error/i)).not.toBeInTheDocument();
+  });
+
+  it('starts and completes E*TRADE OAuth from missing live discovery', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    try {
+      vi.mocked(accountOperationsApi.listOnboardingCandidates)
+        .mockResolvedValueOnce(etradeNotConnectedResponse)
+        .mockResolvedValueOnce(etradeOnboardingCandidatesResponse);
+
+      const user = userEvent.setup();
+      renderWithProviders(<AccountOperationsPage />);
+
+      await user.click(await screen.findByRole('button', { name: /add account/i }));
+      const dialog = screen.getByRole('dialog', { name: /add account/i });
+      await user.click(within(dialog).getByRole('combobox', { name: /provider/i }));
+      await user.click(await screen.findByRole('option', { name: 'E*TRADE' }));
+      await user.click(within(dialog).getByRole('combobox', { name: /environment/i }));
+      await user.click(await screen.findByRole('option', { name: 'Live' }));
+      await user.click(within(dialog).getByRole('button', { name: /discover accounts/i }));
+
+      expect(
+        await screen.findByText(/E\*TRADE live OAuth session is not connected/i)
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /connect E\*TRADE live/i }));
+
+      await waitFor(() => {
+        expect(accountOperationsApi.startETradeConnect).toHaveBeenCalledWith('live');
+      });
+      expect(openSpy).toHaveBeenCalledWith(
+        'https://us.etrade.com/e/t/etws/authorize?key=test-key&token=request-token',
+        '_blank',
+        'noopener,noreferrer'
+      );
+      expect(screen.getByRole('link', { name: /open E\*TRADE/i })).toHaveAttribute(
+        'href',
+        'https://us.etrade.com/e/t/etws/authorize?key=test-key&token=request-token'
+      );
+
+      await user.type(screen.getByLabelText(/verifier/i), 'verifier-123');
+      await user.click(screen.getByRole('button', { name: /complete OAuth/i }));
+
+      await waitFor(() => {
+        expect(accountOperationsApi.completeETradeConnect).toHaveBeenCalledWith(
+          'live',
+          'verifier-123'
+        );
+      });
+      expect(await screen.findByText('E*TRADE Live Account 1')).toBeInTheDocument();
+      expect(accountOperationsApi.listOnboardingCandidates).toHaveBeenLastCalledWith(
+        'etrade',
+        'live',
+        expect.any(AbortSignal)
+      );
+    } finally {
+      openSpy.mockRestore();
+    }
   });
 
   it('does not allow an already configured discovered account to be added again', async () => {

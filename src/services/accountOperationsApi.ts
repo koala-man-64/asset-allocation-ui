@@ -17,6 +17,23 @@ import type {
   RefreshBrokerAccountRequest
 } from '@/types/brokerAccounts';
 
+type ETradeConnectionEnvironment = Extract<BrokerAccountOnboardingEnvironment, 'sandbox' | 'live'>;
+
+export interface ETradeConnectStartResponse {
+  environment: ETradeConnectionEnvironment;
+  authorize_url: string;
+  callback_confirmed: boolean;
+  callback_url?: string;
+  request_token_expires_at?: string | null;
+}
+
+export interface ETradeConnectCompleteResponse {
+  environment: ETradeConnectionEnvironment;
+  connected: boolean;
+  expires_at?: string | null;
+  last_activity_at?: string | null;
+}
+
 export const accountOperationsKeys = {
   all: () => ['account-operations'] as const,
   list: () => [...accountOperationsKeys.all(), 'list'] as const,
@@ -78,6 +95,29 @@ export const accountOperationsApi = {
     return request<BrokerAccountOnboardingResponse>('/broker-accounts/onboarding', {
       method: 'POST',
       body: JSON.stringify(payload),
+      signal
+    });
+  },
+
+  async startETradeConnect(
+    environment: ETradeConnectionEnvironment,
+    signal?: AbortSignal
+  ): Promise<ETradeConnectStartResponse> {
+    return request<ETradeConnectStartResponse>('/providers/etrade/connect/start', {
+      method: 'POST',
+      body: JSON.stringify({ environment }),
+      signal
+    });
+  },
+
+  async completeETradeConnect(
+    environment: ETradeConnectionEnvironment,
+    verifier: string,
+    signal?: AbortSignal
+  ): Promise<ETradeConnectCompleteResponse> {
+    return request<ETradeConnectCompleteResponse>('/providers/etrade/connect/complete', {
+      method: 'POST',
+      body: JSON.stringify({ environment, verifier }),
       signal
     });
   },
