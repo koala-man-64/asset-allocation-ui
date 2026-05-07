@@ -120,14 +120,31 @@ jobs:
         run: |
           set -euo pipefail
           registry="$(az acr show --name "${{ vars.ACR_NAME }}" --resource-group "${{ vars.RESOURCE_GROUP }}" --query loginServer -o tsv)"
-          image_ref="${registry}/asset-allocation-ui:${RELEASE_SHA}"
+          image_repo="${registry}/asset-allocation-ui"
+          image_ref="${image_repo}:${RELEASE_SHA}"
           DOCKER_BUILDKIT=1 docker build \
+            --pull \
             --file asset-allocation-ui/Dockerfile \
             --tag "${image_ref}" \
             --secret "id=npmrc,src=${{ steps.npmrc.outputs.path }}" \
             .
           docker push "${image_ref}"
-          image_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "${image_ref}")"
+          az acr repository show-manifests \
+            --name "${{ vars.ACR_NAME }}" \
+            --repository asset-allocation-ui \
+            --orderby time_desc \
+            -o json > image-manifests.json
+          manifest_digest="$(
+            jq -r --arg tag "${RELEASE_SHA}" \
+              '[.[] | select((.tags // []) | index($tag)) | .digest][0] // empty' \
+              image-manifests.json
+          )"
+          : "${manifest_digest:?Pushed asset-allocation-ui image tag ${RELEASE_SHA} was not found in ACR.}"
+          if [[ ! "${manifest_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "ACR returned an invalid manifest digest for ${image_ref}: ${manifest_digest}" >&2
+            exit 1
+          fi
+          image_digest="${image_repo}@${manifest_digest}"
           echo "image_ref=${image_ref}" >> "$GITHUB_OUTPUT"
           echo "image_digest=${image_digest}" >> "$GITHUB_OUTPUT"
 

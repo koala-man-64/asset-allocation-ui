@@ -34,14 +34,14 @@ Use only these workflow entry points:
 6. `.github/workflows/contracts-compat.yml`
 
 `deploy-prod.yml` is the release-driven prod entry point for the standalone `asset-allocation-ui` Container App.
-`rollback-prod.yml` is the explicit prior-digest rollback entry point.
+`rollback-prod.yml` is the explicit prior-digest plus release-SHA rollback entry point.
 
 ## Operate
 
 - Build exactly one UI image digest with `release.yml`.
 - Let successful `release.yml` runs on `main` auto-trigger `deploy-prod.yml`.
-- Use manual `deploy-prod.yml` runs from `main` only to redeploy the latest successful main release artifact.
-- Use `rollback-prod.yml` from `main` only when you need to deploy a specific prior digest.
+- Use manual `deploy-prod.yml` runs from `main` only to redeploy the current main release artifact.
+- Use `rollback-prod.yml` from `main` only when you need to deploy a specific prior digest and its matching release SHA.
 - Run `contracts-compat.yml` when `contracts_released` is dispatched or when validating a candidate contracts ref manually.
 - Treat `API_UPSTREAM` plus `API_UPSTREAM_SCHEME` as the source of truth for proxied `/api/*`, `/healthz`, and `/readyz` traffic. In the standard production topology, they must target the control-plane internal route, not the public API hostname.
 - Treat `/ui-config.js` as the only pre-main runtime bootstrap surface for browser config.
@@ -117,7 +117,7 @@ GitHub secrets:
    - `corepack pnpm build`
    - `corepack pnpm vitest run`
 6. Run `.github/workflows/release.yml` to build and push the UI image digest plus `release-manifest.json`.
-7. Let the successful main release auto-trigger `.github/workflows/deploy-prod.yml`, or manually run `deploy-prod.yml` from `main` to redeploy the latest successful main release.
+7. Let the successful main release auto-trigger `.github/workflows/deploy-prod.yml`, or manually run `deploy-prod.yml` from `main` to redeploy the current main release.
 8. Verify:
    - `/`
    - `/ui-config.js`
@@ -130,8 +130,8 @@ GitHub secrets:
 
 ## Rollback
 
-- Capture the previous `asset-allocation-ui` image digest before every deployment.
-- Roll back by running `.github/workflows/rollback-prod.yml` from `main` with that previous digest.
+- Capture the previous `asset-allocation-ui` image digest and release SHA before every deployment.
+- Roll back by running `.github/workflows/rollback-prod.yml` from `main` with that previous digest and matching release SHA.
 - If the issue is upstream API behavior rather than the UI image, update `API_UPSTREAM` and, when needed, `API_UPSTREAM_SCHEME` to the last known-good control-plane route and rerun `.github/workflows/deploy-prod.yml`.
 
 ## Troubleshoot

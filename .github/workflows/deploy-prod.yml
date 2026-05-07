@@ -52,13 +52,14 @@ jobs:
       API_UPSTREAM: ${{ vars.API_UPSTREAM }}
     outputs:
       image_digest: ${{ steps.manifest.outputs.image_digest }}
+      release_sha: ${{ steps.manifest.outputs.release_sha }}
     steps:
       - name: Validate dispatch branch and repo deploy vars
         shell: bash
         run: |
           set -euo pipefail
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ "${GITHUB_REF_NAME}" != "main" ]; then
-            echo "deploy-prod.yml must be run from main because it redeploys the latest successful main release." >&2
+            echo "deploy-prod.yml must be run from main because it redeploys the current main release." >&2
             exit 1
           fi
           : "${API_UPSTREAM:?vars.API_UPSTREAM is required}"
@@ -70,17 +71,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          release_sha=""
           if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
             run_id="${{ github.event.workflow_run.id }}"
+            release_sha="${{ github.event.workflow_run.head_sha }}"
           else
             gh api \
               --method GET \
               -H "Accept: application/vnd.github+json" \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?branch=main&per_page=20" > workflow-runs.json
-            run_id="$(jq -r '.workflow_runs[] | select(.head_branch == "main" and .conclusion == "success") | .id' workflow-runs.json | head -n 1)"
-            : "${run_id:?No successful UI Release run on main was found.}"
+              "repos/${GITHUB_REPOSITORY}/commits/main" > main-commit.json
+            release_sha="$(jq -r '.sha // empty' main-commit.json)"
+            : "${release_sha:?Unable to resolve current main SHA.}"
+            gh api \
+              --method GET \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?branch=main&per_page=100" > workflow-runs.json
+            run_id="$(jq -r --arg sha "${release_sha}" '[.workflow_runs[] | select(.head_branch == "main" and .head_sha == $sha and .conclusion == "success") | .id][0] // empty' workflow-runs.json)"
+            : "${run_id:?No successful UI Release run on current main HEAD (${release_sha}) was found. Refusing to deploy a stale UI image.}"
           fi
+          : "${release_sha:?Unable to resolve release SHA.}"
           echo "release_run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "release_sha=${release_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Download release manifest
         env:
@@ -113,8 +124,12 @@ jobs:
           set -euo pipefail
           image_digest="$(jq -r '.image_digest // empty' release-artifact/release-manifest.json)"
           artifact_kind="$(jq -r '.artifact_kind // empty' release-artifact/release-manifest.json)"
+          artifact_ref="$(jq -r '.artifact_ref // empty' release-artifact/release-manifest.json)"
+          release_sha="$(jq -r '.git_sha // empty' release-artifact/release-manifest.json)"
           repo="$(jq -r '.repo // empty' release-artifact/release-manifest.json)"
           : "${image_digest:?release-manifest.json is missing image_digest.}"
+          : "${artifact_ref:?release-manifest.json is missing artifact_ref.}"
+          : "${release_sha:?release-manifest.json is missing git_sha.}"
           test "${artifact_kind}" = "container-image" || {
             echo "release-manifest.json did not describe a container-image artifact." >&2
             exit 1
@@ -123,7 +138,33 @@ jobs:
             echo "release-manifest.json repo did not match the current repository." >&2
             exit 1
           }
+          test "${release_sha}" = "${{ steps.release-run.outputs.release_sha }}" || {
+            echo "release-manifest.json git_sha ${release_sha} did not match release run SHA ${{ steps.release-run.outputs.release_sha }}." >&2
+            exit 1
+          }
+          case "${artifact_ref}" in
+            */asset-allocation-ui:"${release_sha}")
+              ;;
+            *)
+              echo "release-manifest.json artifact_ref was not tagged with release SHA ${release_sha}: ${artifact_ref}" >&2
+              exit 1
+              ;;
+          esac
+          case "${image_digest}" in
+            */asset-allocation-ui@sha256:*)
+              ;;
+            *)
+              echo "release-manifest.json image_digest must be an immutable asset-allocation-ui digest: ${image_digest}" >&2
+              exit 1
+              ;;
+          esac
+          image_manifest_digest="${image_digest##*@}"
+          if [[ ! "${image_manifest_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "release-manifest.json image_digest has an invalid sha256 digest: ${image_digest}" >&2
+            exit 1
+          fi
           echo "image_digest=${image_digest}" >> "$GITHUB_OUTPUT"
+          echo "release_sha=${release_sha}" >> "$GITHUB_OUTPUT"
 
   deploy-prod:
     name: deploy-prod
@@ -131,4 +172,5 @@ jobs:
     uses: ./.github/workflows/deploy-ui-runtime.yml
     with:
       image_digest: ${{ needs.resolve-release.outputs.image_digest }}
+      release_sha: ${{ needs.resolve-release.outputs.release_sha }}
     secrets: inherit

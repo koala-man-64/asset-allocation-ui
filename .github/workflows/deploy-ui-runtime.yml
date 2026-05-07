@@ -7,6 +7,10 @@ on:
         description: Full container image reference with digest
         required: true
         type: string
+      release_sha:
+        description: Git SHA used as the immutable release image tag
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -45,14 +49,33 @@ jobs:
         run: |
           set -euo pipefail
           image_digest="${{ inputs.image_digest }}"
+          release_sha="${{ inputs.release_sha }}"
           api_upstream="${API_UPSTREAM}"
           api_upstream_scheme="$(printf '%s' "${API_UPSTREAM_SCHEME}" | tr '[:upper:]' '[:lower:]')"
           ui_auth_enabled="$(printf '%s' "${UI_AUTH_ENABLED}" | tr '[:upper:]' '[:lower:]')"
           ui_auth_provider="$(printf '%s' "${UI_AUTH_PROVIDER}" | tr '[:upper:]' '[:lower:]')"
           ui_allowed_ingress_cidrs="${UI_ALLOWED_INGRESS_CIDRS}"
           : "${image_digest:?image_digest is required}"
+          : "${release_sha:?release_sha is required}"
           : "${api_upstream:?vars.API_UPSTREAM is required}"
           : "${ui_allowed_ingress_cidrs:?vars.UI_ALLOWED_INGRESS_CIDRS is required}"
+          if [[ ! "${release_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be a full 40-character git SHA: ${release_sha}" >&2
+            exit 1
+          fi
+          case "${image_digest}" in
+            */asset-allocation-ui@sha256:*)
+              ;;
+            *)
+              echo "image_digest must be an immutable asset-allocation-ui digest, not a mutable tag: ${image_digest}" >&2
+              exit 1
+              ;;
+          esac
+          image_manifest_digest="${image_digest##*@}"
+          if [[ ! "${image_manifest_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "image_digest has an invalid sha256 digest: ${image_digest}" >&2
+            exit 1
+          fi
           case "${api_upstream_scheme}" in
             http|https) ;;
             *)
@@ -89,6 +112,7 @@ jobs:
             --vars-json '${{ toJson(vars) }}'
           {
             echo "image_digest=${image_digest}"
+            echo "release_sha=${release_sha}"
             echo "api_upstream=${api_upstream}"
             echo "api_upstream_scheme=${api_upstream_scheme}"
             echo "ui_auth_provider=${ui_auth_provider}"
@@ -103,12 +127,47 @@ jobs:
 
       - name: Resolve Azure resource identifiers
         id: azure
+        env:
+          ROLLOUT_IMAGE_DIGEST: ${{ steps.rollout.outputs.image_digest }}
+          ROLLOUT_RELEASE_SHA: ${{ steps.rollout.outputs.release_sha }}
         shell: bash
         run: |
           set -euo pipefail
           az config set extension.use_dynamic_install=yes_without_prompt > /dev/null
           identity_id="$(az identity show --name "${ACR_PULL_IDENTITY_NAME}" --resource-group "${RESOURCE_GROUP}" --query id -o tsv)"
           acr_login_server="$(az acr show --name "${ACR_NAME}" --resource-group "${RESOURCE_GROUP}" --query loginServer -o tsv)"
+          case "${ROLLOUT_IMAGE_DIGEST}" in
+            "${acr_login_server}/asset-allocation-ui@sha256:"*)
+              ;;
+            *)
+              echo "image_digest must point to ${acr_login_server}/asset-allocation-ui by immutable digest: ${ROLLOUT_IMAGE_DIGEST}" >&2
+              exit 1
+              ;;
+          esac
+          image_manifest_digest="${ROLLOUT_IMAGE_DIGEST##*@}"
+          az acr repository show-manifests \
+            --name "${ACR_NAME}" \
+            --repository asset-allocation-ui \
+            --orderby time_desc \
+            -o json > image-manifests.json
+          manifest_found="$(
+            jq -r --arg digest "${image_manifest_digest}" \
+              '[.[] | select(.digest == $digest) | .digest][0] // empty' \
+              image-manifests.json
+          )"
+          if [ "${manifest_found}" != "${image_manifest_digest}" ]; then
+            echo "image_digest was not found in ACR repository asset-allocation-ui: ${ROLLOUT_IMAGE_DIGEST}" >&2
+            exit 1
+          fi
+          release_tag_match="$(
+            jq -r --arg digest "${image_manifest_digest}" --arg tag "${ROLLOUT_RELEASE_SHA}" \
+              '[.[] | select(.digest == $digest and ((.tags // []) | index($tag))) | .digest][0] // empty' \
+              image-manifests.json
+          )"
+          if [ "${release_tag_match}" != "${image_manifest_digest}" ]; then
+            echo "image_digest is not tagged with release SHA ${ROLLOUT_RELEASE_SHA} in ACR: ${ROLLOUT_IMAGE_DIGEST}" >&2
+            exit 1
+          fi
           env_id="/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.App/managedEnvironments/${CONTAINER_APPS_ENVIRONMENT_NAME}"
           previous_image="$(az containerapp show --name "${UI_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || true)"
           {
@@ -311,6 +370,7 @@ jobs:
             echo ""
             echo "- Target app: \`${UI_APP_NAME}\`"
             echo "- Image: \`${{ steps.rollout.outputs.image_digest }}\`"
+            echo "- Release SHA: \`${{ steps.rollout.outputs.release_sha }}\`"
             echo "- API upstream scheme: \`${{ steps.rollout.outputs.api_upstream_scheme }}\`"
             echo "- API upstream: \`${{ steps.rollout.outputs.api_upstream }}\`"
             echo "- UI auth enabled: \`${UI_AUTH_ENABLED}\`"
@@ -323,5 +383,5 @@ jobs:
               echo "- CNAME target: \`${{ steps.custom-domain.outputs.cname_target }}\`"
             fi
             echo "- Previous image: \`${{ steps.azure.outputs.previous_image || 'none' }}\`"
-            echo "- Rollback: run \`rollback-prod.yml\` with the previous image digest"
+            echo "- Rollback: run \`rollback-prod.yml\` with a verified prior image digest and release SHA"
           } >> "${GITHUB_STEP_SUMMARY}"

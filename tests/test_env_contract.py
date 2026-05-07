@@ -160,7 +160,13 @@ def test_ui_deploy_workflow_is_release_driven_and_uses_repo_var() -> None:
     assert "REPO_VARS_JSON: ${{ toJson(vars) }}" in text
     assert '--vars-json "${REPO_VARS_JSON}"' in text
     assert "vars.API_UPSTREAM" in text
-    assert "actions/workflows/release.yml/runs?branch=main&per_page=20" in text
+    assert "actions/workflows/release.yml/runs?branch=main&per_page=100" in text
+    assert "repos/${GITHUB_REPOSITORY}/commits/main" in text
+    assert ".head_sha == $sha" in text
+    assert "Refusing to deploy a stale UI image." in text
+    assert "release-manifest.json git_sha" in text
+    assert "image_digest must be an immutable asset-allocation-ui digest" in text
+    assert "release_sha: ${{ needs.resolve-release.outputs.release_sha }}" in text
     assert (
         "actions/runs/${{ steps.release-run.outputs.release_run_id }}/artifacts" in text
     )
@@ -170,6 +176,7 @@ def test_ui_runtime_deploy_workflow_uses_repo_var_only() -> None:
     text = workflow_text("deploy-ui-runtime.yml")
     assert "workflow_call:" in text
     assert "image_digest:" in text
+    assert "release_sha:" in text
     assert "vars.API_UPSTREAM" in text
     assert "vars.API_UPSTREAM_SCHEME" in text
     assert "vars.UI_AUTH_ENABLED" in text
@@ -179,19 +186,25 @@ def test_ui_runtime_deploy_workflow_uses_repo_var_only() -> None:
     assert "vars.UI_OIDC_CLIENT_ID" in text
     assert "vars.UI_OIDC_SCOPES" in text
     assert "vars.UI_PUBLIC_HOSTNAME" in text
+    assert "image_digest must be an immutable asset-allocation-ui digest" in text
+    assert "image_digest must point to ${acr_login_server}/asset-allocation-ui" in text
+    assert "image_digest was not found in ACR repository asset-allocation-ui" in text
+    assert "image_digest is not tagged with release SHA" in text
     assert "contracts_version" not in text
 
 
-def test_ui_rollback_workflow_requires_only_image_digest() -> None:
+def test_ui_rollback_workflow_requires_image_digest_and_release_sha() -> None:
     text = workflow_text("rollback-prod.yml")
     assert "workflow_dispatch:" in text
     assert "image_digest:" in text
+    assert "release_sha:" in text
     assert "api_upstream:" not in text
     assert "contracts_version:" not in text
     assert "Validate required repo deploy vars" in text
     assert "REPO_VARS_JSON: ${{ toJson(vars) }}" in text
     assert '--vars-json "${REPO_VARS_JSON}"' in text
     assert "uses: ./.github/workflows/deploy-ui-runtime.yml" in text
+    assert "release_sha: ${{ inputs.release_sha }}" in text
 
 
 def test_setup_env_discovers_api_upstream_host_and_scheme() -> None:
@@ -344,6 +357,9 @@ def test_ui_release_workflow_publishes_release_manifest_artifact() -> None:
     assert "name: ui-release" in text
     assert "path: artifacts/release-manifest.json" in text
     assert '"image_digest": os.environ["IMAGE_DIGEST"]' in text
+    assert "--pull" in text
+    assert "az acr repository show-manifests" in text
+    assert "Pushed asset-allocation-ui image tag ${RELEASE_SHA} was not found in ACR." in text
 
 
 def test_ui_release_workflow_supports_manual_dispatch_without_bypassing_ci() -> None:
