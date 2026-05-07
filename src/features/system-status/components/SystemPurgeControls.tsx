@@ -145,10 +145,7 @@ export function PurgeActionIcon({
       }
 
       toast.success(`Purged ${getPurgeDeletedCount(result)} blob(s).`);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.systemHealth() })
-      ]);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() });
     } catch (err: unknown) {
       toast.error(describePurgeFailure(operationId, err));
     } finally {

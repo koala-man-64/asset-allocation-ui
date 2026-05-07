@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   createDefaultNavOrderBySection,
+  getNavSubgroupTitle,
   moveNavItemWithinSectionOrder,
+  NAV_SECTIONS,
   normalizeNavOrderBySection,
   normalizePinnedNavPaths,
   resolveVisibleNavSections
@@ -31,7 +33,10 @@ describe('navigationModel', () => {
     expect(normalizedOrder['live-operations']).toContain('/symbol-enrichment');
     expect(normalizedOrder['live-operations']).toContain('/accounts');
     expect(normalizedOrder['live-operations']).toContain('/portfolios');
-    expect(normalizedOrder['live-operations']).toContain('/rankings');
+    expect(normalizedOrder['live-operations']).toContain('/backtests');
+    expect(normalizedOrder['live-operations']).not.toContain('/strategy-exploration');
+    expect(normalizedOrder['live-operations']).not.toContain('/universes');
+    expect(normalizedOrder['live-operations']).not.toContain('/rankings');
     expect(normalizedOrder.access).toEqual(['/login']);
   });
 
@@ -57,15 +62,38 @@ describe('navigationModel', () => {
       createDefaultNavOrderBySection()
     );
 
-    expect(pinnedItems.map((item) => item.label)).toEqual(['Ranking Configurations', 'Strategies']);
+    expect(pinnedItems.map((item) => item.label)).toEqual(['Strategies']);
 
     const liveOperationsSection = visibleSections.find(
       (section) => section.key === 'live-operations'
     );
     expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/rankings');
+    expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/universes');
+    expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/strategy-exploration');
     expect(liveOperationsSection?.items.map((item) => item.path)).not.toContain('/strategies');
+    expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/backtests');
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/accounts');
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/intraday-monitor');
     expect(liveOperationsSection?.items.map((item) => item.path)).toContain('/portfolios');
+  });
+
+  it('orders live operations by subgroup metadata', () => {
+    const liveOperationsSection = NAV_SECTIONS.find((section) => section.key === 'live-operations');
+    const subgroupTransitions = liveOperationsSection?.items
+      .filter((item, index, items) => item.subgroupKey !== items[index - 1]?.subgroupKey)
+      .map((item) => getNavSubgroupTitle(item.subgroupKey));
+
+    expect(liveOperationsSection?.items.slice(0, 2).map((item) => item.path)).toEqual([
+      '/data-explorer',
+      '/postgres-explorer'
+    ]);
+    expect(subgroupTransitions).toEqual([
+      'DATA ACCESS',
+      'MONITORING',
+      'DATA HYGIENE',
+      'STRATEGY SETUP',
+      'PORTFOLIO & TRADING',
+      'OPS TOOLS'
+    ]);
   });
 });

@@ -53,6 +53,9 @@ jobs:
     outputs:
       image_digest: ${{ steps.manifest.outputs.image_digest }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Validate dispatch branch and repo deploy vars
         shell: bash
         run: |
@@ -63,67 +66,26 @@ jobs:
           fi
           : "${API_UPSTREAM:?vars.API_UPSTREAM is required}"
 
-      - name: Resolve release run
-        id: release-run
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
-            run_id="${{ github.event.workflow_run.id }}"
-          else
-            gh api \
-              --method GET \
-              -H "Accept: application/vnd.github+json" \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?branch=main&per_page=20" > workflow-runs.json
-            run_id="$(jq -r '.workflow_runs[] | select(.head_branch == "main" and .conclusion == "success") | .id' workflow-runs.json | head -n 1)"
-            : "${run_id:?No successful UI Release run on main was found.}"
-          fi
-          echo "release_run_id=${run_id}" >> "$GITHUB_OUTPUT"
-
-      - name: Download release manifest
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api \
-            --method GET \
-            -H "Accept: application/vnd.github+json" \
-            "repos/${GITHUB_REPOSITORY}/actions/runs/${{ steps.release-run.outputs.release_run_id }}/artifacts" > artifacts.json
-          artifact_id="$(jq -r '.artifacts[] | select(.name == "ui-release" and (.expired | not)) | .id' artifacts.json | head -n 1)"
-          : "${artifact_id:?Artifact 'ui-release' was not found on the selected UI Release run.}"
-          gh api \
-            --method GET \
-            -H "Accept: application/vnd.github+json" \
-            "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > ui-release.zip
-          rm -rf release-artifact
-          mkdir -p release-artifact
-          unzip -q ui-release.zip -d release-artifact
-          test -f release-artifact/release-manifest.json || {
-            echo "Artifact 'ui-release' did not contain release-manifest.json." >&2
-            exit 1
-          }
-
-      - name: Resolve image digest
+      - name: Resolve release image digest
         id: manifest
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          image_digest="$(jq -r '.image_digest // empty' release-artifact/release-manifest.json)"
-          artifact_kind="$(jq -r '.artifact_kind // empty' release-artifact/release-manifest.json)"
-          repo="$(jq -r '.repo // empty' release-artifact/release-manifest.json)"
-          : "${image_digest:?release-manifest.json is missing image_digest.}"
-          test "${artifact_kind}" = "container-image" || {
-            echo "release-manifest.json did not describe a container-image artifact." >&2
-            exit 1
-          }
-          test "${repo}" = "${GITHUB_REPOSITORY}" || {
-            echo "release-manifest.json repo did not match the current repository." >&2
-            exit 1
-          }
-          echo "image_digest=${image_digest}" >> "$GITHUB_OUTPUT"
+          resolver_args=(
+            python scripts/workflows/resolve_release_image_digest.py
+            --repo "${GITHUB_REPOSITORY}"
+            --branch main
+            --workflow release.yml
+            --artifact ui-release
+            --image-repository asset-allocation-ui
+            --github-output "$GITHUB_OUTPUT"
+          )
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            resolver_args+=(--run-id "${{ github.event.workflow_run.id }}")
+          fi
+          "${resolver_args[@]}"
 
   deploy-prod:
     name: deploy-prod

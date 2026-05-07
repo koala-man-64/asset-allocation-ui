@@ -57,6 +57,49 @@ test('trade desk supports preview, warning acknowledgement, submit, and cancel w
   await expect(page.getByText('The cancel request was accepted.')).toBeVisible();
 });
 
+test('trade desk renders account, order, and position query failures instead of empty states', async ({
+  page
+}) => {
+  await page.route('**/api/trade-accounts/acct-paper', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Account detail temporarily unavailable' })
+    });
+  });
+  await page.route('**/api/trade-accounts/acct-paper/orders', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Open orders feed unavailable' })
+    });
+  });
+  await page.route('**/api/trade-accounts/acct-paper/positions', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Positions feed unavailable' })
+    });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/trade-desk?accountId=acct-paper');
+
+  await expect(page.getByRole('heading', { name: 'Trade Desk' })).toBeVisible();
+  await expect(page.getByText('Account Detail Unavailable')).toBeVisible();
+  await expect(page.getByText('Open Orders Unavailable')).toBeVisible();
+  await expect(
+    page.getByText('No open orders are currently staged for this account.')
+  ).toBeHidden();
+
+  await page.getByRole('tab', { name: 'Positions' }).click();
+  await expect(page.getByText('Positions Unavailable')).toBeVisible();
+});
+
 test('trade desk mobile layout stays accessible without document overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/trade-desk?accountId=acct-paper');

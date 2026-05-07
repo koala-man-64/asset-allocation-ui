@@ -20,7 +20,7 @@ interface PageLoaderProps {
 
 const variantClassNames = {
   page: 'min-h-[calc(100vh-100px)] w-full',
-  panel: 'min-h-[14rem] w-full rounded-[1.5rem] border border-border/40 bg-background/50',
+  panel: 'min-h-[14rem] w-full rounded-sm border border-border bg-card',
   inline: 'min-h-[7rem] w-full'
 } as const;
 
@@ -31,11 +31,9 @@ export function PageLoader({ text = 'Loading...', className, variant = 'page' }:
       data-testid="page-loader"
     >
       <div className="flex flex-col items-center gap-4">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
+        <div className="h-8 w-8 animate-spin rounded-full border border-border border-b-primary" />
         {text && (
-          <p className="text-muted-foreground text-sm font-mono tracking-widest uppercase animate-pulse">
-            {text}
-          </p>
+          <p className="text-muted-foreground text-xs font-mono uppercase animate-pulse">{text}</p>
         )}
       </div>
     </div>

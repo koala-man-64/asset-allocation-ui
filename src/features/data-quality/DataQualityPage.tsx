@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  getLastSystemHealthMeta,
+  getLastDataQualityHealthMeta,
   queryKeys,
-  useLineageQuery,
-  useSystemHealthQuery
+  useDataQualityHealthQuery,
+  useLineageQuery
 } from '@/hooks/useDataQueries';
 import { DataService } from '@/services/DataService';
+import { dataQualityKeys } from '@/services/queryKeyFactories';
 import { PageHero } from '@/app/components/common/PageHero';
 import { StatePanel } from '@/app/components/common/StatePanel';
 import { Button } from '@/app/components/ui/button';
@@ -146,7 +147,7 @@ function storageStatusMeta(
 
 export function DataQualityPage() {
   const queryClient = useQueryClient();
-  const health = useSystemHealthQuery();
+  const health = useDataQualityHealthQuery();
   const lineage = useLineageQuery();
 
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
@@ -166,7 +167,7 @@ export function DataQualityPage() {
     if (health.dataUpdatedAt) {
       setLastRefreshedAt(new Date(health.dataUpdatedAt).toISOString());
     }
-    setHealthMeta(getLastSystemHealthMeta());
+    setHealthMeta(getLastDataQualityHealthMeta());
   }, [health.dataUpdatedAt]);
 
   const rows: DomainRow[] = useMemo(() => {
@@ -210,7 +211,7 @@ export function DataQualityPage() {
     rows
   });
   const storageUsageQuery = useQuery<StorageUsageResponse>({
-    queryKey: ['data-quality', 'storage-usage'],
+    queryKey: dataQualityKeys.storageUsage(),
     queryFn: ({ signal }) => DataService.getStorageUsage(signal),
     staleTime: 1000 * 60 * 5,
     retry: 1
@@ -242,7 +243,7 @@ export function DataQualityPage() {
     setRunAllStatusMessage(null);
     try {
       const response = await DataService.getSystemHealthWithMeta({ refresh: true });
-      queryClient.setQueryData(queryKeys.systemHealth(), response.data);
+      queryClient.setQueryData(queryKeys.dataQualityHealth(), response.data);
       setHealthMeta(response.meta);
       setLastRefreshedAt(nowIso());
     } catch (err: unknown) {

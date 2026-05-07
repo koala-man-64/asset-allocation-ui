@@ -456,7 +456,8 @@ export function useSymbolPurgeController() {
       } else {
         toast.success(`Purge completed. Total deleted blobs: ${result.totalDeleted}.`);
       }
-      void queryClient.invalidateQueries({ queryKey: queryKeys.systemHealth() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dataQualityHealth() });
     } catch (error: unknown) {
       const message = formatSystemStatusText(error) || 'Symbol purge failed.';
       setOperationStatus('failed');
@@ -541,7 +542,8 @@ export function useSymbolPurgeController() {
       } else {
         toast.success(`Blacklist purge completed. Total deleted blobs: ${result.totalDeleted}.`);
       }
-      void queryClient.invalidateQueries({ queryKey: queryKeys.systemHealth() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dataQualityHealth() });
     } catch (error: unknown) {
       const message = formatSystemStatusText(error) || 'Blacklist symbol purge failed.';
       setOperationStatus('failed');

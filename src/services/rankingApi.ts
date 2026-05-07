@@ -10,11 +10,22 @@ import type {
 
 export const rankingApi = {
   async listRankingSchemas(signal?: AbortSignal): Promise<RankingSchemaSummary[]> {
-    return request<RankingSchemaSummary[]>('/rankings', { signal });
+    return request<RankingSchemaSummary[]>('/rankings/', { signal });
   },
 
   async getRankingSchemaDetail(name: string, signal?: AbortSignal): Promise<RankingSchemaDetail> {
     return request<RankingSchemaDetail>(`/rankings/${encodeURIComponent(name)}/detail`, { signal });
+  },
+
+  async getRankingSchemaRevision(
+    name: string,
+    version: number,
+    signal?: AbortSignal
+  ): Promise<RankingSchemaDetail> {
+    return request<RankingSchemaDetail>(
+      `/rankings/${encodeURIComponent(name)}/revisions/${encodeURIComponent(String(version))}`,
+      { signal }
+    );
   },
 
   async getRankingCatalog(signal?: AbortSignal): Promise<RankingCatalogResponse> {
@@ -29,7 +40,7 @@ export const rankingApi = {
     },
     signal?: AbortSignal
   ): Promise<{ status: string; message: string; version: number }> {
-    return request<{ status: string; message: string; version: number }>('/rankings', {
+    return request<{ status: string; message: string; version: number }>('/rankings/', {
       method: 'POST',
       body: JSON.stringify(payload),
       signal

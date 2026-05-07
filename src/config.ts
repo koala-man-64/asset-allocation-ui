@@ -144,10 +144,11 @@ function deriveOidcRedirectUri(
 
 const runtimeConfig = typeof window === 'undefined' ? {} : window.__API_UI_CONFIG__ || {};
 const isDevLike = Boolean(import.meta.env.DEV || import.meta.env.MODE === 'test');
+const devUiAuthEnabled = isDevLike ? import.meta.env.VITE_UI_AUTH_ENABLED : undefined;
 const rawUiAuthEnabled = resolveBoolean(
   runtimeConfig.uiAuthEnabled,
-  isDevLike ? import.meta.env.VITE_UI_AUTH_ENABLED : undefined,
-  true
+  devUiAuthEnabled,
+  isDevLike ? false : true
 );
 const oidcAuthority = resolveString(
   runtimeConfig.oidcAuthority,

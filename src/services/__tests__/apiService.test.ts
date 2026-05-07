@@ -98,7 +98,66 @@ describe('apiService bearer auth transport', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('sends bearer Authorization without cookie credentials or CSRF headers', async () => {
+  it('does not retry backend 500 responses for primary requests by default', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(new Response('server bug', { status: 500, statusText: 'Server Error' }));
+
+    const { request } = await importApiService();
+
+    await expect(request('/system/status-view')).rejects.toThrow(/API Error: 500 Server Error/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const primaryCalls = fetchMock.mock.calls.filter(([url]) =>
+      String(url).includes('/api/system/status-view')
+    );
+    expect(primaryCalls).toHaveLength(1);
+  });
+
+  it('sends cookie credentials and csrf without Authorization headers', async () => {
+    Object.defineProperty(document, 'cookie', {
+      configurable: true,
+      value: 'aa_csrf_dev=csrf-token'
+    });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const { request } = await importApiService();
+
+    await expect(
+      request('/auth/session', {
+        method: 'DELETE',
+        retryOnStatusCodes: false
+      })
+    ).resolves.toEqual({});
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = init.headers as Headers;
+    expect(init.credentials).toBe('include');
+    expect(headers.get('Authorization')).toBeNull();
+    expect(headers.get('X-CSRF-Token')).toBe('csrf-token');
+  });
+
+  it('posts the password session request body to /auth/session', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        authMode: 'password',
+        subject: 'shared-password',
+        requiredRoles: [],
+        grantedRoles: []
+      })
+    );
+
+    const { apiService } = await importApiService();
+
+    await apiService.createPasswordAuthSession('shared-password');
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('include');
+    expect(init.body).toBe(JSON.stringify({ password: 'shared-password' }));
+  });
+
+  it('posts the OIDC bootstrap bearer exactly once to /auth/session', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         authMode: 'oidc',
@@ -123,6 +182,71 @@ describe('apiService bearer auth transport', () => {
     expect(init.body).toBeUndefined();
     expect(headers.get('Authorization')).toBe('Bearer oidc-access-token');
     expect(headers.get('X-CSRF-Token')).toBeNull();
+  });
+
+  it('encodes job log names and normalizes missing log arrays', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'ok' })).mockResolvedValueOnce(
+      jsonResponse({
+        jobName: 'job/name with spaces',
+        runsRequested: 2,
+        runsReturned: 1,
+        tailLines: 10,
+        runs: [
+          {
+            executionName: 'exec-1'
+          }
+        ]
+      })
+    );
+    const controller = new AbortController();
+
+    const { apiService } = await importApiService();
+    const response = await apiService.getJobLogs(
+      'job/name with spaces',
+      { runs: 2 },
+      controller.signal
+    );
+
+    const logCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/system/jobs/'));
+    expect(String(logCall?.[0])).toContain('/api/system/jobs/job%2Fname%20with%20spaces/logs');
+    expect(String(logCall?.[0])).toContain('runs=2');
+    expect((logCall?.[1] as RequestInit).signal).toBe(controller.signal);
+    expect(response.runs).toEqual([
+      expect.objectContaining({
+        executionName: 'exec-1',
+        consoleLogs: [],
+        tail: []
+      })
+    ]);
+  });
+
+  it('serializes stock screener filters with the contract query names', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(jsonResponse({ asOf: '2025-01-02', total: 0, limit: 25, offset: 0, rows: [] }));
+
+    const { apiService } = await importApiService();
+
+    await apiService.getStockScreener({
+      q: ' AAPL ',
+      asOf: '2025-01-02',
+      limit: 25,
+      offset: 0,
+      sort: 'return_5d',
+      direction: 'desc',
+      sectors: ['Technology', 'Healthcare'],
+      has_gold: true,
+      min_return_5d: 0.02
+    });
+
+    const screenerUrl = new URL(String(fetchMock.mock.calls[1]?.[0]), 'http://test.local');
+    expect(screenerUrl.pathname).toBe('/api/data/screener');
+    expect(screenerUrl.searchParams.get('q')).toBe('AAPL');
+    expect(screenerUrl.searchParams.get('as_of')).toBe('2025-01-02');
+    expect(screenerUrl.searchParams.has('asOf')).toBe(false);
+    expect(screenerUrl.searchParams.get('sectors')).toBe('Technology,Healthcare');
+    expect(screenerUrl.searchParams.get('has_gold')).toBe('true');
+    expect(screenerUrl.searchParams.get('min_return_5d')).toBe('0.02');
   });
 
   it('throws an ApiError directly when the backend returns 401', async () => {

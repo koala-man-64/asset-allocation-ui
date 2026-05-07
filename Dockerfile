@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM node:20-slim AS builder
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS builder
 WORKDIR /workspace/asset-allocation-ui
 
 ARG VITE_API_BASE_URL=/api
@@ -16,7 +16,7 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true \
 COPY asset-allocation-ui/ ./
 RUN pnpm run build
 
-FROM nginx:alpine
+FROM nginx:alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
 WORKDIR /usr/share/nginx/html
 RUN rm -rf ./*
 

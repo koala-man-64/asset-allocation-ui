@@ -1,5 +1,4 @@
-import { ArrowUpRight, CopyPlus, PencilLine, Play, Plus, Trash2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { CopyPlus, PencilLine, Play, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import type { StrategyDetail, StrategySummary } from '@/types/strategy';
@@ -159,27 +158,12 @@ export function StrategyActionRail({
 
         <div className="space-y-3 rounded-[1.8rem] border border-mcm-walnut/25 bg-mcm-paper/85 p-4">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-            Adjacent surfaces
+            Folded workflow
           </p>
-
-          <Button asChild variant="ghost" className="w-full justify-between">
-            <Link to="/universes">
-              Universe configurations
-              <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </Button>
-          <Button asChild variant="ghost" className="w-full justify-between">
-            <Link to="/rankings">
-              Ranking configurations
-              <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </Button>
-          <Button asChild variant="ghost" className="w-full justify-between">
-            <Link to="/strategy-exploration">
-              Strategy exploration
-              <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </Button>
+          <p className="text-sm text-muted-foreground">
+            Universe, ranking, regime, risk, exploration, allocations, trades, and comparisons now
+            live together on /strategies.
+          </p>
         </div>
       </div>
     </aside>

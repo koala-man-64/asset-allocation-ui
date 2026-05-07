@@ -15,7 +15,7 @@ export interface PageHeroMetric {
 interface PageHeroProps {
   kicker: string;
   title: ReactNode;
-  subtitle: ReactNode;
+  subtitle?: ReactNode;
   actions?: ReactNode;
   metrics?: PageHeroMetric[];
   className?: string;
@@ -38,22 +38,22 @@ export function PageHero({
   const hasSideContent = Boolean(actions) || Boolean(metrics?.length);
 
   return (
-    <section className={cn('page-header-row items-start gap-6', className)}>
+    <section className={cn('terminal-panel page-header-row items-start gap-3 p-3', className)}>
       <div className={cn('page-header min-w-0 flex-1', contentClassName)}>
         <p className="page-kicker">{kicker}</p>
         <h1 className="page-title">{title}</h1>
-        <p className="page-subtitle max-w-3xl">{subtitle}</p>
+        {subtitle ? <p className="page-subtitle max-w-3xl">{subtitle}</p> : null}
       </div>
 
       {hasSideContent ? (
-        <div className={cn('flex w-full max-w-[56rem] flex-col gap-3', sideClassName)}>
+        <div className={cn('flex w-full max-w-[64rem] flex-col gap-2', sideClassName)}>
           {actions ? (
-            <div className="flex flex-wrap items-center justify-start gap-3 sm:justify-end">
+            <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
               {actions}
             </div>
           ) : null}
           {metrics?.length ? (
-            <div className={cn('grid gap-3 sm:grid-cols-2 xl:grid-cols-3', metricsClassName)}>
+            <div className={cn('grid gap-2 sm:grid-cols-2 xl:grid-cols-3', metricsClassName)}>
               {metrics.map((metric) => (
                 <StatCard
                   key={metric.label}

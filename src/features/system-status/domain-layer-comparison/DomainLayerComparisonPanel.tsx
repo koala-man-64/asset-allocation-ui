@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ElementType,
@@ -76,6 +77,7 @@ import {
   type DomainListViewerTarget
 } from '@/features/system-status/components/DomainListViewerSheet';
 import type { ManagedContainerJob } from '@/features/system-status/types';
+import { useJobStatuses } from '@/hooks/useJobStatuses';
 import { useJobSuspend } from '@/hooks/useJobSuspend';
 import { useJobTrigger } from '@/hooks/useJobTrigger';
 import {
@@ -89,11 +91,12 @@ import {
   hasActiveJobRunningState,
   normalizeAzureJobName,
   normalizeAzurePortalUrl,
-  resolveManagedJobName,
+  resolveRunnableJobName,
   isSuspendedJobRunningState,
   toJobStatusLabel
 } from '@/features/system-status/lib/SystemStatusHelpers';
 import { formatMetadataTimestamp } from '@/features/system-status/lib/systemStatusClock';
+import { isDomainLayerCoverageDomainVisible } from '@/features/system-status/lib/coverageDomains';
 
 const LAYER_ORDER = ['bronze', 'silver', 'gold', 'platinum'] as const;
 type LayerKey = (typeof LAYER_ORDER)[number];
@@ -101,6 +104,8 @@ const CHECKPOINT_RESET_LAYERS = new Set<LayerKey>(['silver', 'gold']);
 const DOMAIN_COLUMN_WIDTH_PX = 280;
 const PURGE_POLL_INTERVAL_MS = 1000;
 const PURGE_POLL_TIMEOUT_MS = 5 * 60_000;
+const STALE_METADATA_AUTO_REFRESH_MS = 5 * 60_000;
+const METADATA_TIMESTAMP_SKEW_MS = 60_000;
 const CPU_USAGE_PERCENT_SIGNAL_NAMES = [
   'cpupercent',
   'cpupercentage',
@@ -115,10 +120,13 @@ const MEMORY_USAGE_RAW_SIGNAL_NAMES = [
   'workingsetbytes',
   'memorybytes'
 ];
+
 type LayerVisualConfig = {
   accent: string;
   softBg: string;
   strongBg: string;
+  chipBg: string;
+  cellBg: string;
   border: string;
   mutedText: string;
 };
@@ -137,32 +145,40 @@ const FINANCE_SUBFOLDER_ITEMS = [
 ] as const;
 const LAYER_VISUALS: Record<LayerKey, LayerVisualConfig> = {
   bronze: {
-    accent: '#9a5b2d',
-    softBg: 'rgba(154, 91, 45, 0.14)',
-    strongBg: 'rgba(154, 91, 45, 0.22)',
-    border: 'rgba(154, 91, 45, 0.5)',
-    mutedText: 'rgba(122, 72, 34, 0.88)'
+    accent: '#ffbf86',
+    softBg: 'rgba(255, 184, 108, 0.1)',
+    strongBg: 'rgba(74, 46, 31, 0.72)',
+    chipBg: 'rgba(24, 18, 16, 0.78)',
+    cellBg: 'rgba(17, 18, 28, 0.98)',
+    border: 'rgba(255, 184, 108, 0.5)',
+    mutedText: '#ffd9b3'
   },
   silver: {
-    accent: '#4b5563',
-    softBg: 'rgba(75, 85, 99, 0.14)',
-    strongBg: 'rgba(75, 85, 99, 0.22)',
-    border: 'rgba(75, 85, 99, 0.5)',
-    mutedText: 'rgba(55, 65, 81, 0.88)'
+    accent: '#dbe7ff',
+    softBg: 'rgba(142, 166, 214, 0.12)',
+    strongBg: 'rgba(55, 68, 96, 0.72)',
+    chipBg: 'rgba(11, 18, 35, 0.82)',
+    cellBg: 'rgba(15, 21, 36, 0.98)',
+    border: 'rgba(219, 231, 255, 0.42)',
+    mutedText: '#e4ecff'
   },
   gold: {
-    accent: '#9a7400',
-    softBg: 'rgba(154, 116, 0, 0.14)',
-    strongBg: 'rgba(154, 116, 0, 0.22)',
-    border: 'rgba(154, 116, 0, 0.5)',
-    mutedText: 'rgba(120, 90, 0, 0.9)'
+    accent: '#ffe46e',
+    softBg: 'rgba(242, 211, 79, 0.1)',
+    strongBg: 'rgba(68, 60, 25, 0.72)',
+    chipBg: 'rgba(23, 21, 12, 0.8)',
+    cellBg: 'rgba(18, 20, 23, 0.98)',
+    border: 'rgba(242, 211, 79, 0.5)',
+    mutedText: '#fff0a6'
   },
   platinum: {
-    accent: '#0f766e',
-    softBg: 'rgba(15, 118, 110, 0.14)',
-    strongBg: 'rgba(15, 118, 110, 0.22)',
-    border: 'rgba(15, 118, 110, 0.5)',
-    mutedText: 'rgba(17, 94, 89, 0.9)'
+    accent: '#18d4ff',
+    softBg: 'rgba(24, 212, 255, 0.1)',
+    strongBg: 'rgba(18, 79, 98, 0.72)',
+    chipBg: 'rgba(7, 22, 32, 0.82)',
+    cellBg: 'rgba(11, 22, 32, 0.98)',
+    border: 'rgba(24, 212, 255, 0.55)',
+    mutedText: '#9eeeff'
   }
 };
 
@@ -243,6 +259,53 @@ function hasFiniteNumber(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function parseTimestampMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isStaleDataStatus(status: string | null | undefined): boolean {
+  const normalized = String(status || '')
+    .trim()
+    .toLowerCase();
+  return normalized === 'stale' || normalized === 'warning' || normalized === 'degraded';
+}
+
+function shouldAutoRefreshCellMetadata({
+  metadata,
+  domainConfig,
+  snapshotUpdatedAt,
+  nowMs
+}: {
+  metadata?: DomainMetadata | null;
+  domainConfig?: DataDomain | null;
+  snapshotUpdatedAt?: string | null;
+  nowMs: number;
+}): boolean {
+  if (!metadata) {
+    return true;
+  }
+
+  const metadataTimestamp =
+    parseTimestampMs(metadata.cachedAt) ??
+    parseTimestampMs(metadata.computedAt) ??
+    parseTimestampMs(snapshotUpdatedAt);
+  const domainUpdatedAt = parseTimestampMs(domainConfig?.lastUpdated);
+
+  if (
+    domainUpdatedAt !== null &&
+    (metadataTimestamp === null || metadataTimestamp + METADATA_TIMESTAMP_SKEW_MS < domainUpdatedAt)
+  ) {
+    return true;
+  }
+
+  return (
+    isStaleDataStatus(domainConfig?.status) &&
+    (metadataTimestamp === null || nowMs - metadataTimestamp >= STALE_METADATA_AUTO_REFRESH_MS)
+  );
+}
+
 function makeCellKey(layerKey: LayerKey, domainKey: string): string {
   return `${layerKey}:${domainKey}`;
 }
@@ -306,6 +369,30 @@ function buildJobDurationSummaryIndex(recentJobs: JobRun[] = []): Map<string, Jo
   }
 
   return summary;
+}
+
+function mergeRecentJobsForActiveRefresh(
+  current: JobRun[] = [],
+  previous: JobRun[] = []
+): JobRun[] {
+  if (current.length === 0) {
+    return previous;
+  }
+
+  const currentJobKeys = new Set(
+    current.map((job) => normalizeAzureJobName(job?.jobName)).filter(Boolean)
+  );
+  if (currentJobKeys.size === 0) {
+    return previous;
+  }
+
+  return [
+    ...current,
+    ...previous.filter((job) => {
+      const key = normalizeAzureJobName(job?.jobName);
+      return key && !currentJobKeys.has(key);
+    })
+  ];
 }
 
 function formatStorageBytes(value: number | null | undefined): string {
@@ -600,6 +687,7 @@ interface DomainLayerComparisonPanelProps {
   onRefresh?: () => Promise<void> | void;
   isRefreshing?: boolean;
   isFetching?: boolean;
+  autoRefreshStaleMetadata?: boolean;
 }
 
 export function DomainLayerComparisonPanel({
@@ -610,17 +698,22 @@ export function DomainLayerComparisonPanel({
   managedContainerJobs = [],
   metadataSnapshot,
   metadataUpdatedAt,
-  metadataSource,
   onMetadataSnapshotChange,
   onRefresh,
   isRefreshing,
-  isFetching
+  isFetching,
+  autoRefreshStaleMetadata = false
 }: DomainLayerComparisonPanelProps) {
   const queryClient = useQueryClient();
   const { triggeringJob, triggerJob } = useJobTrigger();
   const { jobControl, setJobSuspended, stopJob } = useJobSuspend();
-  const [localMetadataSnapshot, setLocalMetadataSnapshot] =
-    useState<DomainMetadataSnapshotResponse | undefined>(metadataSnapshot);
+  const jobStatuses = useJobStatuses({ autoRefresh: false });
+  const jobStatusesByKey = jobStatuses.byKey;
+  const lastSettledRecentJobsRef = useRef<JobRun[]>(recentJobs);
+  const autoRefreshSignatureRef = useRef<string>('');
+  const [localMetadataSnapshot, setLocalMetadataSnapshot] = useState<
+    DomainMetadataSnapshotResponse | undefined
+  >(metadataSnapshot);
   const [refreshingCells, setRefreshingCells] = useState<Set<string>>(new Set());
   const [triggeringLayerKeys, setTriggeringLayerKeys] = useState<Set<LayerKey>>(new Set());
   const [isRefreshingPanelCounts, setIsRefreshingPanelCounts] = useState(false);
@@ -664,6 +757,18 @@ export function DomainLayerComparisonPanel({
   const resolvedMetadataSnapshot = onMetadataSnapshotChange
     ? metadataSnapshot
     : localMetadataSnapshot;
+  const isStatusRefreshActive = Boolean(isRefreshing) || Boolean(isFetching);
+  const displayRecentJobs = useMemo(
+    () =>
+      isStatusRefreshActive
+        ? mergeRecentJobsForActiveRefresh(recentJobs, lastSettledRecentJobsRef.current)
+        : recentJobs,
+    [isStatusRefreshActive, recentJobs]
+  );
+
+  useEffect(() => {
+    lastSettledRecentJobsRef.current = displayRecentJobs;
+  }, [displayRecentJobs]);
 
   const layersByKey = useMemo(() => {
     const index = new Map<LayerKey, DataLayer>();
@@ -682,7 +787,8 @@ export function DomainLayerComparisonPanel({
       if (!layer) continue;
       const hasDomains = (layer.domains || []).some((domain) => {
         const domainName = String(domain?.name || '').trim();
-        return Boolean(normalizeDomainKey(domainName));
+        const domainKey = normalizeDomainKey(domainName);
+        return isDomainLayerCoverageDomainVisible(domainKey);
       });
       if (!hasDomains) continue;
       columns.push({ key, label: String(layer.name || key).trim() || key });
@@ -691,11 +797,11 @@ export function DomainLayerComparisonPanel({
   }, [layersByKey]);
 
   const jobIndex = useMemo(() => {
-    return buildLatestJobRunIndex(recentJobs);
-  }, [recentJobs]);
+    return buildLatestJobRunIndex(displayRecentJobs);
+  }, [displayRecentJobs]);
   const jobDurationSummaryIndex = useMemo(() => {
-    return buildJobDurationSummaryIndex(recentJobs);
-  }, [recentJobs]);
+    return buildJobDurationSummaryIndex(displayRecentJobs);
+  }, [displayRecentJobs]);
 
   const managedJobIndex = useMemo(() => {
     const index = new Map<string, ManagedContainerJob>();
@@ -718,7 +824,7 @@ export function DomainLayerComparisonPanel({
         const domainName = String(domain?.name || '').trim();
         if (!domainName) continue;
         const domainKey = normalizeDomainKey(domainName);
-        if (!domainKey) continue;
+        if (!isDomainLayerCoverageDomainVisible(domainKey)) continue;
 
         const row = matrix.get(domainKey) || new Map<LayerKey, true>();
         row.set(layerColumn.key, true);
@@ -762,10 +868,7 @@ export function DomainLayerComparisonPanel({
     return index;
   }, [queryPairs]);
 
-  const statusInvalidationKeys = useMemo(
-    () => [queryKeys.systemStatusView(), queryKeys.systemHealth()] as const,
-    []
-  );
+  const statusInvalidationKeys = useMemo(() => [queryKeys.systemStatusView()] as const, []);
 
   const updateMetadataSnapshot = useCallback(
     (
@@ -788,10 +891,7 @@ export function DomainLayerComparisonPanel({
       await onRefresh();
       return;
     }
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.systemHealth() })
-    ]);
+    await queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() });
   }, [onRefresh, queryClient]);
 
   const { metadataByCell, errorByCell, pendingByCell } = useMemo(() => {
@@ -839,11 +939,10 @@ export function DomainLayerComparisonPanel({
       const layer = layersByKey.get(layerColumn.key);
 
       for (const domain of layer?.domains || []) {
-        const configuredJobName = resolveManagedJobName({
+        if (!isDomainLayerCoverageDomainVisible(domain?.name)) continue;
+        const configuredJobName = resolveRunnableJobName({
           jobName: domain.jobName,
-          jobUrl: domain.jobUrl,
-          layerName: layer?.name,
-          domainName: domain?.name
+          jobUrl: domain.jobUrl
         });
         const normalizedJobName = normalizeAzureJobName(configuredJobName);
         if (normalizedJobName) {
@@ -885,21 +984,21 @@ export function DomainLayerComparisonPanel({
             .trim()
             .toLowerCase() || 'pending';
 
-        const jobName = resolveManagedJobName({
+        const jobName = resolveRunnableJobName({
           jobName: domainConfig?.jobName,
-          jobUrl: domainConfig?.jobUrl,
-          layerName: layerColumn.label,
-          domainName: row.key
+          jobUrl: domainConfig?.jobUrl
         });
         const jobKey = normalizeAzureJobName(jobName);
-        const run = jobKey ? jobIndex.get(jobKey) : null;
-        const runningState = jobKey ? jobStates?.[jobKey] : undefined;
+        const statusEntry = jobKey ? jobStatusesByKey.get(jobKey) : null;
+        const run = statusEntry?.latestRun ?? (jobKey ? jobIndex.get(jobKey) : null);
+        const runningState =
+          statusEntry?.runningState ?? (jobKey ? jobStates?.[jobKey] : undefined);
         const hasLiveJobState =
           hasActiveJobRunningState(runningState) || isSuspendedJobRunningState(runningState);
         const jobStatusKey =
           !jobName || (!run && !hasLiveJobState)
             ? 'pending'
-            : effectiveJobStatus(run?.status, runningState);
+            : (statusEntry?.status ?? effectiveJobStatus(run?.status, runningState));
 
         const isCritical =
           ['error', 'failed', 'critical'].includes(dataStatusKey) ||
@@ -918,7 +1017,15 @@ export function DomainLayerComparisonPanel({
     }
 
     return byLayer;
-  }, [domainConfigByLayer, domainsByLayer, filteredDomainRows, jobIndex, jobStates, layerColumns]);
+  }, [
+    domainConfigByLayer,
+    domainsByLayer,
+    filteredDomainRows,
+    jobIndex,
+    jobStates,
+    jobStatusesByKey,
+    layerColumns
+  ]);
 
   const handleCellRefresh = useCallback(
     async (layerKey: LayerKey, domainKey: string) => {
@@ -965,6 +1072,48 @@ export function DomainLayerComparisonPanel({
     },
     [queryClient, refreshingCells, updateMetadataSnapshot]
   );
+
+  useEffect(() => {
+    if (!autoRefreshStaleMetadata || queryPairs.length === 0 || isAnyRefreshInProgress) {
+      return;
+    }
+
+    const nowMs = Date.now();
+    const targets = queryPairs.filter((pair) => {
+      const metadata = metadataByCell.get(makeCellKey(pair.layerKey, pair.domainKey));
+      const domainConfig = domainConfigByLayer.get(pair.layerKey)?.get(pair.domainKey) || null;
+      return shouldAutoRefreshCellMetadata({
+        metadata,
+        domainConfig,
+        snapshotUpdatedAt: metadataUpdatedAt,
+        nowMs
+      });
+    });
+
+    if (targets.length === 0) {
+      return;
+    }
+
+    const signature = `${metadataUpdatedAt || 'none'}:${targets
+      .map((target) => makeCellKey(target.layerKey, target.domainKey))
+      .join(',')}`;
+    if (autoRefreshSignatureRef.current === signature) {
+      return;
+    }
+
+    autoRefreshSignatureRef.current = signature;
+    void Promise.allSettled(
+      targets.map((target) => handleCellRefresh(target.layerKey, target.domainKey))
+    );
+  }, [
+    autoRefreshStaleMetadata,
+    domainConfigByLayer,
+    handleCellRefresh,
+    isAnyRefreshInProgress,
+    metadataByCell,
+    metadataUpdatedAt,
+    queryPairs
+  ]);
 
   const refreshDomainMetadataAndStatus = useCallback(
     async (targets: Array<{ layerKey: LayerKey; domainKey: string }>) => {
@@ -1586,31 +1735,14 @@ export function DomainLayerComparisonPanel({
         </AlertDialogContent>
       </AlertDialog>
 
-      <CardHeader className="gap-4 border-b border-mcm-walnut/12 bg-mcm-paper/72 pb-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-1.5">
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-              Coverage Matrix
-            </p>
-            <CardTitle className="leading-tight">Domain Layer Coverage</CardTitle>
-            <p className="max-w-3xl text-sm leading-6 text-mcm-walnut/72">
-              Medallion-domain coverage with freshness, job state, and row-level controls.
-            </p>
-          </div>
-
-          <div className="rounded-[0.9rem] border border-mcm-walnut/12 bg-mcm-cream/45 px-3 py-2">
-            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-mcm-walnut/55">
-              Snapshot
-            </div>
-            <div className="mt-0.5 text-sm font-semibold text-mcm-walnut">
-              {metadataSource === 'persisted-snapshot' ? 'Persisted snapshot' : 'Snapshot'}
-            </div>
-            <div className="mt-0.5 text-xs text-mcm-walnut/68">
-              {metadataUpdatedAt
-                ? `As of ${formatMetadataTimestamp(metadataUpdatedAt)}`
-                : 'Not available'}
-            </div>
-          </div>
+      <CardHeader className="border-b border-mcm-walnut/12 bg-mcm-paper/72 pb-5">
+        <div className="flex items-center justify-between gap-4">
+          <CardTitle className="shrink-0 leading-tight">Domain Layer Coverage</CardTitle>
+          <p className="min-w-0 truncate text-right text-sm font-medium text-mcm-walnut/68">
+            {metadataUpdatedAt
+              ? `Last snapshot: ${formatMetadataTimestamp(metadataUpdatedAt)}`
+              : 'Last snapshot: Not available'}
+          </p>
         </div>
       </CardHeader>
 
@@ -1768,7 +1900,7 @@ export function DomainLayerComparisonPanel({
                                   <CoverageMetricChip
                                     className="font-semibold uppercase tracking-[0.14em]"
                                     style={{
-                                      backgroundColor: 'rgba(255, 247, 233, 0.72)',
+                                      backgroundColor: layerVisual.chipBg,
                                       borderColor: layerVisual.border,
                                       color: layerVisual.mutedText
                                     }}
@@ -1781,7 +1913,7 @@ export function DomainLayerComparisonPanel({
                                   <div className="mt-2 flex flex-wrap gap-1.5">
                                     <CoverageMetricChip
                                       style={{
-                                        backgroundColor: 'rgba(255, 247, 233, 0.7)',
+                                        backgroundColor: layerVisual.chipBg,
                                         borderColor: layerVisual.border,
                                         color: layerVisual.mutedText
                                       }}
@@ -1790,7 +1922,7 @@ export function DomainLayerComparisonPanel({
                                     </CoverageMetricChip>
                                     <CoverageMetricChip
                                       style={{
-                                        backgroundColor: 'rgba(255, 247, 233, 0.7)',
+                                        backgroundColor: layerVisual.chipBg,
                                         borderColor: layerVisual.border,
                                         color: layerVisual.mutedText
                                       }}
@@ -1799,7 +1931,7 @@ export function DomainLayerComparisonPanel({
                                     </CoverageMetricChip>
                                     <CoverageMetricChip
                                       style={{
-                                        backgroundColor: 'rgba(255, 247, 233, 0.7)',
+                                        backgroundColor: layerVisual.chipBg,
                                         borderColor: layerVisual.border,
                                         color: layerVisual.mutedText
                                       }}
@@ -1890,14 +2022,13 @@ export function DomainLayerComparisonPanel({
                         ? domainConfigByLayer.get(layerColumn.key)?.get(row.key)
                         : undefined;
                       const baseFolderUrl = normalizeAzurePortalUrl(domainConfig?.portalUrl) || '';
-                      const jobName = resolveManagedJobName({
+                      const jobName = resolveRunnableJobName({
                         jobName: domainConfig?.jobName,
-                        jobUrl: domainConfig?.jobUrl,
-                        layerName: layerColumn.label,
-                        domainName: row.key
+                        jobUrl: domainConfig?.jobUrl
                       });
                       const jobKey = normalizeAzureJobName(jobName);
-                      const run = jobKey ? jobIndex.get(jobKey) : null;
+                      const statusEntry = jobKey ? jobStatusesByKey.get(jobKey) : null;
+                      const run = statusEntry?.latestRun ?? (jobKey ? jobIndex.get(jobKey) : null);
                       const durationSummary = jobKey ? jobDurationSummaryIndex.get(jobKey) : null;
                       const managedJob = jobKey ? managedJobIndex.get(jobKey) : null;
                       const liveUsageDisplay = buildRunningUsageDisplay(managedJob?.signals);
@@ -1932,14 +2063,15 @@ export function DomainLayerComparisonPanel({
                       const dataConfig = getStatusConfig(dataStatusKey);
                       const dataLabel = toDataStatusLabel(dataStatusKey);
 
-                      const runningState = jobKey ? jobStates?.[jobKey] : undefined;
+                      const runningState =
+                        statusEntry?.runningState ?? (jobKey ? jobStates?.[jobKey] : undefined);
                       const hasLiveJobState =
                         hasActiveJobRunningState(runningState) ||
                         isSuspendedJobRunningState(runningState);
                       const jobStatusKey =
                         !jobName || (!run && !hasLiveJobState)
                           ? 'pending'
-                          : effectiveJobStatus(run?.status, runningState);
+                          : (statusEntry?.status ?? effectiveJobStatus(run?.status, runningState));
                       const jobConfig = getStatusConfig(jobStatusKey);
                       const jobLabel = !jobName
                         ? 'N/A'
@@ -1951,7 +2083,7 @@ export function DomainLayerComparisonPanel({
 
                       const actionJobName = String(run?.jobName || jobName).trim();
                       const isSuspended = isSuspendedJobRunningState(runningState);
-                      const isRunning = effectiveJobStatus(run?.status, runningState) === 'running';
+                      const isRunning = jobStatusKey === 'running';
                       const isControlling =
                         Boolean(actionJobName) && jobControl?.jobName === actionJobName;
                       const isTriggeringThisJob =
@@ -2226,9 +2358,9 @@ export function DomainLayerComparisonPanel({
                               <div
                                 className="flex h-full min-h-[132px] flex-col rounded-[0.95rem] border px-3 py-3 transition-colors duration-150"
                                 style={{
-                                  background: `linear-gradient(180deg, rgba(255, 247, 233, 0.9), ${model.layerVisual.softBg})`,
+                                  background: `linear-gradient(180deg, ${model.layerVisual.cellBg} 0%, rgba(10, 16, 30, 0.96) 48%, ${model.layerVisual.softBg} 100%)`,
                                   borderColor: model.layerVisual.border,
-                                  boxShadow: `inset 3px 0 0 ${model.layerVisual.border}`
+                                  boxShadow: `inset 3px 0 0 ${model.layerVisual.accent}, 0 14px 32px rgba(0, 0, 0, 0.18)`
                                 }}
                               >
                                 <div className="flex items-start justify-between gap-3">

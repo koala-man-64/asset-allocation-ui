@@ -13,7 +13,11 @@ async function expectNoSeriousViolations(page: Page) {
     seriousViolations.map((violation) => ({
       id: violation.id,
       impact: violation.impact,
-      nodes: violation.nodes.length
+      nodes: violation.nodes.map((node) => ({
+        target: node.target,
+        html: node.html,
+        failureSummary: node.failureSummary
+      }))
     }))
   ).toEqual([]);
 }
@@ -26,16 +30,42 @@ test('desktop smoke covers shell navigation, collapse state, and system-status a
   page
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.context().route('https://portal.azure.com/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<!doctype html><title>Azure Portal</title>'
+    });
+  });
 
   await page.goto('/');
 
   await expect(page).toHaveURL(/\/system-status$/);
   await expect(page.getByRole('heading', { name: 'Operations Command Deck' })).toBeVisible();
-  await expect(
-    page.getByRole('heading', { name: 'Backtests, Rankings, and Regime Workflows' })
-  ).toBeVisible();
-  await expect(page.getByText('aca-job-backtest-runner').first()).toBeVisible();
-  await expect(page.getByText('aca-job-market-bronze').first()).toBeVisible();
+  const operationalJobsHeading = 'Operational Workflows and Control Jobs';
+  await expect(page.getByRole('heading', { name: operationalJobsHeading })).toBeVisible();
+  const operationalJobs = page.getByRole('region', {
+    name: operationalJobsHeading
+  });
+  await expect(operationalJobs.getByText('aca-job-backtest-runner').first()).toBeVisible();
+  await expect(operationalJobs.getByText('aca-job-market-bronze')).toHaveCount(0);
+  const azureJobLink = operationalJobs.getByRole('link', {
+    name: 'Open aca-job-backtest-runner in Azure'
+  });
+  await expect(azureJobLink).toHaveAttribute(
+    'href',
+    'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner'
+  );
+  const azurePopupPromise = page.waitForEvent('popup');
+  await azureJobLink.click();
+  const azurePopup = await azurePopupPromise;
+  await expect
+    .poll(() => azurePopup.url())
+    .toContain(
+      'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner'
+    );
+  await azurePopup.close();
+  await expect(page.getByRole('button', { name: 'Expand market details' })).toBeVisible();
 
   const collapseButton = page.getByRole('button', { name: 'Collapse navigation' });
   await collapseButton.click();

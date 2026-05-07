@@ -1,24 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { fireEvent, screen, within } from '@testing-library/react';
 
 import { renderWithProviders } from '@/test/utils';
 import { OperationalJobMonitorPanel } from '@/features/system-status/components/OperationalJobMonitorPanel';
 import type { OperationalJobTarget } from '@/features/system-status/lib/operationalJobs';
-import type { RunRecordResponse } from '@/services/backtestApi';
 
-const { triggerJobSpy, setJobSuspendedSpy, refreshRunsSpy, jobLogStreamSpy, runListState } =
-  vi.hoisted(() => ({
-    triggerJobSpy: vi.fn(),
-    setJobSuspendedSpy: vi.fn(),
-    refreshRunsSpy: vi.fn(),
-    jobLogStreamSpy: vi.fn(),
-    runListState: {
-      runs: [] as RunRecordResponse[],
-      loading: false,
-      error: undefined as string | undefined
-    }
-  }));
+const { triggerJobSpy, setJobSuspendedSpy } = vi.hoisted(() => ({
+  triggerJobSpy: vi.fn(),
+  setJobSuspendedSpy: vi.fn()
+}));
+
+const BACKTEST_JOB_AZURE_ID =
+  '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner';
+const BACKTEST_JOB_AZURE_URL =
+  'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner';
 
 vi.mock('@/hooks/useJobTrigger', () => ({
   useJobTrigger: () => ({
@@ -34,21 +29,6 @@ vi.mock('@/hooks/useJobSuspend', () => ({
   })
 }));
 
-vi.mock('@/services/backtestHooks', () => ({
-  useRunList: () => ({
-    ...runListState,
-    refresh: refreshRunsSpy
-  })
-}));
-
-vi.mock('@/features/system-status/components/JobLogStreamPanel', () => ({
-  JobLogStreamPanel: (props: unknown) => {
-    jobLogStreamSpy(props);
-    const selectedJobName = (props as { selectedJobName?: string }).selectedJobName || '';
-    return <div data-testid="mock-operational-log-stream">{selectedJobName}</div>;
-  }
-}));
-
 const JOBS: OperationalJobTarget[] = [
   {
     name: 'aca-job-backtest-runner',
@@ -57,11 +37,12 @@ const JOBS: OperationalJobTarget[] = [
     categoryLabel: 'Backtests',
     jobType: 'backtest',
     runningState: 'Running',
-    recentStatus: 'success',
+    recentStatus: 'running',
     startTime: '2026-04-18T14:31:00Z',
     duration: 120,
     recordsProcessed: 2400,
-    triggeredBy: 'manual'
+    triggeredBy: 'manual',
+    jobUrl: BACKTEST_JOB_AZURE_ID
   },
   {
     name: 'aca-job-ranking-materialize',
@@ -82,6 +63,37 @@ const JOBS: OperationalJobTarget[] = [
     recentStatus: 'failed',
     startTime: '2026-04-18T14:10:00Z',
     triggeredBy: 'schedule'
+  },
+  {
+    name: 'intraday-monitor-job',
+    label: 'intraday-monitor-job',
+    category: 'intraday-monitoring',
+    categoryLabel: 'Intraday Monitoring',
+    recentStatus: null,
+    runningState: null
+  },
+  {
+    name: 'intraday-market-refresh-job',
+    label: 'intraday-market-refresh-job',
+    category: 'intraday-monitoring',
+    categoryLabel: 'Intraday Monitoring',
+    recentStatus: 'success',
+    startTime: '2026-04-18T14:05:00Z',
+    triggeredBy: 'schedule'
+  },
+  {
+    name: 'results-reconcile-job',
+    label: 'results-reconcile-job',
+    category: 'results-reconciliation',
+    categoryLabel: 'Results Reconciliation',
+    recentStatus: null
+  },
+  {
+    name: 'symbol-cleanup-job',
+    label: 'symbol-cleanup-job',
+    category: 'symbol-cleanup',
+    categoryLabel: 'Symbol Cleanup',
+    recentStatus: null
   }
 ];
 
@@ -89,81 +101,53 @@ describe('OperationalJobMonitorPanel', () => {
   beforeEach(() => {
     triggerJobSpy.mockReset();
     setJobSuspendedSpy.mockReset();
-    refreshRunsSpy.mockReset();
-    jobLogStreamSpy.mockClear();
-    runListState.runs = [
-      {
-        run_id: 'run-queued',
-        run_name: 'queued backtest',
-        status: 'queued',
-        submitted_at: '2026-04-18T14:35:00Z',
-        start_date: '2026-01-01',
-        end_date: '2026-04-01'
-      },
-      {
-        run_id: 'run-failed',
-        status: 'failed',
-        submitted_at: '2026-04-18T13:35:00Z',
-        completed_at: '2026-04-18T13:40:00Z',
-        error: 'insufficient bars'
-      }
-    ];
-    runListState.loading = false;
-    runListState.error = undefined;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('renders operational job categories and the backtest application queue', async () => {
+  it('renders the operational job table without summary tiles or category filter controls', () => {
     renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
 
     expect(
-      screen.getByRole('heading', { name: /Backtests, Rankings, and Regime/i })
+      screen.getByRole('heading', { name: /Operational Workflows and Control Jobs/i })
     ).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /aca-job-backtest-runner/i })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /aca-job-ranking-materialize/i })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /aca-job-regime-refresh/i })).toBeInTheDocument();
-    expect(screen.getByText('queued backtest')).toBeInTheDocument();
-    expect(screen.getByText('insufficient bars')).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(jobLogStreamSpy).toHaveBeenCalled();
-    });
-    expect(jobLogStreamSpy.mock.calls.at(-1)?.[0]).toEqual(
-      expect.objectContaining({
-        selectedJobName: 'aca-job-backtest-runner',
-        jobs: expect.arrayContaining([
-          expect.objectContaining({
-            name: 'aca-job-ranking-materialize'
-          })
-        ])
-      })
-    );
+    expect(screen.getByRole('row', { name: /intraday-monitor-job/i })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /results-reconcile-job/i })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /symbol-cleanup-job/i })).toBeInTheDocument();
+    expect(screen.queryByText('Backtest Run Queue')).not.toBeInTheDocument();
+    expect(screen.queryByText('Operational Console Stream')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tracked Jobs')).not.toBeInTheDocument();
+    expect(screen.queryByText('Failure Risk')).not.toBeInTheDocument();
+    expect(screen.queryByText('Classifier')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /All/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rankings/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Intraday Monitoring/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /View logs for/i })).not.toBeInTheDocument();
   });
 
-  it('filters by category and keeps the console selection aligned', async () => {
-    const user = userEvent.setup();
+  it('links Azure actions to the concrete Container App Job overview blade', () => {
     renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
 
-    await user.click(screen.getByRole('button', { name: /Rankings/i }));
+    expect(
+      screen.getByRole('link', { name: 'Open aca-job-backtest-runner in Azure' })
+    ).toHaveAttribute('href', BACKTEST_JOB_AZURE_URL);
+    expect(
+      screen.getByRole('button', { name: 'No Azure job link for aca-job-ranking-materialize' })
+    ).toBeDisabled();
+  });
 
-    expect(screen.queryByRole('row', { name: /aca-job-backtest-runner/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('row', { name: /aca-job-ranking-materialize/i })).toBeInTheDocument();
+  it('opens Azure actions when the icon link is clicked', () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
 
-    await waitFor(() => {
-      expect(jobLogStreamSpy.mock.calls.at(-1)?.[0]).toEqual(
-        expect.objectContaining({
-          selectedJobName: 'aca-job-ranking-materialize',
-          jobs: [
-            expect.objectContaining({
-              name: 'aca-job-ranking-materialize'
-            })
-          ]
-        })
-      );
-    });
+    fireEvent.click(screen.getByRole('link', { name: 'Open aca-job-backtest-runner in Azure' }));
+
+    expect(openSpy).toHaveBeenCalledWith(BACKTEST_JOB_AZURE_URL, '_blank', 'noopener,noreferrer');
   });
 
   it('runs stopped jobs and stops running managed jobs', () => {
@@ -176,21 +160,30 @@ describe('OperationalJobMonitorPanel', () => {
     expect(setJobSuspendedSpy).toHaveBeenCalledWith('aca-job-backtest-runner', true);
   });
 
-  it('selects a job for the focused log stream from the table action', async () => {
-    renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
+  it('stops a live running managed job even when the latest execution is failed', () => {
+    renderWithProviders(
+      <OperationalJobMonitorPanel
+        jobs={[
+          {
+            ...JOBS[0],
+            recentStatus: 'failed',
+            runningState: 'Running'
+          }
+        ]}
+      />
+    );
 
-    fireEvent.click(screen.getByRole('button', { name: 'View logs for aca-job-regime-refresh' }));
+    expect(
+      within(screen.getByRole('row', { name: /aca-job-backtest-runner/i })).getByText('RUNNING')
+    ).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-operational-log-stream')).toHaveTextContent(
-        'aca-job-regime-refresh'
-      );
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Stop aca-job-backtest-runner' }));
+
+    expect(setJobSuspendedSpy).toHaveBeenCalledWith('aca-job-backtest-runner', true);
+    expect(triggerJobSpy).not.toHaveBeenCalled();
   });
 
   it('renders a precise empty state when no operational telemetry is visible', () => {
-    runListState.runs = [];
-
     renderWithProviders(<OperationalJobMonitorPanel jobs={[]} />);
 
     expect(screen.getByText(/No operational jobs are currently visible/i)).toBeInTheDocument();

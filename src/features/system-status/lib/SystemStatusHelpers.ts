@@ -72,7 +72,7 @@ export const getStatusConfig = (status: string): StatusConfig => {
       return { ...StatusColors.CRITICAL, icon: AlertOctagon };
     case 'running':
       // Use Loader2 + Spin for active running states
-      return { ...StatusColors.NEUTRAL, icon: Loader2, animation: 'spin' };
+      return { ...StatusColors.ACTIVE, icon: Loader2, animation: 'spin' };
     case 'pending':
       return { ...StatusColors.NEUTRAL, icon: Clock };
     default:
@@ -108,16 +108,16 @@ export const getStatusIcon = (status: string) => {
  */
 export const getStatusBadge = (status: string) => {
   const styles: Record<string, string> = {
-    healthy: 'bg-green-100 text-green-800 hover:bg-green-100 border-green-200',
-    success: 'bg-green-100 text-green-800 hover:bg-green-100 border-green-200',
-    degraded: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100 border-yellow-200',
-    stale: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100 border-yellow-200',
-    warning: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100 border-yellow-200',
-    critical: 'bg-red-100 text-red-800 hover:bg-red-100 border-red-200',
-    error: 'bg-red-100 text-red-800 hover:bg-red-100 border-red-200',
-    failed: 'bg-red-100 text-red-800 hover:bg-red-100 border-red-200',
-    running: 'bg-blue-100 text-blue-800 hover:bg-blue-100 border-blue-200',
-    pending: 'bg-gray-100 text-gray-800 hover:bg-gray-100 border-gray-200'
+    healthy: 'bg-emerald-200 text-emerald-950 hover:bg-emerald-200 border-emerald-500',
+    success: 'bg-emerald-200 text-emerald-950 hover:bg-emerald-200 border-emerald-500',
+    degraded: 'bg-amber-200 text-amber-950 hover:bg-amber-200 border-amber-500',
+    stale: 'bg-amber-200 text-amber-950 hover:bg-amber-200 border-amber-500',
+    warning: 'bg-amber-200 text-amber-950 hover:bg-amber-200 border-amber-500',
+    critical: 'bg-red-200 text-red-950 hover:bg-red-200 border-red-500',
+    error: 'bg-red-200 text-red-950 hover:bg-red-200 border-red-500',
+    failed: 'bg-red-200 text-red-950 hover:bg-red-200 border-red-500',
+    running: 'bg-sky-200 text-sky-950 hover:bg-sky-200 border-sky-500',
+    pending: 'bg-slate-200 text-slate-950 hover:bg-slate-200 border-slate-500'
   };
 
   return React.createElement(
@@ -352,6 +352,21 @@ export const resolveManagedJobName = ({
   return deriveManagedJobName(layerName, domainName);
 };
 
+export const resolveRunnableJobName = ({
+  jobName,
+  jobUrl
+}: {
+  jobName?: string | null;
+  jobUrl?: string | null;
+}) => {
+  const explicitJobName = String(jobName || '').trim();
+  if (explicitJobName) {
+    return explicitJobName;
+  }
+
+  return extractAzureJobName(jobUrl);
+};
+
 export const selectAnchoredJobRun = <T extends AnchoredJobRunLike>(runs: T[] = []): T | null => {
   let selected: T | null = null;
 
@@ -379,7 +394,19 @@ export const selectAnchoredJobRun = <T extends AnchoredJobRunLike>(runs: T[] = [
   return selected;
 };
 
-export const buildAnchoredJobRunIndex = (recentJobs: JobRun[] = []): Map<string, JobRun> => {
+export const selectLatestJobRun = <T extends AnchoredJobRunLike>(runs: T[] = []): T | null => {
+  let selected: T | null = null;
+
+  for (const run of runs) {
+    if (!selected || runStartEpoch(run.startTime) > runStartEpoch(selected.startTime)) {
+      selected = run;
+    }
+  }
+
+  return selected;
+};
+
+export const buildLatestJobRunIndex = (recentJobs: JobRun[] = []): Map<string, JobRun> => {
   const index = new Map<string, JobRun>();
 
   for (const job of recentJobs) {
@@ -387,18 +414,13 @@ export const buildAnchoredJobRunIndex = (recentJobs: JobRun[] = []): Map<string,
     if (!key) continue;
 
     const existing = index.get(key);
-    const selected = selectAnchoredJobRun(existing ? [existing, job] : [job]);
+    const selected = selectLatestJobRun(existing ? [existing, job] : [job]);
     if (selected) {
       index.set(key, selected);
     }
   }
 
   return index;
-};
-
-// Backward-compatible alias for older imports. The selection is active-aware now.
-export const buildLatestJobRunIndex = (recentJobs: JobRun[] = []): Map<string, JobRun> => {
-  return buildAnchoredJobRunIndex(recentJobs);
 };
 
 export const normalizeJobStatus = (value?: string | null): NormalizedJobStatus => {
@@ -460,9 +482,8 @@ export const effectiveJobStatus = (
   if (isSuspendedJobRunningState(runningState)) {
     return 'pending';
   }
-  const normalizedRunStatus = normalizeJobStatus(runStatus);
   if (normalizeJobStateToken(runStatus)) {
-    return normalizedRunStatus;
+    return normalizeJobStatus(runStatus);
   }
   return normalizeJobStatus(runningState);
 };

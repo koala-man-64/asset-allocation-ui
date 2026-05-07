@@ -6,20 +6,19 @@ import { DataQualityPage } from '@/features/data-quality/DataQualityPage';
 import { DataService } from '@/services/DataService';
 import type { SystemHealth } from '@/types/strategy';
 
-const { mockUseSystemHealthQuery, mockUseLineageQuery, mockGetLastSystemHealthMeta } = vi.hoisted(
-  () => ({
-    mockUseSystemHealthQuery: vi.fn(),
+const { mockUseDataQualityHealthQuery, mockUseLineageQuery, mockGetLastDataQualityHealthMeta } =
+  vi.hoisted(() => ({
+    mockUseDataQualityHealthQuery: vi.fn(),
     mockUseLineageQuery: vi.fn(),
-    mockGetLastSystemHealthMeta: vi.fn(() => null)
-  })
-);
+    mockGetLastDataQualityHealthMeta: vi.fn(() => null)
+  }));
 
 vi.mock('@/hooks/useDataQueries', () => ({
-  useSystemHealthQuery: mockUseSystemHealthQuery,
+  useDataQualityHealthQuery: mockUseDataQualityHealthQuery,
   useLineageQuery: mockUseLineageQuery,
-  getLastSystemHealthMeta: mockGetLastSystemHealthMeta,
+  getLastDataQualityHealthMeta: mockGetLastDataQualityHealthMeta,
   queryKeys: {
-    systemHealth: () => ['systemHealth']
+    dataQualityHealth: () => ['dataQualityHealth']
   }
 }));
 
@@ -63,7 +62,7 @@ function makeHealthData(): SystemHealth {
 describe('DataQualityPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseSystemHealthQuery.mockReturnValue({
+    mockUseDataQualityHealthQuery.mockReturnValue({
       data: makeHealthData(),
       isLoading: false,
       error: null,
@@ -159,7 +158,7 @@ describe('DataQualityPage', () => {
   });
 
   it('renders loading state', () => {
-    mockUseSystemHealthQuery.mockReturnValue({
+    mockUseDataQualityHealthQuery.mockReturnValue({
       data: null,
       isLoading: true,
       error: null,
@@ -179,7 +178,7 @@ describe('DataQualityPage', () => {
       layer.domains[0].triggerUrl = 'https://evil.example.com';
     }
 
-    mockUseSystemHealthQuery.mockReturnValue({
+    mockUseDataQualityHealthQuery.mockReturnValue({
       data: healthData,
       isLoading: false,
       error: null,
@@ -201,7 +200,7 @@ describe('DataQualityPage', () => {
       layer.domains[0].triggerUrl = '/api/system/jobs/refresh';
     }
 
-    mockUseSystemHealthQuery.mockReturnValue({
+    mockUseDataQualityHealthQuery.mockReturnValue({
       data: healthData,
       isLoading: false,
       error: null,

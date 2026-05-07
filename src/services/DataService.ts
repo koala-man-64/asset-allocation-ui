@@ -31,11 +31,24 @@ import type {
   DataProfilingResponse,
   StorageUsageResponse
 } from '@/services/apiService';
-import type { StockScreenerResponse } from '@/services/apiService';
+import type { StockScreenerRequestParams, StockScreenerResponse } from '@/services/apiService';
 import { ApiError, apiService } from '@/services/apiService';
 import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
 export type { FinanceData, MarketData };
+
+export type SystemStatusViewFetchStatus = 'direct' | 'fallback' | 'error';
+
+export interface SystemStatusViewFetchMeta {
+  status: SystemStatusViewFetchStatus;
+  receivedAt: string;
+  message?: string;
+}
+
+export interface SystemStatusViewFetchResult {
+  data: SystemStatusViewResponse;
+  meta: SystemStatusViewFetchMeta;
+}
 
 const SUPPRESSED_SESSION_AUTH_MESSAGE =
   'Interactive sign-in was suppressed because /auth/session succeeded recently';
@@ -52,13 +65,15 @@ function isKnownSystemStatusFallbackError(error: unknown): boolean {
   return error.status === 401 && error.message.includes(SUPPRESSED_SESSION_AUTH_MESSAGE);
 }
 
-async function shouldUseSystemStatusFallback(error: unknown): Promise<boolean> {
-  if (isKnownSystemStatusFallbackError(error)) {
-    return true;
-  }
+function isUnauthenticatedSessionStatusError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
 
+async function confirmSessionAfterSystemStatus401(
+  error: unknown
+): Promise<ResponseWithMeta<AuthSessionStatus> | null> {
   if (!(error instanceof ApiError) || error.status !== 401) {
-    return false;
+    return null;
   }
 
   try {
@@ -73,7 +88,7 @@ async function shouldUseSystemStatusFallback(error: unknown): Promise<boolean> {
       },
       'warn'
     );
-    return true;
+    return session;
   } catch (sessionError) {
     logUiDiagnostic(
       'DataService',
@@ -84,7 +99,7 @@ async function shouldUseSystemStatusFallback(error: unknown): Promise<boolean> {
       },
       'warn'
     );
-    return false;
+    return null;
   }
 }
 
@@ -137,6 +152,30 @@ async function buildFallbackSystemStatusView(
   };
 }
 
+function systemStatusViewFetchMeta(
+  status: SystemStatusViewFetchStatus,
+  message?: string
+): SystemStatusViewFetchMeta {
+  return {
+    status,
+    receivedAt: new Date().toISOString(),
+    ...(message ? { message } : {})
+  };
+}
+
+async function buildFallbackSystemStatusViewResult(
+  params: { refresh?: boolean },
+  cause: unknown,
+  signal?: AbortSignal
+): Promise<SystemStatusViewFetchResult> {
+  const data = await buildFallbackSystemStatusView(params, cause, signal);
+  const message = cause instanceof Error ? cause.message : String(cause ?? 'Unknown error');
+  return {
+    data,
+    meta: systemStatusViewFetchMeta('fallback', message)
+  };
+}
+
 export const DataService = {
   getMarketData(
     ticker: string,
@@ -186,7 +225,9 @@ export const DataService = {
       const response = await apiService.getAuthSessionStatusWithMeta();
       return response;
     } catch (error) {
-      console.error('[DataService] getAuthSessionStatusWithMeta error', error);
+      if (!isUnauthenticatedSessionStatusError(error)) {
+        console.error('[DataService] getAuthSessionStatusWithMeta error', error);
+      }
       throw error;
     }
   },
@@ -207,18 +248,72 @@ export const DataService = {
     return apiService.getDomainMetadataSnapshot(params, signal);
   },
 
+  async getSystemStatusViewResult(
+    params: { refresh?: boolean } = {},
+    signal?: AbortSignal
+  ): Promise<SystemStatusViewFetchResult> {
+    try {
+      const data = await apiService.getSystemStatusView(params, signal);
+      return {
+        data,
+        meta: systemStatusViewFetchMeta('direct')
+      };
+    } catch (error) {
+      if (isKnownSystemStatusFallbackError(error)) {
+        return buildFallbackSystemStatusViewResult(params, error, signal);
+      }
+
+      const session = await confirmSessionAfterSystemStatus401(error);
+      if (session) {
+        try {
+          const retry = await apiService.getSystemStatusView(params, signal);
+          logUiDiagnostic(
+            'DataService',
+            'system-status-view-401-retry-succeeded',
+            {
+              sessionRequestId: session.meta.requestId,
+              authMode: session.data.authMode,
+              grantedRoles: session.data.grantedRoles
+            },
+            'warn'
+          );
+          return {
+            data: retry,
+            meta: systemStatusViewFetchMeta('direct')
+          };
+        } catch (retryError) {
+          logUiDiagnostic(
+            'DataService',
+            'system-status-view-401-retry-failed',
+            {
+              sessionRequestId: session.meta.requestId,
+              retryError:
+                retryError instanceof Error
+                  ? retryError.message
+                  : String(retryError ?? 'Unknown error')
+            },
+            'warn'
+          );
+          if (isKnownSystemStatusFallbackError(retryError)) {
+            return buildFallbackSystemStatusViewResult(params, retryError, signal);
+          }
+          if (retryError instanceof ApiError && retryError.status === 401) {
+            return buildFallbackSystemStatusViewResult(params, retryError, signal);
+          }
+          throw retryError;
+        }
+      }
+
+      throw error;
+    }
+  },
+
   async getSystemStatusView(
     params: { refresh?: boolean } = {},
     signal?: AbortSignal
   ): Promise<SystemStatusViewResponse> {
-    try {
-      return await apiService.getSystemStatusView(params, signal);
-    } catch (error) {
-      if (await shouldUseSystemStatusFallback(error)) {
-        return buildFallbackSystemStatusView(params, error, signal);
-      }
-      throw error;
-    }
+    const result = await DataService.getSystemStatusViewResult(params, signal);
+    return result.data;
   },
 
   getPersistedDomainMetadataSnapshotCache(): Promise<DomainMetadataSnapshotResponse> {
@@ -282,14 +377,7 @@ export const DataService = {
   },
 
   getStockScreener(
-    params: {
-      q?: string;
-      limit?: number;
-      offset?: number;
-      asOf?: string;
-      sort?: string;
-      direction?: 'asc' | 'desc';
-    } = {},
+    params: StockScreenerRequestParams = {},
     signal?: AbortSignal
   ): Promise<StockScreenerResponse> {
     return apiService.getStockScreener(params, signal);

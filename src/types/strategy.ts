@@ -1,14 +1,21 @@
 // Core data types for the Strategy & Backtest Evaluation Dashboard
 
 import type {
+  ExitRule,
+  IntrabarConflictPolicy,
   RankingSchemaConfig,
+  RebalancePolicy,
+  RegimePolicy,
   StrategyConfig,
+  StrategyComponentRefs,
   UniverseConditionOperator as ContractUniverseConditionOperator,
   UniverseSource,
-  UniverseValue,
+  UniverseValue
 } from '@asset-allocation/contracts';
 
 export type {
+  ConfigIdentity,
+  ConfigReference,
   ExitRule,
   ExitRuleAction,
   ExitRulePriceField,
@@ -23,17 +30,222 @@ export type {
   RankingSchemaConfig,
   RankingTransform,
   RankingTransformType,
+  RebalancePolicy,
+  RebalancePolicyPreset,
   RegimeCode,
   RegimePolicy,
   RegimePolicyMode,
+  ReusableConfigIntendedUse,
+  ReusableConfigStatus,
+  ReusableRebalanceAnchor,
+  ReusableRebalanceCadence,
+  ReusableRebalanceDayRule,
   StrategyConfig,
+  StrategyComponentRefs,
   UniverseSource,
   UniverseValue
 } from '@asset-allocation/contracts';
 
 export type UniverseConditionOperator = ContractUniverseConditionOperator;
+export type RegimePolicyWithVersion = RegimePolicy & { modelVersion?: number | null };
+
+export type StrategyRiskPolicyScope = 'strategy' | 'sleeve';
+export type StrategyRiskStopLossBasis = 'strategy_nav_drawdown' | 'sleeve_nav_drawdown';
+export type StrategyRiskTakeProfitBasis = 'strategy_nav_gain' | 'sleeve_nav_gain';
+export type StrategyRiskStopLossAction = 'reduce_exposure' | 'liquidate' | 'freeze_buys';
+export type StrategyRiskTakeProfitAction = 'reduce_exposure' | 'rebalance_to_target';
+
+export interface StrategyRiskStopLossPolicy {
+  id: string;
+  enabled: boolean;
+  basis: StrategyRiskStopLossBasis;
+  thresholdPct: number;
+  action: StrategyRiskStopLossAction;
+  reductionPct?: number | null;
+}
+
+export interface StrategyRiskTakeProfitPolicy {
+  id: string;
+  enabled: boolean;
+  basis: StrategyRiskTakeProfitBasis;
+  thresholdPct: number;
+  action: StrategyRiskTakeProfitAction;
+  reductionPct?: number | null;
+}
+
+export interface StrategyRiskReentryPolicy {
+  cooldownBars: number;
+  requireApproval: boolean;
+}
+
+export interface StrategyRiskPolicy {
+  enabled: boolean;
+  scope: StrategyRiskPolicyScope;
+  stopLoss?: StrategyRiskStopLossPolicy | null;
+  takeProfit?: StrategyRiskTakeProfitPolicy | null;
+  reentry: StrategyRiskReentryPolicy;
+}
 
 export type UniverseGroupOperator = 'and' | 'or';
+export type StrategyConfigWithRiskPolicy = StrategyConfig & {
+  componentRefs?: StrategyComponentRefs | null;
+  universeConfigVersion?: number | null;
+  rankingSchemaVersion?: number | null;
+  regimePolicyConfigName?: string | null;
+  regimePolicyConfigVersion?: number | null;
+  riskPolicyName?: string | null;
+  riskPolicyVersion?: number | null;
+  exitRuleSetName?: string | null;
+  exitRuleSetVersion?: number | null;
+  regimePolicy?: RegimePolicyWithVersion | null;
+  riskPolicy?: StrategyRiskPolicy | null;
+  strategyRiskPolicy?: StrategyRiskPolicy | null;
+  rebalancePolicy?: RebalancePolicy | null;
+};
+
+export interface ConfigSaveResponse {
+  status: string;
+  message: string;
+  version: number;
+}
+
+export interface ConfigMutationResponse {
+  status: string;
+  message: string;
+}
+
+export interface ConfigRevisionSummary<ConfigShape> {
+  name: string;
+  version: number;
+  description?: string;
+  config: ConfigShape;
+  configHash?: string | null;
+  createdAt?: string | null;
+  createdBy?: string | null;
+}
+
+export interface ReusableConfigMetadata {
+  status?: 'draft' | 'active' | 'deprecated';
+  intendedUse?: 'research' | 'validation' | 'production_candidate';
+  thesis?: string;
+  whatToMonitor?: string[];
+}
+
+export interface RegimePolicyConfig {
+  modelName: string;
+  modelVersion?: number | null;
+  mode: 'observe_only';
+}
+
+export interface RegimePolicyConfigSummary extends ReusableConfigMetadata {
+  name: string;
+  description?: string;
+  version: number;
+  archived?: boolean;
+  usageCount?: number;
+  modelName?: string;
+  modelVersion?: number | null;
+  mode?: 'observe_only';
+  updatedAt?: string | null;
+}
+
+export type RegimePolicyConfigRevision = ConfigRevisionSummary<RegimePolicyConfig>;
+
+export interface RegimePolicyConfigDetail {
+  policy: RegimePolicyConfigSummary;
+  activeRevision?: RegimePolicyConfigRevision | null;
+  revisions: RegimePolicyConfigRevision[];
+}
+
+export interface RegimePolicyConfigUpsertRequest extends ReusableConfigMetadata {
+  name: string;
+  description?: string;
+  config: RegimePolicyConfig;
+}
+
+export interface RiskPolicyConfig {
+  policy: StrategyRiskPolicy;
+}
+
+export interface RiskPolicyConfigSummary extends ReusableConfigMetadata {
+  name: string;
+  description?: string;
+  version: number;
+  archived?: boolean;
+  usageCount?: number;
+  updatedAt?: string | null;
+}
+
+export type RiskPolicyConfigRevision = ConfigRevisionSummary<RiskPolicyConfig>;
+
+export interface RiskPolicyConfigDetail {
+  policy: RiskPolicyConfigSummary;
+  activeRevision?: RiskPolicyConfigRevision | null;
+  revisions: RiskPolicyConfigRevision[];
+}
+
+export interface RiskPolicyConfigUpsertRequest extends ReusableConfigMetadata {
+  name: string;
+  description?: string;
+  config: RiskPolicyConfig;
+}
+
+export interface ExitRuleSetConfig {
+  intrabarConflictPolicy: IntrabarConflictPolicy;
+  exits: ExitRule[];
+}
+
+export interface ExitRuleSetSummary extends ReusableConfigMetadata {
+  name: string;
+  description?: string;
+  version: number;
+  archived?: boolean;
+  usageCount?: number;
+  ruleCount?: number;
+  updatedAt?: string | null;
+}
+
+export type ExitRuleSetRevision = ConfigRevisionSummary<ExitRuleSetConfig>;
+
+export interface ExitRuleSetDetail {
+  ruleSet: ExitRuleSetSummary;
+  activeRevision?: ExitRuleSetRevision | null;
+  revisions: ExitRuleSetRevision[];
+}
+
+export interface ExitRuleSetUpsertRequest extends ReusableConfigMetadata {
+  name: string;
+  description?: string;
+  config: ExitRuleSetConfig;
+}
+
+export type RebalancePolicyConfig = RebalancePolicy;
+
+export interface RebalancePolicySummary extends ReusableConfigMetadata {
+  name: string;
+  description?: string;
+  version: number;
+  archived?: boolean;
+  usageCount?: number;
+  cadence?: RebalancePolicy['cadence'];
+  dayRule?: RebalancePolicy['dayRule'];
+  anchor?: RebalancePolicy['anchor'];
+  updatedAt?: string | null;
+}
+
+export type RebalancePolicyRevision = ConfigRevisionSummary<RebalancePolicyConfig>;
+
+export interface RebalancePolicyDetail {
+  policy: RebalancePolicySummary;
+  activeRevision?: RebalancePolicyRevision | null;
+  revisions: RebalancePolicyRevision[];
+}
+
+export interface RebalancePolicyUpsertRequest extends ReusableConfigMetadata {
+  name: string;
+  description?: string;
+  config: RebalancePolicyConfig | { policy: RebalancePolicyConfig };
+}
 
 export type JobCategory = 'data-pipeline' | 'strategy-compute' | 'operational-support';
 export type JobMetadataSource = 'tags' | 'legacy-catalog' | 'unknown';
@@ -182,7 +394,7 @@ export interface StrategySummary {
 }
 
 export interface StrategyDetail extends StrategySummary {
-  config: StrategyConfig;
+  config: StrategyConfigWithRiskPolicy;
 }
 
 export interface UniverseConfigSummary {
@@ -280,9 +492,9 @@ export interface DataDomain {
   version?: number | null;
   description?: string;
   portalUrl?: string;
-  jobUrl?: string;
-  jobName?: string;
-  triggerUrl?: string;
+  jobUrl?: string | null;
+  jobName?: string | null;
+  triggerUrl?: string | null;
   frequency?: string;
   cron?: string;
   maxAgeSeconds?: number;
@@ -367,6 +579,8 @@ export interface JobRun {
   errors?: string[];
   warnings?: string[];
   metadata?: JobRunMetadata;
+  executionId?: string | null;
+  executionName?: string | null;
 }
 
 export interface SystemAlert {

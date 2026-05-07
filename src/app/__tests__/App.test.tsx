@@ -1,10 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/utils';
 import App from '../App';
 
+const mockDataExplorerThrows = vi.hoisted(() => ({ value: false }));
+
 vi.mock('@/hooks/useRealtime', () => ({
   useRealtime: () => undefined
+}));
+
+vi.mock('@/app/components/layout/prefetchNavigationData', () => ({
+  prefetchNavigationData: vi.fn()
 }));
 
 vi.mock('@/config', () => ({
@@ -52,7 +59,12 @@ vi.mock('@/features/system-status/SystemStatusPage', () => ({
 }));
 
 vi.mock('@/features/data-explorer/DataExplorerPage', () => ({
-  DataExplorerPage: () => <div data-testid="mock-data-explorer">Mock Data Explorer</div>
+  DataExplorerPage: () => {
+    if (mockDataExplorerThrows.value) {
+      throw new Error('Data explorer route failed');
+    }
+    return <div data-testid="mock-data-explorer">Mock Data Explorer</div>;
+  }
 }));
 
 vi.mock('@/features/regimes/RegimeMonitorPage', () => ({
@@ -61,6 +73,10 @@ vi.mock('@/features/regimes/RegimeMonitorPage', () => ({
 
 vi.mock('@/features/strategies/StrategyConfigPage', () => ({
   StrategyConfigPage: () => <div data-testid="mock-strategy-config">Mock Strategy Workbench</div>
+}));
+
+vi.mock('@/features/backtests/BacktestWorkspacePage', () => ({
+  BacktestWorkspacePage: () => <div data-testid="mock-backtest-workspace">Mock Backtest Workspace</div>
 }));
 
 vi.mock('@/features/portfolios/PortfolioWorkspacePage', () => ({
@@ -85,11 +101,6 @@ vi.mock('@/features/rankings/RankingConfigPage', () => ({
   RankingConfigPage: () => <div data-testid="mock-ranking-config">Mock Ranking Workbench</div>
 }));
 
-vi.mock('@/features/strategy-exploration/StrategyDataCatalogPage', () => ({
-  StrategyDataCatalogPage: () => (
-    <div data-testid="mock-strategy-data-catalog">Mock Strategy Data Catalog</div>
-  )
-}));
 vi.mock('@/features/symbol-enrichment/SymbolEnrichmentPage', () => ({
   SymbolEnrichmentPage: () => <div data-testid="mock-symbol-enrichment">Mock Symbol Enrichment</div>
 }));
@@ -98,6 +109,10 @@ vi.mock('@/features/intraday-monitor/IntradayMonitorPage', () => ({
 }));
 
 describe('App Smoke Test', () => {
+  beforeEach(() => {
+    mockDataExplorerThrows.value = false;
+  });
+
   it('redirects the root shell entrypoint to system status', async () => {
     window.history.pushState({}, 'Root', '/');
     renderWithProviders(<App />);
@@ -112,6 +127,82 @@ describe('App Smoke Test', () => {
     window.history.pushState({}, 'System Status', '/system-status');
     renderWithProviders(<App />);
     expect(await screen.findByTestId('mock-system-status')).toBeInTheDocument();
+  });
+
+  it('clicks left navigation links and replaces the visible route content', async () => {
+    const user = userEvent.setup();
+    window.history.pushState({}, 'Configurations', '/strategy-configurations');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByText('Configuration Library')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Strategies', { selector: 'a' }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/strategies');
+      expect(screen.getByTestId('mock-strategy-config')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Configuration Library')).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Backtests', { selector: 'a' }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/backtests');
+      expect(screen.getByTestId('mock-backtest-workspace')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('mock-strategy-config')).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('System Status', { selector: 'a' }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/system-status');
+      expect(screen.getByTestId('mock-system-status')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('mock-backtest-workspace')).not.toBeInTheDocument();
+  });
+
+  it('resets the app viewport when the protected route pathname changes', async () => {
+    const user = userEvent.setup();
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    window.history.pushState({}, 'Configurations', '/strategy-configurations');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByText('Configuration Library')).toBeInTheDocument();
+    scrollTo.mockClear();
+    const scrollContainer = document.querySelector<HTMLElement>('[data-app-scroll-container="true"]');
+    expect(scrollContainer).toBeTruthy();
+    scrollContainer!.scrollTop = 300;
+
+    await user.click(screen.getByLabelText('Strategies', { selector: 'a' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-strategy-config')).toBeInTheDocument();
+      expect(scrollContainer!.scrollTop).toBe(0);
+      expect(scrollTo).toHaveBeenCalled();
+    });
+
+    scrollTo.mockRestore();
+  });
+
+  it('resets a route error boundary when navigating to a different pathname', async () => {
+    const user = userEvent.setup();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockDataExplorerThrows.value = true;
+    window.history.pushState({}, 'Data Explorer', '/data-explorer');
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
+    mockDataExplorerThrows.value = false;
+
+    await user.click(screen.getByLabelText('Strategies', { selector: 'a' }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/strategies');
+      expect(screen.getByTestId('mock-strategy-config')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+
+    consoleError.mockRestore();
   });
 
   it('shows a transition indicator when navigating between routes', async () => {
@@ -145,6 +236,13 @@ describe('App Smoke Test', () => {
     renderWithProviders(<App />);
 
     expect(await screen.findByTestId('mock-strategy-config')).toBeInTheDocument();
+  });
+
+  it('renders the backtest workspace route through the application shell', async () => {
+    window.history.pushState({}, 'Backtests', '/backtests');
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('mock-backtest-workspace')).toBeInTheDocument();
   });
 
   it('renders the ranking workbench route through the application shell', async () => {
@@ -207,6 +305,7 @@ describe('App Smoke Test', () => {
     '/run-configurations',
     '/universe-configurations',
     '/ranking-configurations',
+    '/strategy-exploration',
     '/strategy-exploration/data-catalog',
     '/data-admin/symbol-purge'
   ])('redirects removed alias route %s back to the canonical shell entrypoint', async (path) => {

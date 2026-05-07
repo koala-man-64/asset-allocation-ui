@@ -11,7 +11,7 @@ export function prefetchNavigationData(queryClient: QueryClient, path: string): 
 
   if (path === '/data-quality') {
     queryClient.prefetchQuery({
-      queryKey: queryKeys.systemHealth(),
+      queryKey: queryKeys.dataQualityHealth(),
       queryFn: async () => {
         const response = await DataService.getSystemHealthWithMeta();
         return response.data;

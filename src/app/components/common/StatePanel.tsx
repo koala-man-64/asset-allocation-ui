@@ -16,11 +16,11 @@ interface StatePanelProps {
 }
 
 const toneClassNames: Record<StateTone, string> = {
-  default: 'border-border/60 bg-background/70 text-foreground',
-  info: 'border-mcm-teal/25 bg-accent/30 text-foreground',
-  warning: 'border-mcm-mustard/30 bg-mcm-cream/80 text-foreground',
-  error: 'border-destructive/30 bg-destructive/10 text-destructive',
-  empty: 'border-dashed border-mcm-walnut/35 bg-mcm-cream/70 text-muted-foreground'
+  default: 'border-border bg-card text-foreground',
+  info: 'border-cyan-400/35 bg-cyan-950/25 text-foreground',
+  warning: 'border-yellow-300/35 bg-yellow-950/20 text-foreground',
+  error: 'border-destructive/45 bg-destructive/10 text-destructive-foreground',
+  empty: 'border-dashed border-border bg-[#0b1326] text-muted-foreground'
 };
 
 export function StatePanel({
@@ -34,14 +34,14 @@ export function StatePanel({
   children
 }: StatePanelProps) {
   return (
-    <div className={cn('rounded-[1.5rem] border p-5 shadow-sm', toneClassNames[tone], className)}>
+    <div className={cn('rounded-sm border p-3 shadow-none', toneClassNames[tone], className)}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className={cn('min-w-0 flex-1', contentClassName)}>
-          <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em]">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase">
             {icon ? <span className="shrink-0">{icon}</span> : null}
             <span>{title}</span>
           </div>
-          <div className="mt-3 text-sm leading-6">{message}</div>
+          <div className="mt-2 text-xs leading-5">{message}</div>
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
       </div>

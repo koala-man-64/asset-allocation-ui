@@ -8,6 +8,18 @@ on:
         description: Full container image reference with digest
         required: true
         type: string
+      release_run_id:
+        description: Successful UI Release workflow run ID that produced the digest
+        required: true
+        type: string
+      release_git_sha:
+        description: Git SHA for the successful UI Release workflow run
+        required: true
+        type: string
+      rollback_reason:
+        description: Production rollback reason
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -19,11 +31,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  validate-dispatch-ref:
-    name: validate-dispatch-ref
+  resolve-rollback:
+    name: resolve-rollback
     runs-on: ubuntu-22.04
     env:
       API_UPSTREAM: ${{ vars.API_UPSTREAM }}
+      ROLLBACK_REASON: ${{ inputs.rollback_reason }}
+    outputs:
+      image_digest: ${{ steps.rollback.outputs.image_digest }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -37,6 +52,7 @@ jobs:
             exit 1
           fi
           : "${API_UPSTREAM:?vars.API_UPSTREAM is required}"
+          : "${ROLLBACK_REASON:?rollback_reason is required}"
 
       - name: Validate required repo deploy vars
         env:
@@ -49,10 +65,30 @@ jobs:
             --mode prod-runtime \
             --vars-json "${REPO_VARS_JSON}"
 
+      - name: Verify guarded rollback artifact
+        id: rollback
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/workflows/resolve_release_image_digest.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --branch main \
+            --workflow release.yml \
+            --artifact ui-release \
+            --image-repository asset-allocation-ui \
+            --run-id "${{ inputs.release_run_id }}" \
+            --expected-digest "${{ inputs.image_digest }}" \
+            --expected-git-sha "${{ inputs.release_git_sha }}" \
+            --allow-rollback \
+            --max-age-days 14 \
+            --github-output "$GITHUB_OUTPUT"
+
   rollback-prod:
     name: rollback-prod
-    needs: validate-dispatch-ref
+    needs: resolve-rollback
     uses: ./.github/workflows/deploy-ui-runtime.yml
     with:
-      image_digest: ${{ inputs.image_digest }}
+      image_digest: ${{ needs.resolve-rollback.outputs.image_digest }}
     secrets: inherit

@@ -13,7 +13,8 @@ import {
 } from '@/services/uiDiagnostics';
 
 const API_WARMUP_PATH = '/healthz';
-const API_COLD_START_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const API_WARMUP_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const API_REQUEST_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 502, 503, 504]);
 const API_WARMUP_MAX_ATTEMPTS = 3;
 const API_WARMUP_BASE_DELAY_MS = 500;
 const API_WARMUP_MAX_DELAY_MS = 4000;
@@ -27,8 +28,23 @@ const DOMAIN_METADATA_SNAPSHOT_TIMEOUT_MS = 20_000;
 const SYSTEM_STATUS_VIEW_TIMEOUT_MS = 20_000;
 const AUTH_SESSION_STATUS_ENDPOINT = '/auth/session';
 
+type RequestParamPrimitive = string | number | boolean;
+type RequestParamValue =
+  | RequestParamPrimitive
+  | readonly RequestParamPrimitive[]
+  | null
+  | undefined;
+
 const apiWarmupAttempted = new Set<string>();
 const apiWarmupInFlight = new Map<string, Promise<void>>();
+
+/**
+ * Ensures array fields are never null/undefined from API responses.
+ * Azure SDK may return null instead of empty array; this normalizes to [].
+ */
+function normalizeArrayField<T>(arr: T[] | null | undefined, defaultValue: T[] = []): T[] {
+  return Array.isArray(arr) ? arr : defaultValue;
+}
 
 function logApiRequest(
   event: string,
@@ -48,8 +64,7 @@ function summarizeResponseForLogs(response: Response): Record<string, unknown> {
     server: response.headers.get('Server') ?? null,
     wwwAuthenticate: response.headers.get('Www-Authenticate') ?? null,
     accessControlAllowOrigin: response.headers.get('Access-Control-Allow-Origin') ?? null,
-    accessControlAllowCredentials:
-      response.headers.get('Access-Control-Allow-Credentials') ?? null,
+    accessControlAllowCredentials: response.headers.get('Access-Control-Allow-Credentials') ?? null,
     vary: response.headers.get('Vary') ?? null
   };
 }
@@ -58,8 +73,44 @@ function shouldWarmUpBeforeRequest(endpoint: string): boolean {
   return endpoint !== AUTH_SESSION_STATUS_ENDPOINT && endpoint !== '/realtime/ticket';
 }
 
-function isRetryableStatusCode(statusCode: number): boolean {
-  return API_COLD_START_RETRYABLE_STATUS_CODES.has(statusCode);
+function readCookie(name: string): string {
+  if (typeof document === 'undefined') {
+    return '';
+  }
+
+  const target = `${name}=`;
+  return (
+    document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(target))
+      ?.slice(target.length) ?? ''
+  );
+}
+
+function readCsrfToken(): string {
+  for (const name of CSRF_COOKIE_NAMES) {
+    const token = readCookie(name);
+    if (token) {
+      return decodeURIComponent(token);
+    }
+  }
+  return '';
+}
+
+function appendCookieAuthHeaders(headers: Headers, method: string): Headers {
+  const nextHeaders = new Headers(headers);
+  if (!isSafeReplayMethod(method) && !nextHeaders.has('X-CSRF-Token')) {
+    const csrfToken = readCsrfToken();
+    if (csrfToken) {
+      nextHeaders.set('X-CSRF-Token', csrfToken);
+    }
+  }
+  return nextHeaders;
+}
+
+function isWarmupRetryableStatusCode(statusCode: number): boolean {
+  return API_WARMUP_RETRYABLE_STATUS_CODES.has(statusCode);
 }
 
 function isRetryableFetchError(error: unknown, externalSignal?: AbortSignal | null): boolean {
@@ -103,13 +154,17 @@ function resolveWarmupUrl(apiBaseUrl: string): string {
 function buildRequestUrl(
   apiBaseUrl: string,
   endpoint: string,
-  params?: Record<string, string | number | boolean | undefined>
+  params?: Record<string, RequestParamValue>
 ): string {
   let url = `${apiBaseUrl}${endpoint}`;
   if (params) {
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) {
+      if (Array.isArray(value)) {
+        value.forEach((item) => searchParams.append(key, String(item)));
+        return;
+      }
+      if (value !== undefined && value !== null) {
         searchParams.append(key, String(value));
       }
     });
@@ -121,14 +176,36 @@ function buildRequestUrl(
   return url;
 }
 
-async function appendBearerAuthHeaders(headers: Headers): Promise<Headers> {
-  const nextHeaders = new Headers(headers);
-  if (
-    uiConfig.authProvider === 'oidc' &&
-    uiConfig.oidcEnabled &&
-    !nextHeaders.has('Authorization')
-  ) {
-    nextHeaders.set('Authorization', `Bearer ${await getOidcAccessToken()}`);
+function normalizeCookieSessionApiBaseUrl(apiBaseUrl: string): string {
+  const trimmed = String(apiBaseUrl || '')
+    .trim()
+    .replace(/\/+$/, '');
+  if (!trimmed) {
+    return '/api';
+  }
+  if (typeof window === 'undefined' || !/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+    const normalizedPath = parsed.pathname.replace(/\/+$/, '') || '/api';
+    if (parsed.origin === window.location.origin) {
+      return normalizedPath;
+    }
+
+    logApiRequest(
+      'cookie-session-cross-origin-api-base-coerced',
+      {
+        configuredApiBaseUrl: summarizeUrlForLogs(trimmed),
+        coercedApiBaseUrl: summarizeUrlForLogs(normalizedPath),
+        currentOrigin: window.location.origin
+      },
+      'warn'
+    );
+    return normalizedPath.startsWith('/api') ? normalizedPath : '/api';
+  } catch {
+    return '/api';
   }
   return nextHeaders;
 }
@@ -192,7 +269,7 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
             if (response.status < 400) {
               return;
             }
-            if (!shouldRetry || !isRetryableStatusCode(response.status)) {
+            if (!shouldRetry || !isWarmupRetryableStatusCode(response.status)) {
               return;
             }
           } catch (error) {
@@ -240,7 +317,7 @@ async function warmUpApiOnce(apiBaseUrl: string): Promise<void> {
 }
 
 export interface RequestConfig extends RequestInit {
-  params?: Record<string, string | number | boolean | undefined>;
+  params?: Record<string, RequestParamValue>;
   timeoutMs?: number;
   retryOnStatusCodes?: number[] | false;
   retryAttempts?: number;
@@ -300,14 +377,15 @@ async function performRequest<T>(
       ? new Set<number>()
       : Array.isArray(retryOnStatusCodes)
         ? new Set<number>(retryOnStatusCodes)
-        : API_COLD_START_RETRYABLE_STATUS_CODES;
+        : API_REQUEST_RETRYABLE_STATUS_CODES;
 
   let url = buildRequestUrl(apiBaseUrl, endpoint, params);
 
   const requestHeaders = new Headers(headers);
-  const requestMethod = String(customConfig.method ?? 'GET')
-    .trim()
-    .toUpperCase() || 'GET';
+  const requestMethod =
+    String(customConfig.method ?? 'GET')
+      .trim()
+      .toUpperCase() || 'GET';
   const hasBody = customConfig.body !== undefined && customConfig.body !== null;
   if (hasBody && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json');
@@ -548,13 +626,111 @@ export interface StockScreenerRow {
   sma50d?: number | null;
   sma200d?: number | null;
   trend50_200?: number | null;
-  aboveSma50?: number | null;
+  aboveSma50?: boolean | number | null;
   bbWidth20d?: number | null;
   compressionScore?: number | null;
   volumeZ20d?: number | null;
   volumePctRank252d?: number | null;
-  hasSilver?: number | null;
-  hasGold?: number | null;
+  hasSilver?: boolean | number | null;
+  hasGold?: boolean | number | null;
+}
+
+export type StockScreenerSortDirection = 'asc' | 'desc';
+
+export type StockScreenerSortKey =
+  | 'symbol'
+  | 'close'
+  | 'volume'
+  | 'return_1d'
+  | 'return_5d'
+  | 'vol_20d'
+  | 'drawdown_1y'
+  | 'atr_14d'
+  | 'gap_atr'
+  | 'sma_50d'
+  | 'sma_200d'
+  | 'trend_50_200'
+  | 'above_sma_50'
+  | 'bb_width_20d'
+  | 'compression_score'
+  | 'volume_z_20d'
+  | 'volume_pct_rank_252d';
+
+type StockScreenerStringFilter = string | readonly string[];
+
+export interface StockScreenerRequestParams {
+  q?: string;
+  asOf?: string;
+  as_of?: string;
+  limit?: number;
+  offset?: number;
+  sort?: StockScreenerSortKey;
+  direction?: StockScreenerSortDirection;
+  sectors?: StockScreenerStringFilter;
+  industries?: StockScreenerStringFilter;
+  countries?: StockScreenerStringFilter;
+  is_optionable?: boolean;
+  has_silver?: boolean;
+  has_gold?: boolean;
+  above_sma_50?: boolean;
+  min_close?: number;
+  max_close?: number;
+  min_volume?: number;
+  max_volume?: number;
+  min_return_1d?: number;
+  max_return_1d?: number;
+  min_return_5d?: number;
+  max_return_5d?: number;
+  min_vol_20d?: number;
+  max_vol_20d?: number;
+  min_drawdown_1y?: number;
+  max_drawdown_1y?: number;
+  min_atr_14d?: number;
+  max_atr_14d?: number;
+  min_gap_atr?: number;
+  max_gap_atr?: number;
+  min_sma_50d?: number;
+  max_sma_50d?: number;
+  min_sma_200d?: number;
+  max_sma_200d?: number;
+  min_trend_50_200?: number;
+  max_trend_50_200?: number;
+  min_bb_width_20d?: number;
+  max_bb_width_20d?: number;
+  min_compression_score?: number;
+  max_compression_score?: number;
+  min_volume_z_20d?: number;
+  max_volume_z_20d?: number;
+  min_volume_pct_rank_252d?: number;
+  max_volume_pct_rank_252d?: number;
+}
+
+export interface StockScreenerCoverageSummary {
+  silverRows: number;
+  goldRows: number;
+  bothRows: number;
+  silverPct?: number | null;
+  goldPct?: number | null;
+}
+
+export interface StockScreenerSummary {
+  universeCount: number;
+  filteredCount: number;
+  coverage: StockScreenerCoverageSummary;
+  sectorCount?: number | null;
+  countryCount?: number | null;
+}
+
+export interface StockScreenerFacetBucket {
+  value: string;
+  count: number;
+}
+
+export interface StockScreenerFacets {
+  sectors?: StockScreenerFacetBucket[];
+  industries?: StockScreenerFacetBucket[];
+  countries?: StockScreenerFacetBucket[];
+  coverage?: Partial<StockScreenerCoverageSummary>;
 }
 
 export interface StockScreenerResponse {
@@ -563,6 +739,51 @@ export interface StockScreenerResponse {
   limit: number;
   offset: number;
   rows: StockScreenerRow[];
+  summary?: StockScreenerSummary | null;
+  facets?: StockScreenerFacets | null;
+  filters?: Partial<StockScreenerRequestParams> | null;
+}
+
+function serializeStockScreenerList(value: StockScreenerStringFilter | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    const serialized = value
+      .map((item) => String(item).trim())
+      .filter(Boolean)
+      .join(',');
+    return serialized || undefined;
+  }
+  const serialized = String(value ?? '').trim();
+  return serialized || undefined;
+}
+
+function buildStockScreenerQueryParams(
+  params: StockScreenerRequestParams
+): Record<string, RequestParamValue> {
+  const {
+    asOf,
+    as_of,
+    sectors,
+    industries,
+    countries,
+    q,
+    ...rest
+  } = params;
+  const queryParams: Record<string, RequestParamValue> = {
+    ...rest,
+    q: String(q ?? '').trim() || undefined,
+    as_of: String(asOf ?? as_of ?? '').trim() || undefined,
+    sectors: serializeStockScreenerList(sectors),
+    industries: serializeStockScreenerList(industries),
+    countries: serializeStockScreenerList(countries)
+  };
+
+  Object.keys(queryParams).forEach((key) => {
+    if (queryParams[key] === undefined || queryParams[key] === null || queryParams[key] === '') {
+      delete queryParams[key];
+    }
+  });
+
+  return queryParams;
 }
 
 export interface PurgeRequest {
@@ -1047,7 +1268,20 @@ export const apiService = {
       params,
       signal,
       timeoutMs: SYSTEM_STATUS_VIEW_TIMEOUT_MS
-    });
+    }).then((response) => ({
+      ...response,
+      systemHealth: {
+        ...response.systemHealth,
+        dataLayers: normalizeArrayField(response.systemHealth.dataLayers, []),
+        recentJobs: normalizeArrayField(response.systemHealth.recentJobs, []),
+        alerts: normalizeArrayField(response.systemHealth.alerts, []),
+        resources: normalizeArrayField(response.systemHealth.resources, [])
+      },
+      metadataSnapshot: {
+        ...response.metadataSnapshot,
+        warnings: normalizeArrayField(response.metadataSnapshot.warnings, [])
+      }
+    }));
   },
 
   getPersistedDomainMetadataSnapshotCache(): Promise<DomainMetadataSnapshotResponse> {
@@ -1094,10 +1328,19 @@ export const apiService = {
     params: { runs?: number } = {},
     signal?: AbortSignal
   ): Promise<JobLogsResponse> {
-    return request<JobLogsResponse>(`/system/jobs/${jobName}/logs`, {
+    return request<JobLogsResponse>(`/system/jobs/${encodeURIComponent(jobName)}/logs`, {
       params,
       signal
-    });
+    }).then((response) => ({
+      ...response,
+      runs: Array.isArray(response.runs)
+        ? response.runs.map((run) => ({
+            ...run,
+            consoleLogs: Array.isArray(run.consoleLogs) ? run.consoleLogs : [],
+            tail: Array.isArray(run.tail) ? run.tail : []
+          }))
+        : []
+    }));
   },
 
   getContainerApps(
@@ -1107,7 +1350,10 @@ export const apiService = {
     return request<ContainerAppsStatusResponse>('/system/container-apps', {
       params: { probe: params.probe ?? true },
       signal
-    });
+    }).then((response) => ({
+      ...response,
+      apps: normalizeArrayField(response.apps, [])
+    }));
   },
 
   startContainerApp(appName: string, signal?: AbortSignal): Promise<ContainerAppControlResponse> {
@@ -1148,18 +1394,11 @@ export const apiService = {
   },
 
   getStockScreener(
-    params: {
-      q?: string;
-      limit?: number;
-      offset?: number;
-      asOf?: string;
-      sort?: string;
-      direction?: 'asc' | 'desc';
-    } = {},
+    params: StockScreenerRequestParams = {},
     signal?: AbortSignal
   ): Promise<StockScreenerResponse> {
     return request<StockScreenerResponse>('/data/screener', {
-      params,
+      params: buildStockScreenerQueryParams(params),
       signal
     });
   },

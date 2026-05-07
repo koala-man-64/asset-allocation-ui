@@ -2,9 +2,15 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrategyConfigPage } from '@/features/strategies/StrategyConfigPage';
+import { buildDefaultRiskPolicy } from '@/features/strategies/lib/strategyDraft';
 import { backtestApi } from '@/services/backtestApi';
+import { exitRuleSetApi } from '@/services/exitRuleSetApi';
 import { rankingApi } from '@/services/rankingApi';
+import { rebalancePolicyApi } from '@/services/rebalancePolicyApi';
+import { regimePolicyApi } from '@/services/regimePolicyApi';
+import { riskPolicyApi } from '@/services/riskPolicyApi';
 import { strategyApi } from '@/services/strategyApi';
+import { strategyAnalyticsApi } from '@/services/strategyAnalyticsApi';
 import { universeApi } from '@/services/universeApi';
 import { renderWithProviders } from '@/test/utils';
 import { toast } from 'sonner';
@@ -25,19 +31,60 @@ vi.mock('@/services/backtestApi', () => ({
   backtestApi: {
     listRuns: vi.fn(),
     submitRun: vi.fn(),
-    getTrades: vi.fn()
+    getTrades: vi.fn(),
+    getSummary: vi.fn(),
+    getTimeseries: vi.fn(),
+    getRolling: vi.fn()
   }
 }));
 
 vi.mock('@/services/rankingApi', () => ({
   rankingApi: {
-    listRankingSchemas: vi.fn()
+    listRankingSchemas: vi.fn(),
+    getRankingSchemaDetail: vi.fn(),
+    getRankingCatalog: vi.fn(),
+    saveRankingSchema: vi.fn()
+  }
+}));
+
+vi.mock('@/services/regimePolicyApi', () => ({
+  regimePolicyApi: {
+    listRegimePolicies: vi.fn()
+  }
+}));
+
+vi.mock('@/services/rebalancePolicyApi', () => ({
+  rebalancePolicyApi: {
+    listRebalancePolicies: vi.fn()
+  }
+}));
+
+vi.mock('@/services/riskPolicyApi', () => ({
+  riskPolicyApi: {
+    listRiskPolicies: vi.fn()
+  }
+}));
+
+vi.mock('@/services/exitRuleSetApi', () => ({
+  exitRuleSetApi: {
+    listExitRuleSets: vi.fn()
+  }
+}));
+
+vi.mock('@/services/strategyAnalyticsApi', () => ({
+  strategyAnalyticsApi: {
+    compareStrategies: vi.fn(),
+    getScenarioForecast: vi.fn(),
+    getAllocationExposure: vi.fn(),
+    getTradeHistory: vi.fn()
   }
 }));
 
 vi.mock('@/services/universeApi', () => ({
   universeApi: {
-    listUniverseConfigs: vi.fn()
+    listUniverseConfigs: vi.fn(),
+    getUniverseConfigDetail: vi.fn(),
+    saveUniverseConfig: vi.fn()
   }
 }));
 
@@ -75,6 +122,8 @@ function buildStrategyDetail(name: string, overrides: Partial<Record<string, unk
         modelName: 'default-regime',
         mode: 'observe_only'
       },
+      riskPolicy: buildDefaultRiskPolicy(),
+      strategyRiskPolicy: buildDefaultRiskPolicy(),
       exits: [
         {
           id: 'stop-8',
@@ -105,6 +154,49 @@ describe('StrategyConfigPage', () => {
         updated_at: '2026-03-08T00:00:00Z'
       }
     ]);
+    (rankingApi.getRankingSchemaDetail as Mock).mockResolvedValue({
+      name: 'quality-momentum',
+      description: 'Quality and momentum factors',
+      version: 1,
+      updated_at: '2026-03-08T00:00:00Z',
+      config: {
+        universeConfigName: 'large-cap-quality',
+        groups: [
+          {
+            name: 'Quality',
+            weight: 1,
+            transforms: [{ type: 'percentile_rank', params: {} }],
+            factors: [
+              {
+                name: 'roe',
+                table: 'market_data',
+                column: 'return_20d',
+                weight: 1,
+                direction: 'desc',
+                missingValuePolicy: 'exclude',
+                transforms: [{ type: 'zscore', params: {} }]
+              }
+            ]
+          }
+        ],
+        overallTransforms: []
+      }
+    });
+    (rankingApi.getRankingCatalog as Mock).mockResolvedValue({
+      source: 'postgres_gold',
+      tables: [
+        {
+          name: 'market_data',
+          asOfColumn: 'date',
+          columns: [{ name: 'return_20d', dataType: 'float', valueKind: 'number' }]
+        }
+      ]
+    });
+    (rankingApi.saveRankingSchema as Mock).mockResolvedValue({
+      status: 'ok',
+      message: 'saved',
+      version: 2
+    });
     (universeApi.listUniverseConfigs as Mock).mockResolvedValue([
       {
         name: 'large-cap-quality',
@@ -113,12 +205,117 @@ describe('StrategyConfigPage', () => {
         updated_at: '2026-03-08T00:00:00Z'
       }
     ]);
+    (universeApi.getUniverseConfigDetail as Mock).mockResolvedValue({
+      name: 'large-cap-quality',
+      description: 'Large cap quality universe',
+      version: 1,
+      updated_at: '2026-03-08T00:00:00Z',
+      config: {
+        source: 'postgres_gold',
+        root: {
+          kind: 'group',
+          operator: 'and',
+          clauses: [{ kind: 'condition', field: 'market.close', operator: 'gt', value: 0 }]
+        }
+      }
+    });
+    (universeApi.saveUniverseConfig as Mock).mockResolvedValue({
+      status: 'ok',
+      message: 'saved',
+      version: 2
+    });
     (backtestApi.listRuns as Mock).mockResolvedValue({ runs: [], limit: 6, offset: 0 });
-    (backtestApi.getTrades as Mock).mockResolvedValue({ trades: [], total: 0, limit: 20, offset: 0 });
+    (backtestApi.getTrades as Mock).mockResolvedValue({
+      trades: [],
+      total: 0,
+      limit: 20,
+      offset: 0
+    });
+    (backtestApi.getSummary as Mock).mockResolvedValue({
+      run_id: 'run-1',
+      total_return: 0.12,
+      sharpe_ratio: 1.1,
+      max_drawdown: -0.05,
+      cost_drag_bps: 12,
+      trades: 4,
+      closed_positions: 2
+    });
+    (backtestApi.getTimeseries as Mock).mockResolvedValue({
+      points: [],
+      total_points: 0,
+      truncated: false
+    });
+    (backtestApi.getRolling as Mock).mockResolvedValue({
+      points: [],
+      total_points: 0,
+      truncated: false
+    });
     (backtestApi.submitRun as Mock).mockResolvedValue({
       run_id: 'run-1',
       status: 'queued',
       submitted_at: '2026-03-08T00:00:00Z'
+    });
+    (regimePolicyApi.listRegimePolicies as Mock).mockResolvedValue([]);
+    (rebalancePolicyApi.listRebalancePolicies as Mock).mockResolvedValue([]);
+    (riskPolicyApi.listRiskPolicies as Mock).mockResolvedValue([]);
+    (exitRuleSetApi.listExitRuleSets as Mock).mockResolvedValue([]);
+    (strategyApi.getUniverseCatalog as Mock).mockResolvedValue({
+      source: 'postgres_gold',
+      fields: [
+        {
+          field: 'market.close',
+          dataType: 'float',
+          valueKind: 'number',
+          operators: ['gt', 'gte', 'lt', 'lte', 'eq']
+        }
+      ]
+    });
+    (strategyApi.previewUniverse as Mock).mockResolvedValue({
+      source: 'postgres_gold',
+      symbolCount: 2,
+      sampleSymbols: ['AAPL', 'MSFT'],
+      fieldsUsed: ['market.close'],
+      warnings: []
+    });
+    (strategyAnalyticsApi.getAllocationExposure as Mock).mockResolvedValue({
+      strategyName: 'quality-trend',
+      asOf: '2026-04-29T12:00:00Z',
+      totalMarketValue: 100000,
+      aggregateTargetWeight: 0.6,
+      aggregateActualWeight: 0.58,
+      exposures: [],
+      positions: [],
+      warnings: []
+    });
+    (strategyAnalyticsApi.getTradeHistory as Mock).mockResolvedValue({
+      strategyName: 'quality-trend',
+      trades: [],
+      total: 0,
+      limit: 100,
+      offset: 0,
+      warnings: []
+    });
+    (strategyAnalyticsApi.compareStrategies as Mock).mockResolvedValue({
+      asOf: '2026-04-29T12:00:00Z',
+      benchmarkSymbol: 'SPY',
+      costModel: 'default',
+      barSize: '1d',
+      strategies: [
+        { strategyName: 'quality-trend', role: 'baseline' },
+        { strategyName: 'mean-revert', role: 'challenger' }
+      ],
+      metrics: [],
+      runEvidence: [],
+      warnings: [],
+      blockedReasons: []
+    });
+    (strategyAnalyticsApi.getScenarioForecast as Mock).mockResolvedValue({
+      asOf: '2026-04-29T12:00:00Z',
+      horizon: '3M',
+      regimeAssumption: 'current',
+      source: 'control_plane',
+      forecasts: [],
+      warnings: []
     });
   });
 
@@ -161,30 +358,33 @@ describe('StrategyConfigPage', () => {
       limit: 6,
       offset: 0
     });
-    (backtestApi.getTrades as Mock).mockResolvedValue({
+    (strategyAnalyticsApi.getTradeHistory as Mock).mockResolvedValue({
+      strategyName: 'quality-trend',
       trades: [
         {
-          execution_date: '2026-04-15T13:00:00Z',
+          source: 'backtest',
+          timestamp: '2026-04-15T13:00:00Z',
           symbol: 'MSFT',
+          side: 'buy',
           quantity: 25,
           price: 410.5,
           notional: 10262.5,
           commission: 2.5,
-          slippage_cost: 1.0,
-          cash_after: 90000,
-          trade_role: 'entry'
+          slippageCost: 1.0
         }
       ],
       total: 1,
-      limit: 20,
+      limit: 100,
       offset: 0
     });
 
     renderWithProviders(<StrategyConfigPage />);
 
     expect(await screen.findByRole('heading', { name: 'quality-trend' })).toBeInTheDocument();
-    expect(screen.getAllByText(/top 25 with 90-bar lookback/i)).toHaveLength(2);
-    expect(await screen.findByRole('heading', { name: /latest backtest trade history/i })).toBeInTheDocument();
+    expect(screen.getByText(/top 25 with 90-bar lookback/i)).toBeInTheDocument();
+    expect(screen.getByText(/strategy editor panel/i)).toBeInTheDocument();
+    expect(screen.getByText(/strategy explorer panel/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /trade history/i })).toBeInTheDocument();
     expect(screen.getByText('MSFT')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /duplicate as new/i }));
@@ -237,6 +437,9 @@ describe('StrategyConfigPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /delete strategy/i }));
     expect(await screen.findByRole('heading', { name: /delete strategy/i })).toBeInTheDocument();
 
+    fireEvent.change(screen.getByLabelText(/type quality-trend to confirm/i), {
+      target: { value: 'quality-trend' }
+    });
     fireEvent.click(screen.getByRole('button', { name: /delete from postgres/i }));
 
     await waitFor(() => {
@@ -281,7 +484,7 @@ describe('StrategyConfigPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'quality-trend' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /edit strategy/i }));
+    fireEvent.click(screen.getByRole('button', { name: /edit pins/i }));
     expect(await screen.findByRole('heading', { name: /edit strategy/i })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/desk note/i), {
@@ -325,9 +528,9 @@ describe('StrategyConfigPage', () => {
 
     renderWithProviders(<StrategyConfigPage />);
 
-    expect(await screen.findAllByText(/top 25 with 90-bar lookback/i)).toHaveLength(2);
+    expect(await screen.findByText(/top 25 with 90-bar lookback/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /edit strategy/i }));
+    fireEvent.click(screen.getByRole('button', { name: /edit pins/i }));
     expect(await screen.findByRole('heading', { name: /edit strategy/i })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/desk note/i), {
@@ -360,6 +563,9 @@ describe('StrategyConfigPage', () => {
     const deleteHeading = await screen.findByRole('heading', { name: /delete strategy/i });
     expect(deleteHeading).toBeInTheDocument();
 
+    fireEvent.change(screen.getByLabelText(/type quality-trend to confirm/i), {
+      target: { value: 'quality-trend' }
+    });
     fireEvent.click(screen.getByRole('button', { name: /delete from postgres/i }));
 
     await waitFor(() => {
@@ -384,18 +590,13 @@ describe('StrategyConfigPage', () => {
 
     renderWithProviders(<StrategyConfigPage />);
 
-    expect(await screen.findAllByText(/top 25 with 90-bar lookback/i)).toHaveLength(2);
+    expect(await screen.findByText(/top 25 with 90-bar lookback/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /edit strategy/i }));
+    fireEvent.click(screen.getByRole('button', { name: /edit pins/i }));
     expect(await screen.findByRole('heading', { name: /edit strategy/i })).toBeInTheDocument();
 
-    expect(await screen.findByText(/attachment catalogs unavailable/i)).toBeInTheDocument();
-    expect(screen.getByText(/universe lookup failed: universe offline/i)).toBeInTheDocument();
-    expect(screen.getByText(/ranking lookup failed: ranking offline/i)).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByLabelText(/universe config/i)).toHaveValue('large-cap-quality');
-      expect(screen.getByLabelText(/ranking schema/i)).toHaveValue('quality-momentum');
-    });
+    expect(await screen.findByText(/universe offline/i)).toBeInTheDocument();
+    expect(screen.getByText(/ranking offline/i)).toBeInTheDocument();
   });
 
   it('prompts before closing a dirty editor and honors a rejected discard', async () => {

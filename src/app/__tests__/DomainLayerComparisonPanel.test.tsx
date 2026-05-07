@@ -163,6 +163,133 @@ function makeLayerTriggerLayers(): DataLayer[] {
   ];
 }
 
+function makeQuiverDataLayers(): DataLayer[] {
+  return [
+    {
+      name: 'Bronze',
+      description: 'Raw ingestion',
+      status: 'healthy',
+      lastUpdated: NOW,
+      refreshFrequency: 'hourly',
+      domains: [
+        {
+          name: 'quiver-data',
+          type: 'blob',
+          path: 'quiver-data/runs',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'bronze-quiver-data-job'
+        }
+      ]
+    },
+    {
+      name: 'Silver',
+      description: 'Standardized data',
+      status: 'healthy',
+      lastUpdated: NOW,
+      refreshFrequency: 'manual',
+      domains: [
+        {
+          name: 'quiver-data',
+          type: 'blob',
+          path: 'quiver-data',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'silver-quiver-data-job'
+        }
+      ]
+    },
+    {
+      name: 'Gold',
+      description: 'Feature store',
+      status: 'healthy',
+      lastUpdated: NOW,
+      refreshFrequency: 'manual',
+      domains: [
+        {
+          name: 'quiver-data',
+          type: 'blob',
+          path: 'quiver',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'gold-quiver-data-job'
+        }
+      ]
+    }
+  ];
+}
+
+function makeLayersWithHiddenCoverageDomains(): DataLayer[] {
+  return [
+    {
+      name: 'Bronze',
+      description: 'Raw ingestion',
+      status: 'healthy',
+      lastUpdated: NOW,
+      refreshFrequency: 'daily',
+      domains: [
+        {
+          name: 'market',
+          type: 'delta',
+          path: 'market-data',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'aca-job-market-bronze'
+        },
+        {
+          name: 'backtests',
+          type: 'delta',
+          path: 'backtests',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'aca-job-backtests-bronze'
+        },
+        {
+          name: 'ranking',
+          type: 'delta',
+          path: 'ranking',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'aca-job-ranking-bronze'
+        },
+        {
+          name: 'regime',
+          type: 'delta',
+          path: 'regime',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'aca-job-regime-bronze'
+        },
+        {
+          name: 'government-signals',
+          type: 'blob',
+          path: 'government-signals/runs',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'bronze-government-signals-job'
+        }
+      ]
+    },
+    {
+      name: 'Gold',
+      description: 'Feature store',
+      status: 'healthy',
+      lastUpdated: NOW,
+      refreshFrequency: 'daily',
+      domains: [
+        {
+          name: 'regime',
+          type: 'delta',
+          path: 'regime',
+          lastUpdated: NOW,
+          status: 'healthy',
+          jobName: 'gold-regime-job'
+        }
+      ]
+    }
+  ];
+}
+
 function makeJobs(status: JobRun['status'] = 'success', statusCode?: string): JobRun[] {
   return [
     {
@@ -193,28 +320,31 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     });
   });
 
+  const panelElement = (
+    overrides: Partial<ComponentProps<typeof DomainLayerComparisonPanel>> = {}
+  ) => (
+    <DomainLayerComparisonPanel
+      overall="healthy"
+      dataLayers={makeLayers()}
+      recentJobs={makeJobs()}
+      metadataSnapshot={{
+        version: 1,
+        updatedAt: NOW,
+        entries: {},
+        warnings: []
+      }}
+      metadataUpdatedAt={NOW}
+      metadataSource="persisted-snapshot"
+      onRefresh={vi.fn().mockResolvedValue(undefined)}
+      isRefreshing={false}
+      isFetching={false}
+      {...overrides}
+    />
+  );
+
   const renderPanel = (
     overrides: Partial<ComponentProps<typeof DomainLayerComparisonPanel>> = {}
-  ) =>
-    renderWithProviders(
-      <DomainLayerComparisonPanel
-        overall="healthy"
-        dataLayers={makeLayers()}
-        recentJobs={makeJobs()}
-        metadataSnapshot={{
-          version: 1,
-          updatedAt: NOW,
-          entries: {},
-          warnings: []
-        }}
-        metadataUpdatedAt={NOW}
-        metadataSource="persisted-snapshot"
-        onRefresh={vi.fn().mockResolvedValue(undefined)}
-        isRefreshing={false}
-        isFetching={false}
-        {...overrides}
-      />
-    );
+  ) => renderWithProviders(panelElement(overrides));
 
   it('refreshes both status and metadata from the layer header action', async () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
@@ -234,6 +364,40 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
       });
     });
     expect((await screen.findAllByText(/updated Mar 3,?\s+06:00 CST/)).length).toBeGreaterThan(0);
+  });
+
+  it('auto-refreshes stale cached metadata when enabled', async () => {
+    const staleLayers = makeLayers().map((layer) => ({
+      ...layer,
+      domains: (layer.domains || []).map((domain) => ({
+        ...domain,
+        status: 'stale' as const,
+        lastUpdated: NOW
+      }))
+    }));
+
+    renderPanel({
+      autoRefreshStaleMetadata: true,
+      dataLayers: staleLayers,
+      metadataSnapshot: makeSnapshot({
+        layer: 'bronze',
+        domain: 'market',
+        container: 'bronze',
+        type: 'delta',
+        computedAt: '2026-03-03T10:00:00Z',
+        symbolCount: 1,
+        warnings: []
+      })
+    });
+
+    await waitFor(() => {
+      expect(DataService.getDomainMetadata).toHaveBeenCalledWith('bronze', 'market', {
+        refresh: true
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText('123 symbols').length).toBeGreaterThan(0);
+    });
   });
 
   it('shows the metadata timestamp when cached entries only have computedAt', async () => {
@@ -381,6 +545,49 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     expect(screen.getByText('61%')).toBeInTheDocument();
   });
 
+  it('shows the latest failed execution instead of a running resource state', async () => {
+    renderPanel({
+      recentJobs: makeJobs('failed'),
+      managedContainerJobs: [
+        {
+          name: 'aca-job-market',
+          runningState: 'Running',
+          lastModifiedAt: NOW
+        }
+      ]
+    });
+
+    expect(await screen.findByText('FAIL')).toBeInTheDocument();
+    expect(screen.queryByText('RUN')).not.toBeInTheDocument();
+  });
+
+  it('keeps the last run status visible while a refresh has no run telemetry yet', async () => {
+    const view = renderPanel({
+      recentJobs: makeJobs('failed')
+    });
+
+    expect(await screen.findByText('FAIL')).toBeInTheDocument();
+
+    view.rerender(
+      panelElement({
+        recentJobs: [],
+        isFetching: true
+      })
+    );
+
+    expect(screen.getByText('FAIL')).toBeInTheDocument();
+    expect(screen.queryByText('NO RUN')).not.toBeInTheDocument();
+
+    view.rerender(
+      panelElement({
+        recentJobs: [],
+        isFetching: false
+      })
+    );
+
+    expect(await screen.findByText('NO RUN')).toBeInTheDocument();
+  });
+
   it('shows live raw cpu and memory usage for running jobs when percent signals are unavailable', async () => {
     const user = userEvent.setup();
 
@@ -520,10 +727,7 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     await user.click(screen.getByRole('button', { name: /Stop all running .* runs/i }));
 
     await waitFor(() => {
-      expect(stopJobMock).toHaveBeenCalledWith('aca-job-market', [
-        ['systemStatusView'],
-        ['systemHealth']
-      ]);
+      expect(stopJobMock).toHaveBeenCalledWith('aca-job-market', [['systemStatusView']]);
     });
   });
 
@@ -712,51 +916,112 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
       expect(triggerJobMock).toHaveBeenCalledTimes(2);
     });
     expect(triggerJobMock).toHaveBeenNthCalledWith(1, 'aca-job-market-bronze', [
-      ['systemStatusView'],
-      ['systemHealth']
+      ['systemStatusView']
     ]);
     expect(triggerJobMock).toHaveBeenNthCalledWith(2, 'aca-job-earnings-bronze', [
-      ['systemStatusView'],
-      ['systemHealth']
+      ['systemStatusView']
     ]);
   });
 
-  it('does not infer the gold regime strategy-compute job from domain rows', async () => {
+  it('triggers exactly one quiver data job per medallion layer', async () => {
+    const user = userEvent.setup();
+
+    renderPanel({
+      dataLayers: makeQuiverDataLayers()
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Trigger Bronze layer jobs' }));
+    await user.click(await screen.findByRole('button', { name: 'Trigger Silver layer jobs' }));
+    await user.click(await screen.findByRole('button', { name: 'Trigger Gold layer jobs' }));
+
+    await waitFor(() => {
+      expect(triggerJobMock).toHaveBeenCalledTimes(3);
+    });
+    expect(triggerJobMock).toHaveBeenNthCalledWith(1, 'bronze-quiver-data-job', [
+      ['systemStatusView']
+    ]);
+    expect(triggerJobMock).toHaveBeenNthCalledWith(2, 'silver-quiver-data-job', [
+      ['systemStatusView']
+    ]);
+    expect(triggerJobMock).toHaveBeenNthCalledWith(3, 'gold-quiver-data-job', [
+      ['systemStatusView']
+    ]);
+    expect(triggerJobMock).not.toHaveBeenCalledWith('bronze-quiver-backfill-job', [
+      ['systemStatusView']
+    ]);
+    expect(await screen.findByRole('button', { name: 'Expand quiver-data details' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Expand quiver details' })).not.toBeInTheDocument();
+  });
+
+  it('does not trigger inferred layer jobs when runnable metadata is absent', async () => {
     const user = userEvent.setup();
 
     renderPanel({
       dataLayers: [
         {
-          name: 'Gold',
-          description: 'Feature store',
+          name: 'Bronze',
+          description: 'Raw ingestion',
           status: 'healthy',
           lastUpdated: NOW,
-          refreshFrequency: 'Daily at 9:00 PM UTC',
+          refreshFrequency: 'daily',
           domains: [
             {
-              name: 'regime',
+              name: 'market',
               type: 'delta',
-              path: 'regime/',
+              path: 'market-data',
               lastUpdated: NOW,
               status: 'healthy',
-              frequency: 'Daily at 9:00 PM UTC',
-              cron: '0 21 * * *'
+              jobName: 'aca-job-market-bronze'
+            },
+            {
+              name: 'government-signals',
+              type: 'blob',
+              path: 'government-signals/runs',
+              lastUpdated: NOW,
+              status: 'healthy',
+              jobName: null,
+              jobUrl: null
             }
           ]
         }
-      ],
+      ]
+    });
+
+    const layerTriggerButton = await screen.findByRole('button', {
+      name: 'Trigger Bronze layer jobs'
+    });
+    await user.click(layerTriggerButton);
+
+    await waitFor(() => {
+      expect(triggerJobMock).toHaveBeenCalledTimes(1);
+    });
+    expect(triggerJobMock).toHaveBeenCalledWith('aca-job-market-bronze', [
+      ['systemStatusView']
+    ]);
+    expect(triggerJobMock).not.toHaveBeenCalledWith('bronze-government-signals-job', [
+      ['systemStatusView']
+    ]);
+  });
+
+  it('omits workflow and government signals domains from coverage rows', async () => {
+    renderPanel({
+      dataLayers: makeLayersWithHiddenCoverageDomains(),
       recentJobs: []
     });
 
-    await user.click(await screen.findByRole('button', { name: 'Expand regime details' }));
-
-    const runButton = await screen.findByRole('button', { name: 'Run' });
-    expect(runButton).toBeDisabled();
-    expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
-
-    expect(triggerJobMock).not.toHaveBeenCalledWith('gold-regime-job', [
-      ['systemStatusView'],
-      ['systemHealth']
-    ]);
+    expect(
+      await screen.findByRole('button', { name: 'Expand market details' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Expand backtests details' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Expand ranking details' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Expand regime details' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Expand government-signals details' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Gold')).not.toBeInTheDocument();
   });
 });

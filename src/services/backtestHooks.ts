@@ -8,13 +8,20 @@ export const backtestKeys = {
   runs: () => [...backtestKeys.all, 'runs'] as const,
   runList: (params: ListRunsParams) => [...backtestKeys.runs(), params] as const,
   run: (runId: string) => [...backtestKeys.runs(), runId] as const,
+  detail: (runId: string) => [...backtestKeys.run(runId), 'detail'] as const,
   summary: (runId: string) => [...backtestKeys.run(runId), 'summary'] as const,
   timeseries: (runId: string, maxPoints: number) =>
     [...backtestKeys.run(runId), 'timeseries', maxPoints] as const,
   rolling: (runId: string, windowDays: number, maxPoints: number) =>
     [...backtestKeys.run(runId), 'rolling', windowDays, maxPoints] as const,
   trades: (runId: string, limit: number, offset: number) =>
-    [...backtestKeys.run(runId), 'trades', limit, offset] as const
+    [...backtestKeys.run(runId), 'trades', limit, offset] as const,
+  closedPositions: (runId: string, limit: number, offset: number) =>
+    [...backtestKeys.run(runId), 'closed-positions', limit, offset] as const,
+  replay: (runId: string, limit: number, offset: number, symbol?: string) =>
+    [...backtestKeys.run(runId), 'replay', limit, offset, symbol || ''] as const,
+  attributionExposure: (runId: string) =>
+    [...backtestKeys.run(runId), 'attribution-exposure'] as const
 };
 
 function isNotFoundError(error: unknown): boolean {
@@ -52,6 +59,29 @@ export function useRunSummary(
     enabled,
     retry: (failureCount, error: unknown) => {
       // Don't retry 404s
+      if (isNotFoundError(error)) return false;
+      return failureCount < 3;
+    }
+  });
+
+  return {
+    data,
+    loading: isLoading,
+    error: error ? formatSystemStatusText(error) : undefined
+  };
+}
+
+export function useRunDetail(
+  runId: string | undefined,
+  opts: { enabled?: boolean } = {}
+) {
+  const enabled = (opts.enabled ?? true) && !!runId;
+
+  const { data, error, isLoading } = useQuery({
+    queryKey: backtestKeys.detail(runId!),
+    queryFn: ({ signal }) => backtestApi.getRunDetail(runId!, signal),
+    enabled,
+    retry: (failureCount, error: unknown) => {
       if (isNotFoundError(error)) return false;
       return failureCount < 3;
     }
@@ -137,6 +167,30 @@ export function useTimeseriesMulti(
   return { timeseriesByRunId, loading, error };
 }
 
+export function useTimeseries(
+  runId: string | undefined,
+  opts: { enabled?: boolean; maxPoints?: number } = {}
+) {
+  const maxPoints = opts.maxPoints ?? 5000;
+  const enabled = (opts.enabled ?? true) && !!runId;
+
+  const { data, error, isLoading } = useQuery({
+    queryKey: backtestKeys.timeseries(runId!, maxPoints),
+    queryFn: ({ signal }) => backtestApi.getTimeseries(runId!, { maxPoints }, signal),
+    enabled,
+    retry: (failureCount, error: unknown) => {
+      if (isNotFoundError(error)) return false;
+      return failureCount < 3;
+    }
+  });
+
+  return {
+    data,
+    loading: isLoading,
+    error: error ? formatSystemStatusText(error) : undefined
+  };
+}
+
 export function useRollingMulti(
   runIds: string[],
   windowDays: number,
@@ -173,6 +227,32 @@ export function useRollingMulti(
   return { rollingByRunId, loading, error };
 }
 
+export function useRolling(
+  runId: string | undefined,
+  windowDays: number,
+  opts: { enabled?: boolean; maxPoints?: number } = {}
+) {
+  const maxPoints = opts.maxPoints ?? 5000;
+  const enabled = (opts.enabled ?? true) && !!runId;
+
+  const { data, error, isLoading } = useQuery({
+    queryKey: backtestKeys.rolling(runId!, windowDays, maxPoints),
+    queryFn: ({ signal }) =>
+      backtestApi.getRolling(runId!, { windowDays, maxPoints }, signal),
+    enabled,
+    retry: (failureCount, error: unknown) => {
+      if (isNotFoundError(error)) return false;
+      return failureCount < 3;
+    }
+  });
+
+  return {
+    data,
+    loading: isLoading,
+    error: error ? formatSystemStatusText(error) : undefined
+  };
+}
+
 export function useTrades(
   runId: string | undefined,
   opts: { enabled?: boolean; limit?: number; offset?: number } = {}
@@ -185,6 +265,76 @@ export function useTrades(
     queryKey: backtestKeys.trades(runId!, limit, offset),
     queryFn: ({ signal }) => backtestApi.getTrades(runId!, { limit, offset }, signal),
     enabled
+  });
+
+  return {
+    data,
+    loading: isLoading,
+    error: error ? formatSystemStatusText(error) : undefined
+  };
+}
+
+export function useClosedPositions(
+  runId: string | undefined,
+  opts: { enabled?: boolean; limit?: number; offset?: number } = {}
+) {
+  const limit = opts.limit ?? 2000;
+  const offset = opts.offset ?? 0;
+  const enabled = (opts.enabled ?? true) && !!runId;
+
+  const { data, error, isLoading } = useQuery({
+    queryKey: backtestKeys.closedPositions(runId!, limit, offset),
+    queryFn: ({ signal }) => backtestApi.getClosedPositions(runId!, { limit, offset }, signal),
+    enabled
+  });
+
+  return {
+    data,
+    loading: isLoading,
+    error: error ? formatSystemStatusText(error) : undefined
+  };
+}
+
+export function useReplayTimeline(
+  runId: string | undefined,
+  opts: { enabled?: boolean; limit?: number; offset?: number; symbol?: string } = {}
+) {
+  const limit = opts.limit ?? 500;
+  const offset = opts.offset ?? 0;
+  const symbol = opts.symbol?.trim() || undefined;
+  const enabled = (opts.enabled ?? true) && !!runId;
+
+  const { data, error, isLoading } = useQuery({
+    queryKey: backtestKeys.replay(runId!, limit, offset, symbol),
+    queryFn: ({ signal }) => backtestApi.getReplay(runId!, { limit, offset, symbol }, signal),
+    enabled,
+    retry: (failureCount, error: unknown) => {
+      if (isNotFoundError(error)) return false;
+      return failureCount < 2;
+    }
+  });
+
+  return {
+    data,
+    loading: isLoading,
+    error: error ? formatSystemStatusText(error) : undefined
+  };
+}
+
+export function useAttributionExposure(
+  runId: string | undefined,
+  opts: { enabled?: boolean } = {}
+) {
+  const enabled = (opts.enabled ?? true) && !!runId;
+
+  const { data, error, isLoading } = useQuery({
+    queryKey: backtestKeys.attributionExposure(runId!),
+    queryFn: ({ signal }) => backtestApi.getAttributionExposure(runId!, signal),
+    enabled,
+    retry: (failureCount, error: unknown) => {
+      if (isNotFoundError(error)) return false;
+      return failureCount < 2;
+    }
   });
 
   return {

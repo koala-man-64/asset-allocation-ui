@@ -9,11 +9,7 @@ import {
   TableHeader,
   TableRow
 } from '@/app/components/ui/table';
-import type {
-  TradeDeskAuditEvent,
-  TradeOrder,
-  TradePosition
-} from '@asset-allocation/contracts';
+import type { TradeDeskAuditEvent, TradeOrder, TradePosition } from '@asset-allocation/contracts';
 import type { TradeBlotterRow } from '@/services/tradeDeskModels';
 import {
   formatCurrency,
@@ -97,12 +93,14 @@ export function OrdersTable({
   orders,
   onCancel,
   cancellingOrderId,
+  cancelUnavailableReason,
   emptyTitle = 'No Orders',
   emptyMessage = 'No order rows match this view.'
 }: {
   orders: readonly TradeOrder[];
   onCancel?: (order: TradeOrder) => void;
   cancellingOrderId?: string | null;
+  cancelUnavailableReason?: string | null;
   emptyTitle?: string;
   emptyMessage?: string;
 }) {
@@ -122,14 +120,19 @@ export function OrdersTable({
           <TableHead className="text-right">Qty</TableHead>
           <TableHead className="text-right">Notional</TableHead>
           <TableHead>Updated</TableHead>
-          {onCancel ? <TableHead className="text-right">Action</TableHead> : null}
+          {onCancel || cancelUnavailableReason ? (
+            <TableHead className="text-right">Action</TableHead>
+          ) : null}
         </TableRow>
       </TableHeader>
       <TableBody>
         {orders.map((order) => {
           const canCancel =
             onCancel &&
-            !TERMINAL_ORDER_STATUSES.includes(order.status as (typeof TERMINAL_ORDER_STATUSES)[number]);
+            !cancelUnavailableReason &&
+            !TERMINAL_ORDER_STATUSES.includes(
+              order.status as (typeof TERMINAL_ORDER_STATUSES)[number]
+            );
           return (
             <TableRow key={order.orderId}>
               <TableCell className="max-w-[12rem] truncate font-mono text-xs">
@@ -150,14 +153,15 @@ export function OrdersTable({
                 {formatCurrency(order.estimatedNotional ?? order.notional)}
               </TableCell>
               <TableCell>{formatTimestamp(order.updatedAt ?? order.createdAt)}</TableCell>
-              {onCancel ? (
+              {onCancel || cancelUnavailableReason ? (
                 <TableCell className="text-right">
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     disabled={!canCancel || cancellingOrderId === order.orderId}
-                    onClick={() => onCancel(order)}
+                    title={cancelUnavailableReason ?? undefined}
+                    onClick={() => onCancel?.(order)}
                   >
                     Cancel
                   </Button>
@@ -232,7 +236,10 @@ export function ActivityTimeline({
   return (
     <div className="space-y-3">
       {events.slice(0, compact ? 4 : 12).map((event) => (
-        <div key={event.eventId} className="rounded-xl border border-mcm-walnut/15 bg-background/30 p-3">
+        <div
+          key={event.eventId}
+          className="rounded-xl border border-mcm-walnut/15 bg-background/30 p-3"
+        >
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={event.severity === 'critical' ? 'destructive' : 'outline'}>
               {titleCase(event.eventType)}

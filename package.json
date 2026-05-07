@@ -15,12 +15,15 @@
     "format:check": "node ./scripts/check-prettier-diff.mjs",
     "test": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:functional": "playwright test --grep-invert @visual",
+    "test:e2e:visual": "playwright test --config playwright.visual.config.ts --grep @visual",
+    "test:e2e:visual:update": "playwright test --config playwright.visual.config.ts --grep @visual --update-snapshots",
     "test:e2e:headed": "playwright test --headed",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@asset-allocation/contracts": "3.11.0",
+    "@asset-allocation/contracts": "3.20.0",
     "@azure/msal-browser": "5.3.0",
     "@popperjs/core": "2.11.8",
     "@radix-ui/react-accordion": "1.2.12",

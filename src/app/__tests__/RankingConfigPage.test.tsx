@@ -226,8 +226,6 @@ describe('RankingConfigPage', () => {
   });
 
   it('confirms before switching away from unsaved changes', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-
     renderPage();
 
     expect(await screen.findByDisplayValue('Composite ranking')).toBeInTheDocument();
@@ -238,9 +236,11 @@ describe('RankingConfigPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /value-momentum/i }));
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Discard the current unsaved ranking changes and switch workspaces?'
-    );
+    expect(
+      await screen.findByRole('heading', { name: /discard ranking changes/i })
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /keep editing/i }));
+
     expect(rankingApi.getRankingSchemaDetail).not.toHaveBeenCalledWith('value-momentum');
     expect(screen.getByDisplayValue('Changed but not saved')).toBeInTheDocument();
   });

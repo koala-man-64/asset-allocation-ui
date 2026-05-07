@@ -56,6 +56,8 @@ const systemStatusViewPayload = {
         name: 'aca-job-backtest-runner',
         resourceType: 'Microsoft.App/jobs',
         status: 'healthy',
+        azureId:
+          '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner',
         runningState: 'Running',
         lastModifiedAt: NOW,
         signals: []
@@ -275,9 +277,9 @@ const dataProfilePayload = {
 const backtestRunsPayload = {
   runs: [
     {
-      run_id: 'run-playwright-queued',
-      run_name: 'playwright queued backtest',
-      status: 'queued',
+      run_id: 'run-playwright-completed',
+      run_name: 'playwright completed backtest',
+      status: 'completed',
       submitted_at: NOW,
       start_date: '2026-01-01',
       end_date: '2026-04-18'
@@ -285,6 +287,260 @@ const backtestRunsPayload = {
   ],
   limit: 8,
   offset: 0
+};
+
+const strategySummaries = [
+  {
+    name: 'quality-trend',
+    type: 'configured',
+    description: 'Quality trend desk note',
+    updated_at: NOW
+  },
+  {
+    name: 'defensive-value',
+    type: 'configured',
+    description: 'Defensive value desk note',
+    updated_at: '2026-04-17T14:30:00Z'
+  }
+];
+
+const strategyDetails = {
+  'quality-trend': {
+    name: 'quality-trend',
+    type: 'configured',
+    description: 'Quality trend desk note',
+    output_table_name: 'quality_trend_daily',
+    updated_at: NOW,
+    config: {
+      componentRefs: {
+        universe: { name: 'large-cap-quality', version: 1 },
+        ranking: { name: 'quality-momentum', version: 1 },
+        rebalance: { name: 'monthly_last_trading_day', version: 1 },
+        regimePolicy: { name: 'observe_only_default', version: 1 },
+        riskPolicy: { name: 'balanced_long_only', version: 1 },
+        exitPolicy: { name: 'rebalance_only', version: 1 }
+      },
+      universeConfigName: 'large-cap-quality',
+      universeConfigVersion: 1,
+      rankingSchemaName: 'quality-momentum',
+      rankingSchemaVersion: 1,
+      rebalance: 'weekly',
+      longOnly: true,
+      topN: 25,
+      lookbackWindow: 90,
+      holdingPeriod: 30,
+      costModel: 'default',
+      regimePolicy: {
+        modelName: 'default-regime',
+        mode: 'observe_only'
+      },
+      riskPolicy: {
+        grossExposureLimit: 1,
+        singleNameMaxWeight: 0.08,
+        turnoverBudget: 0.35,
+        maxTradeNotionalBaseCcy: 250000,
+        notes: 'Desk risk envelope'
+      },
+      intrabarConflictPolicy: 'stop_first',
+      exits: []
+    }
+  },
+  'defensive-value': {
+    name: 'defensive-value',
+    type: 'configured',
+    description: 'Defensive value desk note',
+    output_table_name: 'defensive_value_daily',
+    updated_at: '2026-04-17T14:30:00Z',
+    config: {
+      componentRefs: {
+        universe: { name: 'large-cap-quality', version: 1 },
+        ranking: { name: 'quality-momentum', version: 1 },
+        rebalance: { name: 'monthly_last_trading_day', version: 1 },
+        exitPolicy: { name: 'rank_decay_exit', version: 1 }
+      },
+      universeConfigName: 'large-cap-quality',
+      universeConfigVersion: 1,
+      rankingSchemaName: 'quality-momentum',
+      rankingSchemaVersion: 1,
+      rebalance: 'monthly',
+      longOnly: true,
+      topN: 20,
+      lookbackWindow: 63,
+      holdingPeriod: 21,
+      costModel: 'default',
+      intrabarConflictPolicy: 'stop_first',
+      exits: []
+    }
+  }
+};
+
+const universeCatalogPayload = {
+  source: 'postgres_gold',
+  fields: [
+    {
+      field: 'market.close',
+      dataType: 'float',
+      valueKind: 'number',
+      operators: ['gt', 'gte', 'lt', 'lte', 'eq']
+    }
+  ]
+};
+
+const universeDetailPayload = {
+  name: 'large-cap-quality',
+  description: 'Large cap quality universe',
+  version: 1,
+  updated_at: NOW,
+  config: {
+    source: 'postgres_gold',
+    root: {
+      kind: 'group',
+      operator: 'and',
+      clauses: [{ kind: 'condition', field: 'market.close', operator: 'gt', value: 0 }]
+    }
+  }
+};
+
+const rankingCatalogPayload = {
+  source: 'postgres_gold',
+  tables: [
+    {
+      name: 'market_data',
+      asOfColumn: 'date',
+      columns: [{ name: 'return_20d', dataType: 'float', valueKind: 'number' }]
+    }
+  ]
+};
+
+const rankingDetailPayload = {
+  name: 'quality-momentum',
+  description: 'Quality and momentum factors',
+  version: 1,
+  updated_at: NOW,
+  config: {
+    universeConfigName: 'large-cap-quality',
+    groups: [
+      {
+        name: 'Quality',
+        weight: 1,
+        transforms: [{ type: 'percentile_rank', params: {} }],
+        factors: [
+          {
+            name: 'return-20d',
+            table: 'market_data',
+            column: 'return_20d',
+            weight: 1,
+            direction: 'desc',
+            missingValuePolicy: 'exclude',
+            transforms: [{ type: 'zscore', params: {} }]
+          }
+        ]
+      }
+    ],
+    overallTransforms: []
+  }
+};
+
+const strategyComparisonPayload = {
+  asOf: NOW,
+  benchmarkSymbol: 'SPY',
+  costModel: 'default',
+  barSize: '1d',
+  strategies: [
+    { strategyName: 'quality-trend', role: 'baseline' },
+    { strategyName: 'defensive-value', role: 'challenger' }
+  ],
+  metrics: [
+    {
+      metric: 'sharpe_ratio',
+      label: 'Sharpe',
+      unit: 'score',
+      values: {
+        'quality-trend': 1.2,
+        'defensive-value': 0.9
+      },
+      winnerStrategyName: 'quality-trend',
+      notes: ''
+    }
+  ],
+  runEvidence: [],
+  warnings: [],
+  blockedReasons: []
+};
+
+const strategyForecastPayload = {
+  asOf: NOW,
+  horizon: '3M',
+  regimeAssumption: 'current',
+  source: 'control_plane',
+  forecasts: [
+    {
+      strategyName: 'quality-trend',
+      expectedReturn: 0.03,
+      expectedActiveReturn: 0.01,
+      downside: -0.04,
+      upside: 0.08,
+      confidence: 'medium',
+      sampleSize: 12,
+      sampleMode: 'regime_conditioned',
+      appliedRegimeCode: 'current',
+      source: 'backtest',
+      notes: ['Matched historical regime windows.']
+    }
+  ],
+  warnings: []
+};
+
+const strategyAllocationPayload = {
+  strategyName: 'quality-trend',
+  asOf: NOW,
+  totalMarketValue: 100000,
+  aggregateTargetWeight: 0.6,
+  aggregateActualWeight: 0.58,
+  exposures: [
+    {
+      accountId: 'acct-paper',
+      accountName: 'Core Paper',
+      portfolioName: 'Core Paper Portfolio',
+      portfolioVersion: 1,
+      sleeveId: 'core',
+      sleeveName: 'Core',
+      strategyName: 'quality-trend',
+      strategyVersion: 4,
+      asOf: '2026-04-18',
+      targetWeight: 0.6,
+      actualWeight: 0.58,
+      drift: -0.02,
+      marketValue: 58000,
+      status: 'active'
+    }
+  ],
+  positions: [],
+  warnings: []
+};
+
+const strategyTradeHistoryPayload = {
+  strategyName: 'quality-trend',
+  trades: [
+    {
+      source: 'portfolio_ledger',
+      timestamp: NOW,
+      symbol: 'MSFT',
+      side: 'buy',
+      quantity: 10,
+      price: 420,
+      notional: 4200,
+      commission: 1,
+      slippageCost: 0.5,
+      accountId: 'acct-paper',
+      portfolioName: 'Core Paper Portfolio',
+      eventId: 'evt-001'
+    }
+  ],
+  total: 1,
+  limit: 100,
+  offset: 0,
+  warnings: []
 };
 
 const tradeFreshnessPayload = {
@@ -410,6 +666,373 @@ const tradeAccounts = [
 const tradeAccountById = Object.fromEntries(
   tradeAccounts.map((account) => [account.accountId, account])
 );
+
+type TradeAccountMock = (typeof tradeAccounts)[number];
+
+function brokerCapabilitiesFromTrade(account: TradeAccountMock) {
+  return {
+    canReadBalances: account.capabilities.canReadAccount,
+    canReadPositions: account.capabilities.canReadPositions,
+    canReadOrders: account.capabilities.canReadOrders,
+    canTrade:
+      account.capabilities.canSubmitPaper ||
+      account.capabilities.canSubmitSandbox ||
+      account.capabilities.canSubmitLive,
+    canReconnect: account.accountId === 'acct-live',
+    canPauseSync: account.capabilities.canReadAccount,
+    canRefresh: account.capabilities.canReadAccount,
+    canAcknowledgeAlerts: account.unresolvedAlertCount > 0,
+    canReadTradingPolicy: account.capabilities.canReadAccount,
+    canWriteTradingPolicy: !account.capabilities.readOnly,
+    canReadAllocation: account.capabilities.canReadAccount,
+    canWriteAllocation: !account.capabilities.readOnly,
+    canReleaseTradeConfirmation: !account.capabilities.readOnly,
+    readOnlyReason: account.capabilities.readOnly ? account.capabilities.unsupportedReason : null
+  };
+}
+
+function brokerSyncStatusFromTrade(account: TradeAccountMock) {
+  const states = [
+    account.freshness.balancesState,
+    account.freshness.positionsState,
+    account.freshness.ordersState
+  ];
+  if (states.every((state) => state === 'fresh')) {
+    return 'fresh';
+  }
+  if (states.some((state) => state === 'stale')) {
+    return 'stale';
+  }
+  return 'never_synced';
+}
+
+function brokerOverallStatusFromTrade(account: TradeAccountMock) {
+  const syncStatus = brokerSyncStatusFromTrade(account);
+  if (
+    account.readiness === 'blocked' ||
+    account.killSwitchActive ||
+    !account.capabilities.canReadAccount
+  ) {
+    return 'critical';
+  }
+  if (
+    account.readiness === 'review' ||
+    syncStatus !== 'fresh' ||
+    account.unresolvedAlertCount > 0
+  ) {
+    return 'warning';
+  }
+  return 'healthy';
+}
+
+function brokerConnectionHealthFromTrade(account: TradeAccountMock) {
+  const syncStatus = brokerSyncStatusFromTrade(account);
+  const overallStatus = brokerOverallStatusFromTrade(account);
+  const reconnectRequired = account.accountId === 'acct-live';
+  return {
+    overallStatus,
+    authStatus: reconnectRequired
+      ? 'reauth_required'
+      : account.capabilities.canReadAccount
+        ? 'authenticated'
+        : 'not_connected',
+    connectionState: reconnectRequired
+      ? 'reconnect_required'
+      : !account.capabilities.canReadAccount
+        ? 'disconnected'
+        : syncStatus === 'fresh'
+          ? 'connected'
+          : 'degraded',
+    syncStatus,
+    lastCheckedAt: account.snapshotAsOf,
+    lastSuccessfulSyncAt:
+      syncStatus === 'fresh' || syncStatus === 'stale' ? account.lastSyncedAt : null,
+    lastFailedSyncAt: reconnectRequired ? account.snapshotAsOf : null,
+    authExpiresAt: null,
+    staleReason: syncStatus === 'stale' ? account.freshness.staleReason : null,
+    failureMessage: reconnectRequired
+      ? 'Schwab OAuth session is not connected. Reconnect required.'
+      : account.readiness === 'blocked'
+        ? account.readinessReason
+        : null,
+    syncPaused: false
+  };
+}
+
+function brokerAllocationForTradeAccount(account: TradeAccountMock) {
+  return {
+    portfolioName:
+      account.accountId === 'acct-live' ? 'Live Alpha Portfolio' : 'Core Paper Portfolio',
+    portfolioVersion: 1,
+    allocationMode: 'percent',
+    allocatableCapital: account.buyingPower,
+    allocatedPercent: 100,
+    allocatedNotionalBaseCcy: account.buyingPower,
+    remainingPercent: 0,
+    remainingNotionalBaseCcy: 0,
+    sharedActivePortfolio: false,
+    effectiveFrom: '2026-04-18',
+    items: [
+      {
+        sleeveId: 'core',
+        sleeveName: 'Core',
+        strategy: {
+          strategyName: 'quality-trend',
+          strategyVersion: 4
+        },
+        allocationMode: 'percent',
+        targetWeightPct: 100,
+        targetNotionalBaseCcy: null,
+        derivedWeightPct: 100,
+        enabled: true,
+        notes: ''
+      }
+    ]
+  };
+}
+
+function brokerAccountFromTradeAccount(account: TradeAccountMock) {
+  const allocationSummary = brokerAllocationForTradeAccount(account);
+  return {
+    accountId: account.accountId,
+    broker: account.provider,
+    name: account.name,
+    accountNumberMasked: account.accountNumberMasked,
+    baseCurrency: account.baseCurrency,
+    overallStatus: brokerOverallStatusFromTrade(account),
+    tradeReadiness: account.readiness,
+    tradeReadinessReason: account.readinessReason,
+    highestAlertSeverity: account.unresolvedAlertCount > 0 ? 'warning' : null,
+    connectionHealth: brokerConnectionHealthFromTrade(account),
+    equity: account.equity,
+    cash: account.cash,
+    buyingPower: account.buyingPower,
+    openPositionCount: account.positionCount,
+    openOrderCount: account.openOrderCount,
+    lastSyncedAt: account.lastSyncedAt,
+    snapshotAsOf: account.snapshotAsOf,
+    activePortfolioName: allocationSummary.portfolioName,
+    strategyLabel: null,
+    configurationVersion: 1,
+    allocationSummary,
+    alertCount: account.unresolvedAlertCount
+  };
+}
+
+function brokerConfigurationFromTradeAccount(account: TradeAccountMock) {
+  return {
+    accountId: account.accountId,
+    accountName: account.name,
+    baseCurrency: account.baseCurrency,
+    configurationVersion: 1,
+    requestedPolicy: {
+      maxOpenPositions: 20,
+      maxSinglePositionExposure: {
+        mode: 'pct_of_allocatable_capital',
+        value: 10
+      },
+      allowedSides: ['long'],
+      allowedAssetClasses: ['equity'],
+      requireOrderConfirmation: account.confirmationRequired
+    },
+    effectivePolicy: {
+      maxOpenPositions: 20,
+      maxSinglePositionExposure: {
+        mode: 'pct_of_allocatable_capital',
+        value: 10
+      },
+      allowedSides: ['long'],
+      allowedAssetClasses: ['equity'],
+      requireOrderConfirmation: account.confirmationRequired
+    },
+    capabilities: brokerCapabilitiesFromTrade(account),
+    allocation: brokerAllocationForTradeAccount(account),
+    warnings: [],
+    updatedAt: NOW,
+    updatedBy: 'playwright',
+    audit: []
+  };
+}
+
+function effectivePolicyFromRequestedPolicy(
+  account: TradeAccountMock,
+  requestedPolicy: ReturnType<typeof brokerConfigurationFromTradeAccount>['requestedPolicy']
+) {
+  const allowedSides = requestedPolicy.allowedSides.filter(
+    (side) => side === 'long' || side === 'short'
+  );
+  const allowedAssetClasses = requestedPolicy.allowedAssetClasses.filter((assetClass) => {
+    if (assetClass === 'option') {
+      return account.capabilities.supportsOptions;
+    }
+    return account.capabilities.supportsEquities || account.capabilities.supportsEtfs;
+  });
+
+  return {
+    ...requestedPolicy,
+    allowedSides: allowedSides.length ? allowedSides : ['long'],
+    allowedAssetClasses: allowedAssetClasses.length ? allowedAssetClasses : ['equity']
+  };
+}
+
+function brokerAccountDetailFromTradeAccount(account: TradeAccountMock) {
+  return {
+    account: brokerAccountFromTradeAccount(account),
+    capabilities: brokerCapabilitiesFromTrade(account),
+    accountType: account.environment === 'paper' ? 'paper' : 'other',
+    tradingBlocked: account.readiness === 'blocked' || account.killSwitchActive,
+    tradingBlockedReason:
+      account.readiness === 'blocked'
+        ? account.readinessReason || 'Account is blocked from trading.'
+        : null,
+    unsettledFunds: null,
+    dayTradeBuyingPower: null,
+    maintenanceExcess: null,
+    alerts: [],
+    syncRuns: [],
+    recentActivity: [],
+    configuration: brokerConfigurationFromTradeAccount(account)
+  };
+}
+
+const brokerAccounts = tradeAccounts.map((account) => brokerAccountFromTradeAccount(account));
+const brokerAccountById = Object.fromEntries(
+  brokerAccounts.map((account) => [account.accountId, account])
+);
+const brokerConfigurationByAccountId = Object.fromEntries(
+  tradeAccounts.map((account) => [account.accountId, brokerConfigurationFromTradeAccount(account)])
+);
+const brokerAccountDetailsById = Object.fromEntries(
+  tradeAccounts.map((account) => [account.accountId, brokerAccountDetailFromTradeAccount(account)])
+);
+
+function syncBrokerConfiguration(
+  accountId: string,
+  configuration: ReturnType<typeof brokerConfigurationFromTradeAccount>
+) {
+  brokerConfigurationByAccountId[accountId] = configuration;
+
+  const currentAccount = brokerAccountById[accountId];
+  if (currentAccount) {
+    const nextAccount = {
+      ...currentAccount,
+      configurationVersion: configuration.configurationVersion,
+      allocationSummary: configuration.allocation
+    };
+    brokerAccountById[accountId] = nextAccount;
+    const accountIndex = brokerAccounts.findIndex((account) => account.accountId === accountId);
+    if (accountIndex >= 0) {
+      brokerAccounts[accountIndex] = nextAccount;
+    }
+  }
+
+  const currentDetail = brokerAccountDetailsById[accountId];
+  if (currentDetail) {
+    brokerAccountDetailsById[accountId] = {
+      ...currentDetail,
+      account: brokerAccountById[accountId] ?? currentDetail.account,
+      capabilities: configuration.capabilities,
+      configuration
+    };
+  }
+}
+
+function resetBrokerMocks() {
+  brokerAccounts.splice(
+    0,
+    brokerAccounts.length,
+    ...tradeAccounts.map((account) => brokerAccountFromTradeAccount(account))
+  );
+  for (const account of tradeAccounts) {
+    brokerAccountById[account.accountId] = brokerAccountFromTradeAccount(account);
+    brokerConfigurationByAccountId[account.accountId] =
+      brokerConfigurationFromTradeAccount(account);
+    brokerAccountDetailsById[account.accountId] = brokerAccountDetailFromTradeAccount(account);
+  }
+}
+
+async function handleBrokerAccountAction(route: Route, accountId: string, apiPath: string) {
+  const request = route.request();
+  const body = request.postDataJSON() as {
+    reason?: string;
+    note?: string;
+    paused?: boolean;
+  } | null;
+  const alertMatch = apiPath.match(/^\/broker-accounts\/([^/]+)\/alerts\/([^/]+)\/acknowledge$/);
+  const detail = brokerAccountDetailsById[accountId];
+  const account = brokerAccountById[accountId];
+  const note = body?.reason ?? body?.note ?? null;
+  let action: 'reconnect' | 'pause_sync' | 'resume_sync' | 'refresh' | 'acknowledge_alert' =
+    'refresh';
+  let summary = 'Account action accepted from Account Operations.';
+  let syncPaused = account?.connectionHealth.syncPaused ?? false;
+
+  if (apiPath === `/broker-accounts/${accountId}/reconnect`) {
+    action = 'reconnect';
+    summary = 'Reconnect request accepted from Account Operations.';
+  } else if (apiPath === `/broker-accounts/${accountId}/sync/pause`) {
+    action = 'pause_sync';
+    summary = 'Sync pause accepted from Account Operations.';
+    syncPaused = true;
+  } else if (apiPath === `/broker-accounts/${accountId}/sync/resume`) {
+    action = 'resume_sync';
+    summary = 'Sync resume accepted from Account Operations.';
+    syncPaused = false;
+  } else if (alertMatch) {
+    action = 'acknowledge_alert';
+    summary = 'Alert acknowledgement accepted from Account Operations.';
+  }
+
+  if (account) {
+    const nextAccount = {
+      ...account,
+      connectionHealth: {
+        ...account.connectionHealth,
+        syncPaused,
+        syncStatus: syncPaused ? 'paused' : account.connectionHealth.syncStatus
+      }
+    };
+    brokerAccountById[accountId] = nextAccount;
+    const accountIndex = brokerAccounts.findIndex((candidate) => candidate.accountId === accountId);
+    if (accountIndex >= 0) {
+      brokerAccounts[accountIndex] = nextAccount;
+    }
+  }
+
+  if (detail) {
+    brokerAccountDetailsById[accountId] = {
+      ...detail,
+      account: brokerAccountById[accountId] ?? detail.account,
+      recentActivity: [
+        {
+          activityId: `activity-${action}-${Date.now()}`,
+          accountId,
+          activityType: action,
+          status: 'accepted',
+          requestedAt: NOW,
+          completedAt: null,
+          actor: 'playwright',
+          summary,
+          note,
+          relatedAlertId: alertMatch ? decodeURIComponent(alertMatch[2] || '') : null
+        },
+        ...detail.recentActivity
+      ]
+    };
+  }
+
+  return json(route, {
+    actionId: `action-${action}-${Date.now()}`,
+    accountId,
+    action,
+    status: 'accepted',
+    requestedAt: NOW,
+    message: summary,
+    resultingConnectionHealth: brokerAccountById[accountId]?.connectionHealth ?? null,
+    tradeReadiness: brokerAccountById[accountId]?.tradeReadiness ?? null,
+    syncPaused
+  });
+}
 
 const tradeOrdersByAccountId = {
   'acct-paper': [
@@ -799,12 +1422,72 @@ function tradeAccountIdFromPath(apiPath: string) {
   return decodeURIComponent(apiPath.split('/')[2] || '');
 }
 
+function brokerAccountIdFromPath(apiPath: string) {
+  return decodeURIComponent(apiPath.split('/')[2] || '');
+}
+
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({
     status,
     contentType: 'application/json',
     body: JSON.stringify(body)
   });
+}
+
+function requestJson(route: Route): Record<string, unknown> {
+  const body = route.request().postData();
+  return body ? (JSON.parse(body) as Record<string, unknown>) : {};
+}
+
+function saveBrokerTradingPolicy(route: Route, accountId: string) {
+  const current = brokerConfigurationByAccountId[accountId];
+  const tradeAccount = tradeAccountById[accountId];
+  const payload = requestJson(route);
+  const expectedConfigurationVersion = payload.expectedConfigurationVersion;
+
+  if (
+    typeof expectedConfigurationVersion === 'number' &&
+    expectedConfigurationVersion !== current.configurationVersion
+  ) {
+    return json(
+      route,
+      {
+        detail: `Configuration version conflict for account '${accountId}': expected ${expectedConfigurationVersion}, found ${current.configurationVersion}.`
+      },
+      409
+    );
+  }
+
+  const requestedPolicy = (payload.requestedPolicy ??
+    current.requestedPolicy) as typeof current.requestedPolicy;
+  const nextConfiguration = {
+    ...current,
+    configurationVersion: current.configurationVersion + 1,
+    requestedPolicy,
+    effectivePolicy: effectivePolicyFromRequestedPolicy(tradeAccount, requestedPolicy),
+    updatedAt: NOW,
+    updatedBy: 'playwright',
+    audit: [
+      {
+        auditId: `audit-policy-${accountId}-${current.configurationVersion + 1}`,
+        accountId,
+        category: 'trading_policy',
+        outcome: 'saved',
+        requestedAt: NOW,
+        actor: 'playwright',
+        requestId: 'playwright-request',
+        grantedRoles: ['AssetAllocation.AccountPolicy.Write'],
+        summary: 'Updated trading policy from account operations.',
+        before: current.requestedPolicy,
+        after: requestedPolicy,
+        denialReason: null
+      },
+      ...current.audit
+    ]
+  };
+
+  syncBrokerConfiguration(accountId, nextConfiguration);
+  return json(route, nextConfiguration);
 }
 
 function jobLogsPayload(jobName: string) {
@@ -835,7 +1518,8 @@ function jobLogsPayload(jobName: string) {
 }
 
 function normalizeApiPath(url: URL) {
-  return url.pathname.replace(/\/api/, '');
+  const apiPath = url.pathname.replace(/\/api/, '');
+  return apiPath.length > 1 ? apiPath.replace(/\/+$/, '') : apiPath;
 }
 
 async function handleApiRoute(route: Route) {
@@ -859,8 +1543,100 @@ async function handleApiRoute(route: Route) {
     return json(route, systemStatusViewPayload.systemHealth);
   }
 
+  if (apiPath === '/strategies') {
+    return json(route, strategySummaries);
+  }
+
+  if (apiPath.startsWith('/strategies/') && apiPath.endsWith('/detail')) {
+    const strategyName = decodeURIComponent(apiPath.split('/')[2] || '');
+    const detail = strategyDetails[strategyName as keyof typeof strategyDetails];
+    return detail ? json(route, detail) : json(route, { message: 'Unknown strategy' }, 404);
+  }
+
+  if (apiPath === '/strategies/analytics/compare') {
+    return json(route, strategyComparisonPayload);
+  }
+
+  if (apiPath === '/strategies/analytics/forecast') {
+    return json(route, strategyForecastPayload);
+  }
+
+  if (apiPath === '/strategies/analytics/allocations') {
+    return json(route, strategyAllocationPayload);
+  }
+
+  if (apiPath === '/strategies/analytics/trades') {
+    return json(route, strategyTradeHistoryPayload);
+  }
+
+  if (apiPath === '/universes') {
+    return json(route, [
+      {
+        name: 'large-cap-quality',
+        description: 'Large cap quality universe',
+        version: 1,
+        updated_at: NOW
+      }
+    ]);
+  }
+
+  if (apiPath === '/universes/catalog') {
+    return json(route, universeCatalogPayload);
+  }
+
+  if (apiPath === '/universes/large-cap-quality/detail') {
+    return json(route, universeDetailPayload);
+  }
+
+  if (apiPath === '/rankings') {
+    return json(route, [
+      {
+        name: 'quality-momentum',
+        description: 'Quality and momentum factors',
+        version: 1,
+        updated_at: NOW
+      }
+    ]);
+  }
+
+  if (apiPath === '/rankings/catalog') {
+    return json(route, rankingCatalogPayload);
+  }
+
+  if (apiPath === '/rankings/quality-momentum/detail') {
+    return json(route, rankingDetailPayload);
+  }
+
   if (apiPath === '/backtests') {
     return json(route, backtestRunsPayload);
+  }
+
+  if (apiPath === '/backtests/run-playwright-completed/summary') {
+    return json(route, {
+      run_id: 'run-playwright-completed',
+      total_return: 0.12,
+      sharpe_ratio: 1.1,
+      max_drawdown: -0.05,
+      cost_drag_bps: 12,
+      trades: 4,
+      closed_positions: 2
+    });
+  }
+
+  if (apiPath === '/backtests/run-playwright-completed/metrics/timeseries') {
+    return json(route, {
+      points: [],
+      total_points: 2,
+      truncated: false
+    });
+  }
+
+  if (apiPath === '/backtests/run-playwright-completed/metrics/rolling') {
+    return json(route, {
+      points: [],
+      total_points: 2,
+      truncated: false
+    });
   }
 
   if (apiPath === '/data/gold/market') {
@@ -873,6 +1649,43 @@ async function handleApiRoute(route: Route) {
 
   if (apiPath === '/realtime/ticket') {
     return json(route, { ticket: 'playwright-ticket-123' });
+  }
+
+  if (apiPath === '/broker-accounts') {
+    return json(route, { accounts: brokerAccounts, generatedAt: NOW });
+  }
+
+  if (apiPath.startsWith('/broker-accounts/')) {
+    const accountId = brokerAccountIdFromPath(apiPath);
+    if (!brokerAccountById[accountId]) {
+      return json(route, { detail: 'Unknown broker account' }, 404);
+    }
+
+    if (apiPath === `/broker-accounts/${accountId}`) {
+      return json(route, brokerAccountDetailsById[accountId]);
+    }
+
+    if (apiPath === `/broker-accounts/${accountId}/configuration`) {
+      return json(route, brokerConfigurationByAccountId[accountId]);
+    }
+
+    if (apiPath === `/broker-accounts/${accountId}/trading-policy`) {
+      return saveBrokerTradingPolicy(route, accountId);
+    }
+
+    if (apiPath === `/broker-accounts/${accountId}/allocation`) {
+      return json(route, brokerConfigurationByAccountId[accountId]);
+    }
+
+    if (
+      apiPath === `/broker-accounts/${accountId}/reconnect` ||
+      apiPath === `/broker-accounts/${accountId}/sync/pause` ||
+      apiPath === `/broker-accounts/${accountId}/sync/resume` ||
+      apiPath === `/broker-accounts/${accountId}/refresh` ||
+      apiPath.match(/^\/broker-accounts\/([^/]+)\/alerts\/([^/]+)\/acknowledge$/)
+    ) {
+      return handleBrokerAccountAction(route, accountId, apiPath);
+    }
   }
 
   if (apiPath === '/trade-accounts') {
@@ -941,8 +1754,9 @@ async function handleApiRoute(route: Route) {
       const matchedAccountId = decodeURIComponent(cancelMatch[1] || '');
       const orderId = decodeURIComponent(cancelMatch[2] || '');
       const order =
-        (tradeOrdersByAccountId[matchedAccountId] ?? []).find((candidate) => candidate.orderId === orderId) ??
-        tradeOrdersByAccountId[matchedAccountId]?.[0];
+        (tradeOrdersByAccountId[matchedAccountId] ?? []).find(
+          (candidate) => candidate.orderId === orderId
+        ) ?? tradeOrdersByAccountId[matchedAccountId]?.[0];
 
       return json(route, {
         order: { ...order, status: 'cancel_pending' },
@@ -959,6 +1773,8 @@ async function handleApiRoute(route: Route) {
 }
 
 export async function registerUiApiMocks(page: Page) {
+  resetBrokerMocks();
+
   await page.route('**/healthz', async (route) => {
     await route.fulfill({
       status: 200,

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useConfirmAction } from '@/app/components/common/ConfirmActionDialog';
 import { PageHero } from '@/app/components/common/PageHero';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
@@ -57,6 +58,7 @@ export const PostgresExplorerPage: React.FC = () => {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [queryFilters, setQueryFilters] = useState<QueryFilterDraft[]>([]);
+  const { confirmAction, confirmationDialog } = useConfirmAction();
 
   const resetSelectionState = useCallback(() => {
     setError(null);
@@ -136,9 +138,15 @@ export const PostgresExplorerPage: React.FC = () => {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Purge all rows from ${selectedSchema}.${selectedTable}? This action cannot be undone.`
-    );
+    const confirmed = await confirmAction({
+      title: 'Purge Postgres Table',
+      description: `Purge all rows from ${selectedSchema}.${selectedTable}? This action cannot be undone.`,
+      confirmLabel: 'Purge Rows',
+      cancelLabel: 'Cancel',
+      tone: 'destructive',
+      requiredConfirmationText: `${selectedSchema}.${selectedTable}`,
+      confirmationLabel: `Type ${selectedSchema}.${selectedTable} to confirm`
+    });
     if (!confirmed) {
       return;
     }
@@ -161,7 +169,7 @@ export const PostgresExplorerPage: React.FC = () => {
     } finally {
       setPurging(false);
     }
-  }, [selectedSchema, selectedTable]);
+  }, [confirmAction, selectedSchema, selectedTable]);
 
   const openEditor = useCallback(
     (row: RowData) => {
@@ -678,6 +686,7 @@ export const PostgresExplorerPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {confirmationDialog}
     </div>
   );
 };

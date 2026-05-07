@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -40,6 +41,23 @@ const JOBS: JobLogStreamTarget[] = [
     startTime: '2026-03-11T12:00:00Z'
   }
 ];
+
+function ControlledJobLogStreamPanel({
+  initialJobName = 'alpha-job',
+  jobs = JOBS
+}: {
+  initialJobName?: string;
+  jobs?: JobLogStreamTarget[];
+}) {
+  const [selectedJobName, setSelectedJobName] = useState(initialJobName);
+  return (
+    <JobLogStreamPanel
+      jobs={jobs}
+      selectedJobName={selectedJobName}
+      onSelectedJobNameChange={setSelectedJobName}
+    />
+  );
+}
 
 describe('JobLogStreamPanel', () => {
   beforeEach(() => {
@@ -101,7 +119,7 @@ describe('JobLogStreamPanel', () => {
     vi.mocked(DataService.getJobLogs)
       .mockResolvedValueOnce({
         jobName: 'alpha-job',
-        runsRequested: 1,
+        runsRequested: 3,
         runsReturned: 1,
         tailLines: 10,
         runs: [
@@ -122,7 +140,7 @@ describe('JobLogStreamPanel', () => {
       })
       .mockResolvedValueOnce({
         jobName: 'beta-job',
-        runsRequested: 1,
+        runsRequested: 3,
         runsReturned: 1,
         tailLines: 10,
         runs: [
@@ -143,12 +161,12 @@ describe('JobLogStreamPanel', () => {
       });
 
     const user = userEvent.setup();
-    renderWithProviders(<JobLogStreamPanel jobs={JOBS} />);
+    renderWithProviders(<ControlledJobLogStreamPanel />);
 
     await waitFor(() => {
       expect(DataService.getJobLogs).toHaveBeenCalledWith(
         'alpha-job',
-        { runs: 1 },
+        { runs: 3 },
         expect.any(AbortSignal)
       );
     });
@@ -158,30 +176,30 @@ describe('JobLogStreamPanel', () => {
     expect(screen.getByRole('columnheader', { name: 'stream_s' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'message' })).toBeInTheDocument();
     expect(screen.getByText('stdout')).toBeInTheDocument();
-    expect(subscribeTopics).toEqual(
-      expect.arrayContaining([['job-logs:alpha-job/executions/alpha-exec-001']])
+    expect(subscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:alpha-job', 'job-logs:alpha-job/executions/alpha-exec-001'])
     );
 
     await user.click(screen.getByRole('combobox', { name: /monitored job/i }));
     expect((await screen.findAllByRole('option')).map((option) => option.textContent)).toEqual([
-      'Bronze / market / alpha-job',
-      'Silver / finance / beta-job'
+      'Silver / finance / beta-job',
+      'Bronze / market / alpha-job'
     ]);
     await user.click(await screen.findByRole('option', { name: 'Silver / finance / beta-job' }));
 
     await waitFor(() => {
       expect(DataService.getJobLogs).toHaveBeenLastCalledWith(
         'beta-job',
-        { runs: 1 },
+        { runs: 3 },
         expect.any(AbortSignal)
       );
     });
 
-    expect(unsubscribeTopics).toEqual(
-      expect.arrayContaining([['job-logs:alpha-job/executions/alpha-exec-001']])
+    expect(unsubscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:alpha-job', 'job-logs:alpha-job/executions/alpha-exec-001'])
     );
-    expect(subscribeTopics).toEqual(
-      expect.arrayContaining([['job-logs:beta-job/executions/beta-exec-001']])
+    expect(subscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:beta-job', 'job-logs:beta-job/executions/beta-exec-001'])
     );
     expect(await screen.findByText('beta snapshot')).toBeInTheDocument();
 
@@ -210,15 +228,110 @@ describe('JobLogStreamPanel', () => {
     window.removeEventListener(REALTIME_UNSUBSCRIBE_EVENT, captureUnsubscribe);
   });
 
-  it('prefers the live running state over the last completed run status', async () => {
+  it('ignores stale snapshot responses after the selected job changes', async () => {
+    let resolveAlpha: (value: Awaited<ReturnType<typeof DataService.getJobLogs>>) => void = () =>
+      undefined;
+    const alphaSnapshot = new Promise<Awaited<ReturnType<typeof DataService.getJobLogs>>>(
+      (resolve) => {
+        resolveAlpha = resolve;
+      }
+    );
+    vi.mocked(DataService.getJobLogs)
+      .mockReturnValueOnce(alphaSnapshot)
+      .mockResolvedValueOnce({
+        jobName: 'beta-job',
+        runsRequested: 3,
+        runsReturned: 1,
+        tailLines: 10,
+        runs: [
+          {
+            executionName: 'beta-exec-001',
+            tail: ['beta current snapshot']
+          }
+        ]
+      });
+
+    const user = userEvent.setup();
+    renderWithProviders(<ControlledJobLogStreamPanel />);
+
+    await waitFor(() => {
+      expect(DataService.getJobLogs).toHaveBeenCalledWith(
+        'alpha-job',
+        { runs: 3 },
+        expect.any(AbortSignal)
+      );
+    });
+
+    await user.click(screen.getByRole('combobox', { name: /monitored job/i }));
+    await user.click(await screen.findByRole('option', { name: 'Silver / finance / beta-job' }));
+
+    expect(await screen.findByText('beta current snapshot')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveAlpha({
+        jobName: 'alpha-job',
+        runsRequested: 3,
+        runsReturned: 1,
+        tailLines: 10,
+        runs: [
+          {
+            executionName: 'alpha-exec-001',
+            tail: ['stale alpha snapshot']
+          }
+        ]
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('stale alpha snapshot')).not.toBeInTheDocument();
+    expect(screen.getByText('beta current snapshot')).toBeInTheDocument();
+  });
+
+  it('defaults to a running job before idle jobs when the stream owns selection', async () => {
+    vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
+      jobName: 'beta-job',
+      runsRequested: 3,
+      runsReturned: 1,
+      tailLines: 10,
+      runs: [
+        {
+          executionName: 'beta-exec-001',
+          startTime: '2026-03-11T12:00:00Z',
+          tail: ['beta running snapshot'],
+          consoleLogs: [
+            {
+              timestamp: '2026-03-11T12:00:01Z',
+              stream_s: 'stdout',
+              executionName: 'beta-exec-001',
+              message: 'beta running snapshot'
+            }
+          ]
+        }
+      ]
+    });
+
+    renderWithProviders(<JobLogStreamPanel jobs={JOBS} />);
+
+    await waitFor(() => {
+      expect(DataService.getJobLogs).toHaveBeenCalledWith(
+        'beta-job',
+        { runs: 3 },
+        expect.any(AbortSignal)
+      );
+    });
+    expect(await screen.findByText('beta running snapshot')).toBeInTheDocument();
+    expect(screen.queryByText(/No console log lines were returned/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the live running resource state over a stale terminal execution status', async () => {
     const job: JobLogStreamTarget = {
       ...JOBS[1],
-      recentStatus: 'success'
+      recentStatus: 'failed'
     };
 
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 1,
+      runsRequested: 3,
       runsReturned: 1,
       tailLines: 10,
       runs: [
@@ -232,7 +345,7 @@ describe('JobLogStreamPanel', () => {
 
     expect(await screen.findByText('beta snapshot')).toBeInTheDocument();
     expect(screen.getByText('RUNNING')).toBeInTheDocument();
-    expect(screen.queryByText('SUCCESS')).not.toBeInTheDocument();
+    expect(screen.queryByText('FAILED')).not.toBeInTheDocument();
   });
 
   it('anchors the console tail to an older active execution when one is still running', async () => {
@@ -246,7 +359,7 @@ describe('JobLogStreamPanel', () => {
 
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 2,
+      runsRequested: 3,
       runsReturned: 2,
       tailLines: 10,
       runs: [
@@ -269,10 +382,278 @@ describe('JobLogStreamPanel', () => {
 
     expect(await screen.findByText('older active snapshot')).toBeInTheDocument();
     expect(screen.queryByText('latest finished snapshot')).not.toBeInTheDocument();
-    expect(subscribeTopics).toEqual(
-      expect.arrayContaining([['job-logs:beta-job/executions/beta-exec-001']])
+    expect(subscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:beta-job', 'job-logs:beta-job/executions/beta-exec-001'])
     );
 
+    window.removeEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
+  });
+
+  it('falls back to a returned execution with output when the anchored execution is empty', async () => {
+    const subscribeTopics: string[][] = [];
+    const captureSubscribe = (event: Event) => {
+      subscribeTopics.push(
+        ((event as CustomEvent<{ topics: string[] }>).detail?.topics || []).slice()
+      );
+    };
+    window.addEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
+
+    vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
+      jobName: 'beta-job',
+      runsRequested: 3,
+      runsReturned: 3,
+      tailLines: 10,
+      runs: [
+        {
+          executionName: 'beta-exec-003',
+          status: 'Succeeded',
+          startTime: '2026-03-12T12:00:00Z',
+          tail: [],
+          consoleLogs: []
+        },
+        {
+          executionName: 'beta-exec-002',
+          status: 'Succeeded',
+          startTime: '2026-03-11T12:00:00Z',
+          tail: ['older output snapshot'],
+          consoleLogs: [
+            {
+              timestamp: '2026-03-11T12:00:01Z',
+              stream_s: 'stdout',
+              executionName: 'beta-exec-002',
+              message: 'older output snapshot'
+            }
+          ]
+        },
+        {
+          executionName: 'beta-exec-001',
+          status: 'Succeeded',
+          startTime: '2026-03-10T12:00:00Z',
+          tail: ['oldest output snapshot']
+        }
+      ]
+    });
+
+    renderWithProviders(<JobLogStreamPanel jobs={[JOBS[1]]} />);
+
+    await waitFor(() => {
+      expect(DataService.getJobLogs).toHaveBeenCalledWith(
+        'beta-job',
+        { runs: 3 },
+        expect.any(AbortSignal)
+      );
+    });
+    expect(await screen.findByText('older output snapshot')).toBeInTheDocument();
+    expect(screen.queryByText('oldest output snapshot')).not.toBeInTheDocument();
+    expect(subscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:beta-job', 'job-logs:beta-job/executions/beta-exec-002'])
+    );
+
+    await act(async () => {
+      emitConsoleLogStream({
+        topic: 'job-logs:beta-job/executions/beta-exec-003',
+        resourceType: 'job',
+        resourceName: 'beta-job',
+        lines: [
+          {
+            id: 'ignored-latest-line',
+            message: 'ignored latest live line',
+            timestamp: '2026-03-12T12:00:02Z',
+            stream_s: 'stdout'
+          }
+        ]
+      });
+    });
+    expect(await screen.findByText('ignored latest live line')).toBeInTheDocument();
+
+    await act(async () => {
+      emitConsoleLogStream({
+        topic: 'job-logs:beta-job/executions/beta-exec-002',
+        resourceType: 'job',
+        resourceName: 'beta-job',
+        lines: [
+          {
+            id: 'selected-live-line',
+            message: 'selected execution live line',
+            timestamp: '2026-03-11T12:00:02Z',
+            stream_s: 'stderr'
+          }
+        ]
+      });
+    });
+    expect(await screen.findByText('selected execution live line')).toBeInTheDocument();
+
+    window.removeEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
+  });
+
+  it('shows an execution-window empty state when returned executions have no output', async () => {
+    const subscribeTopics: string[][] = [];
+    const captureSubscribe = (event: Event) => {
+      subscribeTopics.push(
+        ((event as CustomEvent<{ topics: string[] }>).detail?.topics || []).slice()
+      );
+    };
+    window.addEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
+
+    vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
+      jobName: 'alpha-job',
+      runsRequested: 3,
+      runsReturned: 3,
+      tailLines: 10,
+      runs: [
+        {
+          executionName: 'alpha-exec-003',
+          status: 'Succeeded',
+          startTime: '2026-03-12T12:00:00Z',
+          tail: [],
+          consoleLogs: []
+        },
+        {
+          executionName: 'alpha-exec-002',
+          status: 'Succeeded',
+          startTime: '2026-03-11T12:00:00Z',
+          tail: [''],
+          consoleLogs: []
+        },
+        {
+          executionName: 'alpha-exec-001',
+          status: 'Succeeded',
+          startTime: '2026-03-10T12:00:00Z',
+          tail: []
+        }
+      ]
+    });
+
+    renderWithProviders(<JobLogStreamPanel jobs={[JOBS[0]]} />);
+
+    expect(
+      await screen.findByText('No console log lines were returned for the last 3 executions.')
+    ).toBeInTheDocument();
+    expect(subscribeTopics.flat()).toEqual(expect.arrayContaining(['job-logs:alpha-job']));
+
+    await act(async () => {
+      emitConsoleLogStream({
+        topic: 'job-logs:alpha-job/executions/alpha-exec-live',
+        resourceType: 'job',
+        resourceName: 'alpha-job',
+        lines: [
+          {
+            id: 'alpha-live-line',
+            message: 'alpha live output',
+            timestamp: '2026-03-12T12:00:02Z',
+            stream_s: 'stdout'
+          }
+        ]
+      });
+    });
+
+    expect(await screen.findByText('alpha live output')).toBeInTheDocument();
+
+    window.removeEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
+  });
+
+  it('waits for live output when a running execution snapshot is empty', async () => {
+    const subscribeTopics: string[][] = [];
+    const captureSubscribe = (event: Event) => {
+      subscribeTopics.push(
+        ((event as CustomEvent<{ topics: string[] }>).detail?.topics || []).slice()
+      );
+    };
+    window.addEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
+
+    vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
+      jobName: 'beta-job',
+      runsRequested: 3,
+      runsReturned: 1,
+      tailLines: 10,
+      runs: [
+        {
+          executionName: 'beta-exec-001',
+          status: 'Running',
+          startTime: '2026-03-11T12:00:00Z',
+          tail: [],
+          consoleLogs: []
+        }
+      ]
+    });
+
+    renderWithProviders(<JobLogStreamPanel jobs={[JOBS[1]]} />);
+
+    expect(
+      await screen.findByText('Waiting for live console output from the running execution.')
+    ).toBeInTheDocument();
+    expect(subscribeTopics.flat()).toEqual(
+      expect.arrayContaining(['job-logs:beta-job', 'job-logs:beta-job/executions/beta-exec-001'])
+    );
+
+    await act(async () => {
+      emitConsoleLogStream({
+        topic: 'job-logs:beta-job/executions/beta-exec-001',
+        resourceType: 'job',
+        resourceName: 'beta-job',
+        lines: [
+          {
+            id: 'late-running-line',
+            message: 'late running output',
+            timestamp: '2026-03-11T12:00:02Z',
+            stream_s: 'stdout'
+          }
+        ]
+      });
+    });
+
+    expect(await screen.findByText('late running output')).toBeInTheDocument();
+    window.removeEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
+  });
+
+  it('subscribes to the running job topic when the execution name is unavailable', async () => {
+    const subscribeTopics: string[][] = [];
+    const captureSubscribe = (event: Event) => {
+      subscribeTopics.push(
+        ((event as CustomEvent<{ topics: string[] }>).detail?.topics || []).slice()
+      );
+    };
+    window.addEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
+
+    vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
+      jobName: 'beta-job',
+      runsRequested: 3,
+      runsReturned: 1,
+      tailLines: 10,
+      runs: [
+        {
+          status: 'Running',
+          startTime: '2026-03-11T12:00:00Z',
+          tail: [],
+          consoleLogs: []
+        }
+      ]
+    });
+
+    renderWithProviders(<JobLogStreamPanel jobs={[JOBS[1]]} />);
+
+    expect(
+      await screen.findByText('Waiting for live console output from the running execution.')
+    ).toBeInTheDocument();
+    expect(subscribeTopics).toEqual(expect.arrayContaining([['job-logs:beta-job']]));
+
+    await act(async () => {
+      emitConsoleLogStream({
+        topic: 'job-logs:beta-job',
+        resourceType: 'job',
+        resourceName: 'beta-job',
+        lines: [
+          {
+            id: 'job-topic-line',
+            message: 'job topic output',
+            timestamp: '2026-03-11T12:00:02Z',
+            stream_s: 'stderr'
+          }
+        ]
+      });
+    });
+
+    expect(await screen.findByText('job topic output')).toBeInTheDocument();
     window.removeEventListener(REALTIME_SUBSCRIBE_EVENT, captureSubscribe);
   });
 
@@ -301,7 +682,7 @@ describe('JobLogStreamPanel', () => {
 
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 1,
+      runsRequested: 3,
       runsReturned: 1,
       tailLines: 10,
       runs: [
@@ -345,7 +726,7 @@ describe('JobLogStreamPanel', () => {
 
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 1,
+      runsRequested: 3,
       runsReturned: 1,
       tailLines: 10,
       runs: [
@@ -405,7 +786,7 @@ describe('JobLogStreamPanel', () => {
 
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 1,
+      runsRequested: 3,
       runsReturned: 1,
       tailLines: 10,
       runs: [
@@ -427,7 +808,7 @@ describe('JobLogStreamPanel', () => {
   it('hydrates job usage from live system health refreshes when the initial snapshot has no signals', async () => {
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 1,
+      runsRequested: 3,
       runsReturned: 1,
       tailLines: 10,
       runs: [
@@ -483,11 +864,32 @@ describe('JobLogStreamPanel', () => {
     expect(screen.getByText('1 GiB')).toBeInTheDocument();
   });
 
+  it('surfaces stale usage metrics when live usage polling fails', async () => {
+    vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
+      jobName: 'beta-job',
+      runsRequested: 3,
+      runsReturned: 1,
+      tailLines: 10,
+      runs: [
+        {
+          tail: ['beta snapshot']
+        }
+      ]
+    });
+    vi.mocked(DataService.getSystemHealth).mockRejectedValueOnce(new Error('health unavailable'));
+
+    renderWithProviders(<JobLogStreamPanel jobs={[JOBS[1]]} />);
+
+    expect(await screen.findByText('beta snapshot')).toBeInTheDocument();
+    expect(await screen.findByText('Showing last known metrics.')).toBeInTheDocument();
+  });
+
   it('skips a live usage poll while the previous system health refresh is still running', async () => {
     vi.useFakeTimers();
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 1,
+      runsRequested: 3,
       runsReturned: 1,
       tailLines: 10,
       runs: [
@@ -565,7 +967,7 @@ describe('JobLogStreamPanel', () => {
 
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 1,
+      runsRequested: 3,
       runsReturned: 1,
       tailLines: 10,
       runs: [
@@ -585,7 +987,7 @@ describe('JobLogStreamPanel', () => {
   it('keeps streaming without refetching when job metadata refreshes for the same run', async () => {
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 1,
+      runsRequested: 3,
       runsReturned: 1,
       tailLines: 10,
       runs: [
@@ -652,7 +1054,7 @@ describe('JobLogStreamPanel', () => {
   it('uses an auto-fit summary grid so panel metrics wrap inside the available width', async () => {
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 1,
+      runsRequested: 3,
       runsReturned: 1,
       tailLines: 10,
       runs: [
@@ -677,7 +1079,7 @@ describe('JobLogStreamPanel', () => {
   it('auto-scrolls while at bottom and pauses when manually scrolled up', async () => {
     vi.mocked(DataService.getJobLogs).mockResolvedValueOnce({
       jobName: 'beta-job',
-      runsRequested: 1,
+      runsRequested: 3,
       runsReturned: 1,
       tailLines: 10,
       runs: [
@@ -795,6 +1197,23 @@ describe('JobLogStreamPanel', () => {
 
     expect(
       await screen.findByText('Live job logs are not configured for this environment.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Failed to load logs:/i)).not.toBeInTheDocument();
+  });
+
+  it('shows a neutral notice when the current session lacks the logs-read role', async () => {
+    vi.mocked(DataService.getJobLogs).mockRejectedValueOnce(
+      new Error(
+        'API Error: 403 Forbidden [requestId=req-456] - {"detail":"Missing required roles: AssetAllocation.System.Logs.Read."}'
+      )
+    );
+
+    renderWithProviders(<JobLogStreamPanel jobs={[JOBS[0]]} />);
+
+    expect(
+      await screen.findByText(
+        'Your session is missing AssetAllocation.System.Logs.Read, so live job logs are hidden.'
+      )
     ).toBeInTheDocument();
     expect(screen.queryByText(/Failed to load logs:/i)).not.toBeInTheDocument();
   });

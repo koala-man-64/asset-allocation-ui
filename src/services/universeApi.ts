@@ -9,13 +9,24 @@ import type {
 
 export const universeApi = {
   async listUniverseConfigs(signal?: AbortSignal): Promise<UniverseConfigSummary[]> {
-    return request<UniverseConfigSummary[]>('/universes', { signal });
+    return request<UniverseConfigSummary[]>('/universes/', { signal });
   },
 
   async getUniverseConfigDetail(name: string, signal?: AbortSignal): Promise<UniverseConfigDetail> {
     return request<UniverseConfigDetail>(`/universes/${encodeURIComponent(name)}/detail`, {
       signal
     });
+  },
+
+  async getUniverseConfigRevision(
+    name: string,
+    version: number,
+    signal?: AbortSignal
+  ): Promise<UniverseConfigDetail> {
+    return request<UniverseConfigDetail>(
+      `/universes/${encodeURIComponent(name)}/revisions/${encodeURIComponent(String(version))}`,
+      { signal }
+    );
   },
 
   async saveUniverseConfig(
@@ -26,7 +37,7 @@ export const universeApi = {
     },
     signal?: AbortSignal
   ): Promise<{ status: string; message: string; version: number }> {
-    return request<{ status: string; message: string; version: number }>('/universes', {
+    return request<{ status: string; message: string; version: number }>('/universes/', {
       method: 'POST',
       body: JSON.stringify(payload),
       signal

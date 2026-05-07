@@ -14,6 +14,7 @@ import {
   CONSOLE_LOG_STREAM_EVENT_TYPE,
   REALTIME_SUBSCRIBE_EVENT,
   REALTIME_UNSUBSCRIBE_EVENT,
+  emitRealtimeStatus,
   emitConsoleLogStream
 } from '@/services/realtimeBus';
 import { redirectToLogin } from '@/utils/authNavigation';
@@ -55,6 +56,27 @@ function createRealtimeRequestId(): string {
     return crypto.randomUUID();
   }
   return `realtime-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function readCookie(name: string): string {
+  const target = `${name}=`;
+  return (
+    document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(target))
+      ?.slice(target.length) ?? ''
+  );
+}
+
+function readCsrfToken(): string {
+  for (const name of CSRF_COOKIE_NAMES) {
+    const token = readCookie(name);
+    if (token) {
+      return decodeURIComponent(token);
+    }
+  }
+  return '';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -148,6 +170,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
     }
 
     function markRealtimeUnavailable(message: string): void {
+      emitRealtimeStatus({ status: 'unavailable', message });
       if (realtimeUnavailableRef.current) {
         return;
       }
@@ -156,6 +179,10 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
     }
 
     function scheduleReconnect(): void {
+      emitRealtimeStatus({
+        status: 'reconnecting',
+        message: 'Realtime updates are reconnecting.'
+      });
       if (reconnectTimeoutRef.current) {
         window.clearTimeout(reconnectTimeoutRef.current);
       }
@@ -230,7 +257,9 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
       }
 
       if (!response.ok) {
-        throw new Error((await response.text()) || `Realtime ticket request failed (${response.status})`);
+        throw new Error(
+          (await response.text()) || `Realtime ticket request failed (${response.status})`
+        );
       }
 
       const payload = (await response.json()) as RealtimeTicketResponse;
@@ -252,6 +281,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
         return;
       }
 
+      emitRealtimeStatus({ status: 'connecting', message: 'Opening realtime updates.' });
       connectInFlightRef.current = true;
       try {
         const ticket = await fetchRealtimeTicket();
@@ -264,6 +294,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
         ws.onopen = () => {
           connectInFlightRef.current = false;
           realtimeUnavailableRef.current = false;
+          emitRealtimeStatus({ status: 'connected', message: 'Realtime updates connected.' });
 
           const topics = [...SUBSCRIPTION_TOPICS, ...getDynamicTopics()];
           sendSubscription('subscribe', topics);
@@ -406,7 +437,6 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
 
       if (shouldRefreshSystem) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.systemHealth() });
         void queryClient.invalidateQueries({ queryKey: CONTAINER_APPS_QUERY_KEY });
       }
 

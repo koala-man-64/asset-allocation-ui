@@ -23,7 +23,7 @@ function loginPath(returnTo: string): string {
 }
 
 function RealtimeEnabledContent({ children }: { children: ReactNode }) {
-  useRealtime({ enabled: true });
+  useRealtime({ enabled: config.authRequired });
   return <>{children}</>;
 }
 

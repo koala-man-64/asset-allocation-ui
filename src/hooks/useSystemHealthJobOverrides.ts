@@ -10,19 +10,33 @@ import type { JobTriggerResponse } from '@/services/backtestApi';
 import type { JobRun, ResourceHealth, SystemHealth } from '@/types/strategy';
 
 const SYSTEM_HEALTH_JOB_OVERRIDE_TTL_MS = 2 * 60 * 1000;
+const SYSTEM_HEALTH_JOB_OVERRIDE_MAX_LIFETIME_MS = 30 * 60 * 1000;
+const SERVER_STARTTIME_TOLERANCE_MS = 120 * 1000;
 const SYSTEM_HEALTH_JOB_OVERRIDE_STORAGE_KEY = 'asset-allocation.systemHealthJobOverrides';
 const RUNNING_JOB_STATUS: JobRun['status'] = 'running';
 const RUNNING_RESOURCE_STATE = 'Running';
 const MANUAL_TRIGGER_SOURCE = 'manual';
-const SERVER_CATCH_UP_STATUSES = new Set([
+const SERVER_OBSERVED_STATUSES = new Set([
   'pending',
   'running',
+  'queued',
+  'waiting',
+  'scheduling',
+  'processing',
+  'inprogress',
+  'starting',
   'success',
   'succeeded',
+  'completed',
+  'complete',
   'warning',
   'succeededwithwarnings',
+  'completedwithwarnings',
   'failed',
-  'error'
+  'error',
+  'failure',
+  'terminated',
+  'terminatedwitherror'
 ]);
 
 export interface SystemHealthJobOverride {
@@ -31,6 +45,7 @@ export interface SystemHealthJobOverride {
   status: JobRun['status'];
   runningState: string;
   startTime: string;
+  firstSeenAt?: string;
   triggeredBy: string;
   executionId?: string | null;
   executionName?: string | null;
@@ -106,6 +121,18 @@ function hasRunningState(raw?: string | null): boolean {
   return hasActiveJobRunningState(raw);
 }
 
+function normalizeStatusToken(raw?: string | null): string {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function hasObservedServerJobStatus(raw?: string | null): boolean {
+  const status = normalizeStatusToken(raw);
+  return Boolean(status) && SERVER_OBSERVED_STATUSES.has(status);
+}
+
 function activeOverrideMap(
   overrides?: SystemHealthJobOverrideMap,
   nowMs: number = Date.now()
@@ -165,11 +192,24 @@ function jobReflectsServerState(
   override: SystemHealthJobOverride
 ): boolean {
   if (!job) return false;
-  const status = String(job.status || '')
-    .trim()
-    .toLowerCase();
-  if (!SERVER_CATCH_UP_STATUSES.has(status)) return false;
-  return runStartEpoch(job.startTime) >= runStartEpoch(override.startTime);
+  if (!hasObservedServerJobStatus(job.status)) return false;
+
+  const overrideId = override.executionId ? String(override.executionId) : '';
+  const jobId = job.executionId ? String(job.executionId) : '';
+  if (overrideId && jobId) {
+    return overrideId === jobId;
+  }
+
+  const overrideName = override.executionName ? String(override.executionName) : '';
+  const jobName = job.executionName ? String(job.executionName) : '';
+  if (overrideName && jobName) {
+    return overrideName === jobName;
+  }
+
+  const serverEpoch = runStartEpoch(job.startTime);
+  const overrideEpoch = runStartEpoch(override.startTime);
+  if (!Number.isFinite(serverEpoch) || !Number.isFinite(overrideEpoch)) return false;
+  return Math.abs(serverEpoch - overrideEpoch) <= SERVER_STARTTIME_TOLERANCE_MS;
 }
 
 function resourceReflectsServerState(
@@ -178,7 +218,10 @@ function resourceReflectsServerState(
 ): boolean {
   if (!resource) return false;
   if (hasRunningState(resource.runningState)) return true;
-  return runStartEpoch(resource.lastModifiedAt) >= runStartEpoch(override.startTime);
+  const serverEpoch = runStartEpoch(resource.lastModifiedAt);
+  const overrideEpoch = runStartEpoch(override.startTime);
+  if (!Number.isFinite(serverEpoch) || !Number.isFinite(overrideEpoch)) return false;
+  return Math.abs(serverEpoch - overrideEpoch) <= SERVER_STARTTIME_TOLERANCE_MS;
 }
 
 function optimisticJobRun(override: SystemHealthJobOverride, recentJobs: JobRun[]): JobRun {
@@ -193,8 +236,39 @@ function optimisticJobRun(override: SystemHealthJobOverride, recentJobs: JobRun[
     gitSha: existing?.gitSha,
     triggeredBy: override.triggeredBy,
     warnings: existing?.warnings,
-    metadata: existing?.metadata
+    metadata: existing?.metadata,
+    executionId: override.executionId ?? null,
+    executionName: override.executionName ?? null
   };
+}
+
+function isAmbiguousDuplicate(job: JobRun, override: SystemHealthJobOverride): boolean {
+  const jobKey = toJobKey(String(job?.jobName || ''));
+  if (jobKey !== override.jobKey) return false;
+
+  if (
+    override.executionId &&
+    job.executionId &&
+    String(override.executionId) === String(job.executionId)
+  ) {
+    return true;
+  }
+  if (
+    override.executionName &&
+    job.executionName &&
+    String(override.executionName) === String(job.executionName)
+  ) {
+    return true;
+  }
+
+  if (override.executionId || override.executionName) {
+    return false;
+  }
+
+  const serverEpoch = runStartEpoch(job.startTime);
+  const overrideEpoch = runStartEpoch(override.startTime);
+  if (!Number.isFinite(serverEpoch) || !Number.isFinite(overrideEpoch)) return false;
+  return Math.abs(serverEpoch - overrideEpoch) <= SERVER_STARTTIME_TOLERANCE_MS;
 }
 
 export function mergeSystemHealthWithJobOverrides(
@@ -228,6 +302,14 @@ export function mergeSystemHealthWithJobOverrides(
   const optimisticRuns = Array.from(pendingOverrides.values()).map((override) =>
     optimisticJobRun(override, data.recentJobs)
   );
+
+  const filteredRecentJobs = data.recentJobs.filter((job) => {
+    const jobKey = toJobKey(String(job?.jobName || ''));
+    const override = pendingOverrides.get(jobKey);
+    if (!override) return true;
+    return !isAmbiguousDuplicate(job, override);
+  });
+
   const resources = data.resources?.map((resource) => {
     const override = pendingOverrides.get(toJobKey(String(resource?.name || '')));
     if (!override || hasRunningState(resource.runningState)) {
@@ -242,7 +324,7 @@ export function mergeSystemHealthWithJobOverrides(
 
   return {
     ...data,
-    recentJobs: [...optimisticRuns, ...data.recentJobs],
+    recentJobs: [...optimisticRuns, ...filteredRecentJobs],
     resources
   };
 }
@@ -267,6 +349,7 @@ export function upsertRunningJobOverride(
     status: RUNNING_JOB_STATUS,
     runningState: RUNNING_RESOURCE_STATE,
     startTime,
+    firstSeenAt: startTime,
     triggeredBy: payload.triggeredBy || MANUAL_TRIGGER_SOURCE,
     executionId: payload.response?.executionId ?? null,
     executionName: payload.response?.executionName ?? null,
@@ -286,6 +369,55 @@ export function upsertRunningJobOverride(
   );
 
   return override;
+}
+
+export function renewPendingOverrides(
+  queryClient: QueryClient,
+  systemHealth: SystemHealth | undefined
+): void {
+  const current = queryClient.getQueryData<SystemHealthJobOverrideMap>(
+    queryKeys.systemHealthJobOverrides()
+  );
+  const overrides = activeOverrideMap(current);
+  const keys = Object.keys(overrides);
+  if (keys.length === 0) return;
+
+  const nowMs = Date.now();
+  const renewedExpiresAt = new Date(nowMs + SYSTEM_HEALTH_JOB_OVERRIDE_TTL_MS).toISOString();
+  const next: SystemHealthJobOverrideMap = { ...overrides };
+  let changed = false;
+
+  for (const jobKey of keys) {
+    const override = overrides[jobKey];
+    const recentJob = systemHealth ? latestRecentJob(systemHealth.recentJobs, jobKey) : undefined;
+    const resource = systemHealth ? resourceForJob(systemHealth.resources, jobKey) : undefined;
+    if (
+      jobReflectsServerState(recentJob, override) ||
+      resourceReflectsServerState(resource, override)
+    ) {
+      delete next[jobKey];
+      changed = true;
+      continue;
+    }
+    const firstSeenMs = Date.parse(String(override.firstSeenAt || override.startTime || ''));
+    if (
+      Number.isFinite(firstSeenMs) &&
+      nowMs - firstSeenMs > SYSTEM_HEALTH_JOB_OVERRIDE_MAX_LIFETIME_MS
+    ) {
+      continue;
+    }
+    if (override.expiresAt !== renewedExpiresAt) {
+      next[jobKey] = { ...override, expiresAt: renewedExpiresAt };
+      changed = true;
+    }
+  }
+
+  if (!changed) return;
+
+  queryClient.setQueryData<SystemHealthJobOverrideMap>(queryKeys.systemHealthJobOverrides(), () => {
+    writeStoredJobOverrides(next);
+    return next;
+  });
 }
 
 export function clearJobOverride(queryClient: QueryClient, jobName: string): void {

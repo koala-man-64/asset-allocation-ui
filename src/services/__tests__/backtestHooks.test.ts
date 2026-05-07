@@ -7,6 +7,10 @@ describe('backtestKeys', () => {
     expect(backtestKeys.summary('run-1')).toEqual(['backtest', 'runs', 'run-1', 'summary']);
   });
 
+  it('builds detail keys from run id only', () => {
+    expect(backtestKeys.detail('run-1')).toEqual(['backtest', 'runs', 'run-1', 'detail']);
+  });
+
   it('builds timeseries keys from run id and max points only', () => {
     expect(backtestKeys.timeseries('run-1', 5000)).toEqual([
       'backtest',
@@ -36,6 +40,27 @@ describe('backtestKeys', () => {
       'trades',
       2000,
       0
+    ]);
+  });
+
+  it('builds replay keys from run id, paging, and symbol filter', () => {
+    expect(backtestKeys.replay('run-1', 500, 0, 'MSFT')).toEqual([
+      'backtest',
+      'runs',
+      'run-1',
+      'replay',
+      500,
+      0,
+      'MSFT'
+    ]);
+  });
+
+  it('builds attribution exposure keys from run id only', () => {
+    expect(backtestKeys.attributionExposure('run-1')).toEqual([
+      'backtest',
+      'runs',
+      'run-1',
+      'attribution-exposure'
     ]);
   });
 });

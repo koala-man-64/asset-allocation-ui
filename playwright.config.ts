@@ -1,9 +1,11 @@
 import { defineConfig } from '@playwright/test';
 
-const previewPort = 4173;
+const requestedPreviewPort = Number(process.env.PLAYWRIGHT_PREVIEW_PORT);
+const previewPort = Number.isInteger(requestedPreviewPort) ? requestedPreviewPort : 4173;
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: /visual-regression\.spec\.ts/,
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',

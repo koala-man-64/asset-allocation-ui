@@ -87,7 +87,6 @@ describe('SystemPurgeControls', () => {
     });
     expect(toastSuccessMock).toHaveBeenCalledWith('Purged 7 blob(s).');
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['systemStatusView'] });
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['systemHealth'] });
   });
 
   it('polls the operation when purge starts asynchronously', async () => {
@@ -122,18 +121,24 @@ describe('SystemPurgeControls', () => {
           totalDeleted: 12,
           targets: []
         }
-    });
+      });
 
     renderPurgeAction(<PurgeActionIcon scope="layer" layer="bronze" />);
 
     await user.click(screen.getByRole('button', { name: 'Purge entire Bronze layer' }));
     await user.click(await screen.findByRole('button', { name: 'Purge' }));
 
-    await waitFor(() => {
-      expect(DataService.getPurgeOperation).toHaveBeenCalledWith('purge-2');
-    }, { timeout: 4000 });
-    await waitFor(() => {
-      expect(toastSuccessMock).toHaveBeenCalledWith('Purged 12 blob(s).');
-    }, { timeout: 4000 });
+    await waitFor(
+      () => {
+        expect(DataService.getPurgeOperation).toHaveBeenCalledWith('purge-2');
+      },
+      { timeout: 4000 }
+    );
+    await waitFor(
+      () => {
+        expect(toastSuccessMock).toHaveBeenCalledWith('Purged 12 blob(s).');
+      },
+      { timeout: 4000 }
+    );
   });
 });

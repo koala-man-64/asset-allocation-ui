@@ -32,7 +32,7 @@ type PersistedUIState = Partial<
 export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
-      isDarkMode: false,
+      isDarkMode: true,
       pinnedNavPaths: [],
       navOrderBySection: createDefaultNavOrderBySection(),
 
@@ -104,7 +104,7 @@ export const useUIStore = create<UIState>()(
         const state = (persistedState as PersistedUIState | undefined) ?? {};
 
         return {
-          isDarkMode: Boolean(state.isDarkMode),
+          isDarkMode: state.isDarkMode !== false,
           pinnedNavPaths: normalizePinnedNavPaths(state.pinnedNavPaths),
           navOrderBySection: normalizeNavOrderBySection(state.navOrderBySection)
         };

@@ -16,10 +16,12 @@ vi.mock('lucide-react', () => ({
   Database: () => <div data-testid="icon-database" />,
   Layers3: () => <div data-testid="icon-layers-3" />,
   Landmark: () => <div data-testid="icon-landmark" />,
+  Library: () => <div data-testid="icon-library" />,
   LogIn: () => <div data-testid="icon-login" />,
   Target: () => <div data-testid="icon-target" />,
   Folder: () => <div data-testid="icon-folder" />,
   Globe: () => <div data-testid="icon-globe" />,
+  History: () => <div data-testid="icon-history" />,
   Orbit: () => <div data-testid="icon-orbit" />,
   Bug: () => <div data-testid="icon-bug" />,
   Filter: () => <div data-testid="icon-filter" />,
@@ -120,13 +122,46 @@ describe('LeftNavigation', () => {
     expect(getRenderedLinks()).toEqual(
       navSnapshot(NAV_SECTIONS.flatMap((section) => section.items.map((item) => item.path)))
     );
-    expect(screen.getByRole('link', { name: 'System Status' })).toHaveAttribute(
-      'aria-current',
-      'page'
-    );
+    const systemStatusLink = screen.getByRole('link', { name: 'System Status' });
+    expect(systemStatusLink).toHaveAttribute('aria-current', 'page');
+    expect(systemStatusLink.className).not.toContain('({ isActive })');
+    expect(systemStatusLink.className).toContain('pr-[5.5rem]');
+    expect(
+      screen.getByRole('button', { name: 'Pin System Status to top' }).parentElement
+    ).toHaveClass('w-20');
     expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login');
     expect(screen.getByRole('button', { name: 'Collapse navigation' })).toBeInTheDocument();
     expect(screen.getByText('UPTIME CLOCK')).toBeInTheDocument();
+    expect(screen.getByText('DATA ACCESS')).toBeInTheDocument();
+    expect(screen.getByText('MONITORING')).toBeInTheDocument();
+    expect(screen.getByText('DATA HYGIENE')).toBeInTheDocument();
+    expect(screen.getByText('STRATEGY SETUP')).toBeInTheDocument();
+    expect(screen.getByText('PORTFOLIO & TRADING')).toBeInTheDocument();
+    expect(screen.getByText('OPS TOOLS')).toBeInTheDocument();
+  });
+
+  it('resizes the desktop navigation from the separator handle', async () => {
+    renderNavigation();
+
+    const sidebarWrapper = document.querySelector('[data-slot="sidebar-wrapper"]') as HTMLElement;
+    const resizeHandle = screen.getByRole('separator', { name: 'Resize navigation' });
+
+    expect(sidebarWrapper.style.getPropertyValue('--sidebar-width')).toBe('256px');
+    expect(resizeHandle).toHaveAttribute('aria-valuenow', '256');
+
+    fireEvent.pointerDown(resizeHandle, { clientX: 256 });
+
+    await waitFor(() => {
+      expect(document.body.style.cursor).toBe('ew-resize');
+    });
+
+    fireEvent.pointerMove(window, { clientX: 340 });
+    fireEvent.pointerUp(window);
+
+    await waitFor(() => {
+      expect(sidebarWrapper.style.getPropertyValue('--sidebar-width')).toBe('340px');
+    });
+    expect(window.localStorage.getItem('sidebar_width_px')).toBe('340');
   });
 
   it('navigates through the shell when a nav link is clicked', async () => {
@@ -158,12 +193,10 @@ describe('LeftNavigation', () => {
             '/symbol-purge',
             '/symbol-enrichment',
             '/runtime-config',
-            '/strategy-exploration',
             '/strategies',
+            '/backtests',
             '/accounts',
             '/portfolios',
-            '/universes',
-            '/rankings',
             '/trade-desk',
             '/trade-monitor'
           ]
@@ -190,16 +223,19 @@ describe('LeftNavigation', () => {
         '/symbol-purge',
         '/symbol-enrichment',
         '/runtime-config',
-        '/strategy-exploration',
+        '/backtests',
         '/accounts',
         '/portfolios',
-        '/universes',
-        '/rankings',
         '/trade-desk',
         '/trade-monitor',
+        '/strategy-configurations',
         '/login'
       ])
     );
+    expect(screen.getByRole('link', { name: 'Configurations' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Strategy Exploration' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Universe Configurations' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Ranking Configurations' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Strategies' })).toHaveAttribute(
       'aria-current',
       'page'
@@ -258,11 +294,11 @@ describe('LeftNavigation', () => {
     renderNavigation(['/rankings']);
 
     await waitFor(() => {
-      expect(useUIStore.getState().pinnedNavPaths).toEqual(['/rankings', '/strategies']);
+      expect(useUIStore.getState().pinnedNavPaths).toEqual(['/strategies']);
     });
 
     expect(getRenderedLinks().slice(0, 4)).toEqual(
-      navSnapshot(['/rankings', '/strategies', '/stock-explorer', '/stock-detail'])
+      navSnapshot(['/strategies', '/stock-explorer', '/stock-detail', '/data-explorer'])
     );
     expect(screen.getAllByRole('link', { name: 'Strategies' })).toHaveLength(1);
   });

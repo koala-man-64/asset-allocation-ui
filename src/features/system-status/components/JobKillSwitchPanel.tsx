@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirmAction } from '@/app/components/common/ConfirmActionDialog';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
@@ -111,6 +112,7 @@ function KillSwitchControl({
 }) {
   const queryClient = useQueryClient();
   const [isApplyingAction, setIsApplyingAction] = useState<JobAction | null>(null);
+  const { confirmAction, confirmationDialog } = useConfirmAction();
 
   const jobNames = useMemo(
     () => jobs.map((job) => String(job.name || '').trim()).filter((name) => Boolean(name)),
@@ -163,7 +165,20 @@ function KillSwitchControl({
       return;
     }
 
-    if (!window.confirm(confirmMessage(action, targetJobNames.length))) {
+    const confirmed = await confirmAction({
+      title:
+        action === 'stop'
+          ? 'Stop Running Jobs'
+          : action === 'suspend'
+            ? 'Suspend Jobs'
+            : 'Resume Jobs',
+      description: confirmMessage(action, targetJobNames.length),
+      confirmLabel:
+        action === 'stop' ? 'Stop Jobs' : action === 'suspend' ? 'Suspend Jobs' : 'Resume Jobs',
+      cancelLabel: 'Cancel',
+      tone: action === 'resume' ? 'default' : 'destructive'
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -182,10 +197,7 @@ function KillSwitchControl({
         `Failed to ${action === 'stop' ? 'stop running jobs' : action === 'suspend' ? 'suspend jobs' : 'resume jobs'}: ${formatSystemStatusText(error)}`
       );
     } finally {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.systemHealth() })
-      ]);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.systemStatusView() });
       setIsApplyingAction(null);
     }
   };
@@ -229,20 +241,23 @@ function KillSwitchControl({
 
   if (variant === 'inline') {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-mcm-walnut/15 bg-mcm-cream/55 px-4 py-2.5 shadow-[6px_6px_0px_0px_rgba(119,63,26,0.08)]">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-mcm-walnut">{statusText}</p>
+      <>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-mcm-walnut/15 bg-mcm-cream/55 px-4 py-2.5 shadow-[6px_6px_0px_0px_rgba(119,63,26,0.08)]">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-mcm-walnut">{statusText}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Badge variant="outline" className="h-6 text-[9px]">
+              {jobNames.length} job(s)
+            </Badge>
+            <Badge variant="outline" className="h-6 text-[9px]">
+              {runningJobNames.length} running
+            </Badge>
+            {actionButtons}
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <Badge variant="outline" className="h-6 text-[9px]">
-            {jobNames.length} job(s)
-          </Badge>
-          <Badge variant="outline" className="h-6 text-[9px]">
-            {runningJobNames.length} running
-          </Badge>
-          {actionButtons}
-        </div>
-      </div>
+        {confirmationDialog}
+      </>
     );
   }
 
@@ -273,6 +288,7 @@ function KillSwitchControl({
             health.
           </div>
         ) : null}
+        {confirmationDialog}
       </CardContent>
     </Card>
   );

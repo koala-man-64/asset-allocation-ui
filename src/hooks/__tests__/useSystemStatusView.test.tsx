@@ -22,7 +22,7 @@ describe('useSystemStatusViewQuery', () => {
     vi.useFakeTimers();
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const getSystemStatusViewSpy = vi
-      .spyOn(DataService, 'getSystemStatusView')
+      .spyOn(DataService, 'getSystemStatusViewResult')
       .mockRejectedValue(new ApiError(401, 'API Error: 401 Unauthorized'));
 
     renderWithProviders(<Probe />);

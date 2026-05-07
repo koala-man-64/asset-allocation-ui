@@ -5,6 +5,7 @@ import { Activity, Briefcase, Clock3, Layers3, TrendingUp } from 'lucide-react';
 import { PageHero } from '@/app/components/common/PageHero';
 import { PageLoader } from '@/app/components/common/PageLoader';
 import { StatePanel } from '@/app/components/common/StatePanel';
+import { useConfirmAction } from '@/app/components/common/ConfirmActionDialog';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -23,7 +24,6 @@ import {
   compactMetricToneClass,
   formatDate,
   formatPercent,
-  formatTimestamp,
   statusBadgeVariant,
   titleCaseWords
 } from '@/features/portfolios/lib/portfolioPresentation';
@@ -37,6 +37,7 @@ import { DataService } from '@/services/DataService';
 import { portfolioApi } from '@/services/portfolioApi';
 import { regimeApi } from '@/services/regimeApi';
 import { strategyApi } from '@/services/strategyApi';
+import { portfolioKeys } from '@/services/queryKeyFactories';
 import type {
   PortfolioDetail,
   PortfolioMonitorSnapshot,
@@ -134,7 +135,12 @@ function ContextRail({
         <h2 className="text-lg">{titleCaseWords(activeTab)}</h2>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-y-auto p-5">
+      <div
+        role="region"
+        aria-label="Portfolio context rail"
+        tabIndex={0}
+        className="flex-1 space-y-5 overflow-y-auto p-5"
+      >
         <div className="rounded-3xl border border-mcm-walnut/15 bg-background/35 p-4">
           <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
             Account Identity
@@ -367,13 +373,14 @@ export function PortfolioWorkspacePage() {
   );
   const [lastPreviewSignature, setLastPreviewSignature] = useState<string | null>(null);
   const deferredSearchText = useDeferredValue(librarySearchText);
+  const { confirmAction, confirmationDialog } = useConfirmAction();
 
   const {
     data: portfolios = [],
     isLoading: portfoliosLoading,
     error: portfoliosError
   } = useQuery({
-    queryKey: ['portfolios'],
+    queryKey: portfolioKeys.all(),
     queryFn: () => portfolioApi.listPortfolios()
   });
 
@@ -392,19 +399,19 @@ export function PortfolioWorkspacePage() {
   }, [portfolios, selectedPortfolioName]);
 
   const detailQuery = useQuery({
-    queryKey: ['portfolios', 'detail', selectedPortfolioName],
+    queryKey: portfolioKeys.detail(selectedPortfolioName),
     queryFn: () => portfolioApi.getPortfolioDetail(String(selectedPortfolioName)),
     enabled: Boolean(selectedPortfolioName)
   });
 
   const monitorQuery = useQuery({
-    queryKey: ['portfolios', 'monitor', selectedPortfolioName],
+    queryKey: portfolioKeys.monitor(selectedPortfolioName),
     queryFn: () => portfolioApi.getMonitorSnapshot(String(selectedPortfolioName)),
     enabled: Boolean(selectedPortfolioName)
   });
 
   const buildRunsQuery = useQuery({
-    queryKey: ['portfolios', 'builds', selectedPortfolioName],
+    queryKey: portfolioKeys.builds(selectedPortfolioName),
     queryFn: () =>
       portfolioApi.listBuildRuns({
         portfolioName: String(selectedPortfolioName),
@@ -415,12 +422,12 @@ export function PortfolioWorkspacePage() {
   });
 
   const strategiesQuery = useQuery({
-    queryKey: ['portfolios', 'strategies'],
+    queryKey: portfolioKeys.strategies(),
     queryFn: () => strategyApi.listStrategies()
   });
 
   const currentRegimeQuery = useQuery({
-    queryKey: ['portfolios', 'regime', 'current', draft.config.overlays.regimeModelName],
+    queryKey: portfolioKeys.regimeCurrent(draft.config.overlays.regimeModelName),
     queryFn: () =>
       regimeApi.getCurrent({
         modelName: draft.config.overlays.regimeModelName || undefined
@@ -433,14 +440,11 @@ export function PortfolioWorkspacePage() {
   const historyEndDate = monitorSnapshot?.history.at(-1)?.asOfDate;
 
   const regimeHistoryQuery = useQuery({
-    queryKey: [
-      'portfolios',
-      'regime',
-      'history',
+    queryKey: portfolioKeys.regimeHistory(
       draft.config.overlays.regimeModelName,
       historyStartDate,
       historyEndDate
-    ],
+    ),
     queryFn: () =>
       regimeApi.getHistory({
         modelName: draft.config.overlays.regimeModelName || undefined,
@@ -454,7 +458,7 @@ export function PortfolioWorkspacePage() {
 
   const benchmarkSymbol = monitorSnapshot?.benchmarkSymbol || draft.config.benchmarkSymbol;
   const benchmarkQuery = useQuery({
-    queryKey: ['portfolios', 'benchmark', selectedPortfolioName, benchmarkSymbol],
+    queryKey: portfolioKeys.benchmark(selectedPortfolioName, benchmarkSymbol),
     queryFn: ({ signal }) => DataService.getMarketData(benchmarkSymbol, 'silver', signal),
     enabled: Boolean(monitorSnapshot && benchmarkSymbol),
     retry: false
@@ -518,40 +522,43 @@ export function PortfolioWorkspacePage() {
       buildPortfolioBenchmarkComparison(monitorSnapshot?.history ?? [], benchmarkQuery.data ?? []),
     [benchmarkQuery.data, monitorSnapshot?.history]
   );
-  const nextRebalance = useMemo(
-    () => {
-      if (monitorSnapshot?.nextRebalance) {
-        return buildNextRebalanceWindow(monitorSnapshot.nextRebalance);
-      }
+  const nextRebalance = useMemo(() => {
+    if (monitorSnapshot?.nextRebalance) {
+      return buildNextRebalanceWindow(monitorSnapshot.nextRebalance);
+    }
 
-      return deriveNextRebalanceWindow({
-        cadence: draft.config.rebalanceCadence,
-        rebalanceAnchor: draft.config.rebalanceAnchor,
-        lastBuiltAt: draft.lastBuiltAt,
-        effectiveFrom: draft.activeAssignment?.effectiveFrom,
-        asOfDate: monitorSnapshot?.asOfDate
-      });
-    },
-    [
-      monitorSnapshot?.nextRebalance,
-      draft.activeAssignment?.effectiveFrom,
-      draft.config.rebalanceAnchor,
-      draft.config.rebalanceCadence,
-      draft.lastBuiltAt,
-      monitorSnapshot?.asOfDate
-    ]
-  );
+    return deriveNextRebalanceWindow({
+      cadence: draft.config.rebalanceCadence,
+      rebalanceAnchor: draft.config.rebalanceAnchor,
+      lastBuiltAt: draft.lastBuiltAt,
+      effectiveFrom: draft.activeAssignment?.effectiveFrom,
+      asOfDate: monitorSnapshot?.asOfDate
+    });
+  }, [
+    monitorSnapshot?.nextRebalance,
+    draft.activeAssignment?.effectiveFrom,
+    draft.config.rebalanceAnchor,
+    draft.config.rebalanceCadence,
+    draft.lastBuiltAt,
+    monitorSnapshot?.asOfDate
+  ]);
 
-  const confirmDiscardDraft = (): boolean => {
+  const confirmDiscardDraft = async (): Promise<boolean> => {
     if (!hasUnsavedChanges) {
       return true;
     }
 
-    return window.confirm('Discard the current unsaved portfolio changes and switch workspaces?');
+    return confirmAction({
+      title: 'Discard Portfolio Changes',
+      description: 'Discard the current unsaved portfolio changes and switch workspaces?',
+      confirmLabel: 'Discard Changes',
+      cancelLabel: 'Keep Editing',
+      tone: 'destructive'
+    });
   };
 
-  const openNewDraft = () => {
-    if (!confirmDiscardDraft()) {
+  const openNewDraft = async () => {
+    if (!(await confirmDiscardDraft())) {
       return;
     }
 
@@ -563,12 +570,12 @@ export function PortfolioWorkspacePage() {
     setActiveTab('construction');
   };
 
-  const selectPortfolio = (portfolioName: string) => {
+  const selectPortfolio = async (portfolioName: string) => {
     if (selectedPortfolioName === portfolioName) {
       return;
     }
 
-    if (!confirmDiscardDraft()) {
+    if (!(await confirmDiscardDraft())) {
       return;
     }
 
@@ -585,10 +592,10 @@ export function PortfolioWorkspacePage() {
       });
 
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
-        queryClient.invalidateQueries({ queryKey: ['portfolios', 'detail'] }),
-        queryClient.invalidateQueries({ queryKey: ['portfolios', 'monitor'] }),
-        queryClient.invalidateQueries({ queryKey: ['portfolios', 'builds'] })
+        queryClient.invalidateQueries({ queryKey: portfolioKeys.all() }),
+        queryClient.invalidateQueries({ queryKey: portfolioKeys.detail(result.portfolio.name) }),
+        queryClient.invalidateQueries({ queryKey: portfolioKeys.monitor(result.portfolio.name) }),
+        queryClient.invalidateQueries({ queryKey: portfolioKeys.builds(result.portfolio.name) })
       ]);
 
       setSelectedPortfolioName(result.portfolio.name);
@@ -631,10 +638,11 @@ export function PortfolioWorkspacePage() {
       });
     },
     onSuccess: async (result) => {
+      const portfolioName = selectedPortfolioName || draft.name.trim();
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['portfolios', 'monitor'] }),
-        queryClient.invalidateQueries({ queryKey: ['portfolios', 'builds'] }),
-        queryClient.invalidateQueries({ queryKey: ['portfolios'] })
+        queryClient.invalidateQueries({ queryKey: portfolioKeys.monitor(portfolioName) }),
+        queryClient.invalidateQueries({ queryKey: portfolioKeys.builds(portfolioName) }),
+        queryClient.invalidateQueries({ queryKey: portfolioKeys.all() })
       ]);
 
       setActiveTab('trading');
@@ -865,7 +873,13 @@ export function PortfolioWorkspacePage() {
               <Activity className="mr-1 h-3.5 w-3.5" />
               {selectedPortfolioName ? selectedPortfolioName : 'Unsaved draft'}
             </Badge>
-            <Button type="button" variant="outline" onClick={openNewDraft}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void openNewDraft();
+              }}
+            >
               New Portfolio
             </Button>
           </div>
@@ -883,8 +897,12 @@ export function PortfolioWorkspacePage() {
           errorMessage={listErrorMessage || undefined}
           librarySearchText={librarySearchText}
           onLibrarySearchTextChange={setLibrarySearchText}
-          onSelectPortfolio={selectPortfolio}
-          onOpenNewDraft={openNewDraft}
+          onSelectPortfolio={(portfolioName) => {
+            void selectPortfolio(portfolioName);
+          }}
+          onOpenNewDraft={() => {
+            void openNewDraft();
+          }}
         />
 
         <section className="mcm-panel min-h-[720px] overflow-hidden">
@@ -926,6 +944,7 @@ export function PortfolioWorkspacePage() {
           onTriggerBuild={() => triggerBuildMutation.mutate()}
         />
       </div>
+      {confirmationDialog}
     </div>
   );
 }

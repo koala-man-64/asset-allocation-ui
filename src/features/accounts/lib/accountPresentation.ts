@@ -3,9 +3,10 @@ import type {
   BrokerAccountSummary,
   BrokerHealthTone,
   BrokerTradeReadiness,
-  BrokerStrategyAllocationSummary,
-  BrokerVendor
+  BrokerStrategyAllocationSummary
 } from '@/types/brokerAccounts';
+import type { TradeAccountSummaryView } from '@/services/tradeDeskModels';
+import type { AccountProvider } from '@/features/accounts/lib/accountMonitoring';
 
 export function formatCurrency(value?: number | null, currency: string = 'USD'): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
@@ -129,13 +130,17 @@ export function accountAssignmentDetail(account: BrokerAccountSummary): string {
     .join(' · ');
 }
 
-export function brokerAccentClass(broker: BrokerVendor): string {
+export function brokerAccentClass(broker: AccountProvider): string {
   if (broker === 'alpaca') {
     return 'border-l-mcm-teal bg-[linear-gradient(90deg,rgba(0,128,128,0.14),transparent_22%)]';
   }
 
   if (broker === 'schwab') {
     return 'border-l-mcm-mustard bg-[linear-gradient(90deg,rgba(225,173,1,0.16),transparent_22%)]';
+  }
+
+  if (broker === 'kalshi') {
+    return 'border-l-mcm-rust bg-[linear-gradient(90deg,rgba(174,77,42,0.14),transparent_22%)]';
   }
 
   return 'border-l-mcm-olive bg-[linear-gradient(90deg,rgba(111,102,0,0.14),transparent_22%)]';
@@ -165,10 +170,14 @@ export function alertToneClass(severity: BrokerAccountAlert['severity']): string
   return 'border-mcm-teal/25 bg-mcm-teal/10';
 }
 
-export function getAccountSearchText(account: BrokerAccountSummary): string {
+export function getAccountSearchText(
+  account: BrokerAccountSummary,
+  tradeAccount?: TradeAccountSummaryView | null
+): string {
   return [
     account.name,
     account.broker,
+    (account.broker as AccountProvider) === 'kalshi' ? 'Kalshi' : null,
     account.accountNumberMasked,
     account.activePortfolioName,
     account.strategyLabel,
@@ -179,7 +188,18 @@ export function getAccountSearchText(account: BrokerAccountSummary): string {
     ]),
     account.tradeReadinessReason,
     account.connectionHealth.staleReason,
-    account.connectionHealth.failureMessage
+    account.connectionHealth.failureMessage,
+    tradeAccount?.name,
+    tradeAccount?.provider,
+    tradeAccount?.environment,
+    tradeAccount?.readiness,
+    tradeAccount?.readinessReason,
+    tradeAccount?.accountNumberMasked,
+    tradeAccount?.capabilities.unsupportedReason,
+    tradeAccount?.freshness.balancesState,
+    tradeAccount?.freshness.positionsState,
+    tradeAccount?.freshness.ordersState,
+    tradeAccount?.freshness.staleReason
   ]
     .filter(Boolean)
     .join(' ')
@@ -236,7 +256,9 @@ function tradePriority(account: BrokerAccountSummary): number {
   return 0;
 }
 
-export function sortAccountsByPriority(accounts: readonly BrokerAccountSummary[]): BrokerAccountSummary[] {
+export function sortAccountsByPriority(
+  accounts: readonly BrokerAccountSummary[]
+): BrokerAccountSummary[] {
   return [...accounts].sort((left, right) => {
     const alertDelta = alertPriority(right) - alertPriority(left);
     if (alertDelta !== 0) {

@@ -21,6 +21,7 @@ import {
 } from '@/features/strategies/lib/strategySummary';
 
 interface StrategyLibraryRailProps {
+  layout?: 'rail' | 'stacked';
   strategies: StrategySummary[];
   selectedStrategyName: string | null;
   searchText: string;
@@ -34,6 +35,7 @@ interface StrategyLibraryRailProps {
 }
 
 export function StrategyLibraryRail({
+  layout = 'rail',
   strategies,
   selectedStrategyName,
   searchText,
@@ -45,8 +47,15 @@ export function StrategyLibraryRail({
   onSelectStrategy,
   onCreateStrategy
 }: StrategyLibraryRailProps) {
+  const isStacked = layout === 'stacked';
+
   return (
-    <section className="mcm-panel flex min-h-[680px] flex-col overflow-hidden">
+    <section
+      className={cn(
+        'mcm-panel flex flex-col overflow-hidden',
+        isStacked ? 'min-h-0' : 'min-h-[680px]'
+      )}
+    >
       <div className="border-b border-border/40 px-5 py-5">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
@@ -61,8 +70,13 @@ export function StrategyLibraryRail({
           <Badge variant="secondary">{strategies.length} visible</Badge>
         </div>
 
-        <div className="mt-5 space-y-3">
-          <div className="relative">
+        <div
+          className={cn(
+            'mt-5 grid gap-3',
+            isStacked ? 'lg:grid-cols-[minmax(0,1fr)_220px_auto] lg:items-center' : 'grid-cols-1'
+          )}
+        >
+          <div className="relative min-w-0">
             <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               aria-label="Search strategies"
@@ -73,8 +87,11 @@ export function StrategyLibraryRail({
             />
           </div>
 
-          <div className="flex flex-col gap-3">
-            <Select value={sortOrder} onValueChange={(value) => onSortOrderChange(value as StrategyLibrarySort)}>
+          <div className={cn(isStacked ? 'contents' : 'flex flex-col gap-3')}>
+            <Select
+              value={sortOrder}
+              onValueChange={(value) => onSortOrderChange(value as StrategyLibrarySort)}
+            >
               <SelectTrigger aria-label="Sort strategies">
                 <SelectValue placeholder="Sort strategies" />
               </SelectTrigger>
@@ -87,7 +104,10 @@ export function StrategyLibraryRail({
               </SelectContent>
             </Select>
 
-            <Button onClick={onCreateStrategy} className="w-full">
+            <Button
+              onClick={onCreateStrategy}
+              className={cn('w-full', isStacked && 'lg:w-auto lg:px-5')}
+            >
               <Plus className="h-4 w-4" />
               Create Strategy
             </Button>
@@ -95,16 +115,34 @@ export function StrategyLibraryRail({
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="space-y-3 p-4">
+      <ScrollArea className={cn(isStacked ? 'max-h-[360px]' : 'flex-1')}>
+        <div
+          className={cn(
+            'p-4',
+            isStacked ? 'grid gap-3 md:grid-cols-2 2xl:grid-cols-3' : 'space-y-3'
+          )}
+        >
           {isLoading ? (
-            <PageLoader text="Loading strategies..." className="h-56" />
+            <PageLoader
+              text="Loading strategies..."
+              className={cn('h-56', isStacked && 'md:col-span-2 2xl:col-span-3')}
+            />
           ) : errorMessage ? (
-            <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            <div
+              className={cn(
+                'rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive',
+                isStacked && 'md:col-span-2 2xl:col-span-3'
+              )}
+            >
               {errorMessage}
             </div>
           ) : strategies.length === 0 ? (
-            <div className="rounded-3xl border-2 border-dashed border-mcm-walnut/35 bg-mcm-cream/75 p-6">
+            <div
+              className={cn(
+                'rounded-3xl border-2 border-dashed border-mcm-walnut/35 bg-mcm-cream/75 p-6',
+                isStacked && 'md:col-span-2 2xl:col-span-3'
+              )}
+            >
               <p className="font-display text-lg text-foreground">No strategies found</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 Start a new strategy draft or loosen the search filter to restore the library.
@@ -126,7 +164,7 @@ export function StrategyLibraryRail({
                   aria-label={`Open strategy ${strategy.name}`}
                   onClick={() => onSelectStrategy(strategy.name)}
                   className={cn(
-                    'w-full rounded-[1.6rem] border-2 px-4 py-4 text-left transition-colors',
+                    'h-full w-full rounded-[1.6rem] border-2 px-4 py-4 text-left transition-colors',
                     isSelected
                       ? 'border-mcm-teal bg-mcm-paper shadow-[6px_6px_0px_0px_rgba(0,128,128,0.12)]'
                       : 'border-mcm-walnut/25 bg-mcm-cream/70 hover:bg-mcm-paper'

@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
@@ -40,9 +41,28 @@ export function RankingTransformSequenceEditor({
   className
 }: RankingTransformSequenceEditorProps) {
   const idPrefix = title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const transformKeyMap = useRef(new WeakMap<RankingTransform, string>());
+  const nextTransformKeyId = useRef(0);
+
+  const getTransformKey = (transform: RankingTransform) => {
+    const existingKey = transformKeyMap.current.get(transform);
+    if (existingKey) {
+      return existingKey;
+    }
+
+    nextTransformKeyId.current += 1;
+    const nextKey = `${idPrefix}-transform-row-${nextTransformKeyId.current}`;
+    transformKeyMap.current.set(transform, nextKey);
+    return nextKey;
+  };
 
   return (
-    <div className={cn('space-y-3 rounded-3xl border border-border/60 bg-background/45 p-4', className)}>
+    <div
+      className={cn(
+        'space-y-3 rounded-3xl border border-border/60 bg-background/45 p-4',
+        className
+      )}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <div className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground">
@@ -50,7 +70,12 @@ export function RankingTransformSequenceEditor({
           </div>
           <p className="text-sm text-muted-foreground">{description}</p>
         </div>
-        <Button type="button" variant="secondary" size="sm" onClick={() => onChange([...transforms, buildEmptyTransform()])}>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => onChange([...transforms, buildEmptyTransform()])}
+        >
           <Plus className="h-4 w-4" />
           {addLabel}
         </Button>
@@ -67,7 +92,7 @@ export function RankingTransformSequenceEditor({
 
             return (
               <div
-                key={`${title}-${index}`}
+                key={getTransformKey(transform)}
                 className="rounded-2xl border border-border/60 bg-card/85 p-4 shadow-[4px_4px_0px_0px_rgba(119,63,26,0.08)]"
               >
                 <div className="flex flex-wrap items-center gap-3">
@@ -123,7 +148,9 @@ export function RankingTransformSequenceEditor({
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => onChange(transforms.filter((_, itemIndex) => itemIndex !== index))}
+                      onClick={() =>
+                        onChange(transforms.filter((_, itemIndex) => itemIndex !== index))
+                      }
                     >
                       <Trash2 className="h-4 w-4" />
                       Remove
@@ -155,7 +182,9 @@ export function RankingTransformSequenceEditor({
                     ))}
                   </div>
                 ) : (
-                  <p className="mt-3 text-xs text-muted-foreground">No extra parameters required.</p>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    No extra parameters required.
+                  </p>
                 )}
               </div>
             );

@@ -16,7 +16,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tool
 
 const SIDEBAR_COOKIE_NAME = 'sidebar_state';
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = '16rem';
+const SIDEBAR_WIDTH_DEFAULT = 256;
+const SIDEBAR_WIDTH_MIN = 224;
+const SIDEBAR_WIDTH_MAX = 420;
+const SIDEBAR_WIDTH_STEP = 8;
+const SIDEBAR_WIDTH_STORAGE_KEY = 'sidebar_width_px';
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '3rem';
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
@@ -29,9 +33,48 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
   toggleSidebar: () => void;
+  sidebarWidth: number;
+  setSidebarWidth: (width: number) => void;
+  resetSidebarWidth: () => void;
+  isResizing: boolean;
+  setIsResizing: (isResizing: boolean) => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
+
+function clampSidebarWidth(width: number) {
+  return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(width)));
+}
+
+function readStoredSidebarWidth() {
+  if (typeof window === 'undefined') {
+    return SIDEBAR_WIDTH_DEFAULT;
+  }
+
+  try {
+    const storedWidth = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    if (!storedWidth) {
+      return SIDEBAR_WIDTH_DEFAULT;
+    }
+
+    const parsedWidth = Number(storedWidth);
+    return Number.isFinite(parsedWidth) ? clampSidebarWidth(parsedWidth) : SIDEBAR_WIDTH_DEFAULT;
+  } catch {
+    return SIDEBAR_WIDTH_DEFAULT;
+  }
+}
+
+function persistSidebarWidth(width: number) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
+  } catch {
+    // Width persistence is a convenience; resizing should still work without storage access.
+  }
+}
 
 function useSidebar() {
   const context = React.useContext(SidebarContext);
@@ -57,6 +100,8 @@ function SidebarProvider({
 }) {
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
+  const [sidebarWidth, setSidebarWidthState] = React.useState(readStoredSidebarWidth);
+  const [isResizing, setIsResizing] = React.useState(false);
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -81,6 +126,16 @@ function SidebarProvider({
   const toggleSidebar = React.useCallback(() => {
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
   }, [isMobile, setOpen, setOpenMobile]);
+
+  const setSidebarWidth = React.useCallback((width: number) => {
+    const nextWidth = clampSidebarWidth(width);
+    setSidebarWidthState(nextWidth);
+    persistSidebarWidth(nextWidth);
+  }, []);
+
+  const resetSidebarWidth = React.useCallback(() => {
+    setSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+  }, [setSidebarWidth]);
 
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
@@ -107,9 +162,27 @@ function SidebarProvider({
       isMobile,
       openMobile,
       setOpenMobile,
-      toggleSidebar
+      toggleSidebar,
+      sidebarWidth,
+      setSidebarWidth,
+      resetSidebarWidth,
+      isResizing,
+      setIsResizing
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [
+      state,
+      open,
+      setOpen,
+      isMobile,
+      openMobile,
+      setOpenMobile,
+      toggleSidebar,
+      sidebarWidth,
+      setSidebarWidth,
+      resetSidebarWidth,
+      isResizing,
+      setIsResizing
+    ]
   );
 
   return (
@@ -119,7 +192,7 @@ function SidebarProvider({
           data-slot="sidebar-wrapper"
           style={
             {
-              '--sidebar-width': SIDEBAR_WIDTH,
+              '--sidebar-width': `${sidebarWidth}px`,
               '--sidebar-width-icon': SIDEBAR_WIDTH_ICON,
               ...style
             } as React.CSSProperties
@@ -149,7 +222,7 @@ function Sidebar({
   variant?: 'sidebar' | 'floating' | 'inset';
   collapsible?: 'offcanvas' | 'icon' | 'none';
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { isMobile, state, openMobile, setOpenMobile, isResizing } = useSidebar();
 
   if (collapsible === 'none') {
     return (
@@ -205,6 +278,7 @@ function Sidebar({
         data-slot="sidebar-gap"
         className={cn(
           'relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear',
+          isResizing && 'transition-none',
           'group-data-[collapsible=offcanvas]:w-0',
           'group-data-[side=right]:rotate-180',
           variant === 'floating' || variant === 'inset'
@@ -216,6 +290,7 @@ function Sidebar({
         data-slot="sidebar-container"
         className={cn(
           'fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex',
+          isResizing && 'transition-none',
           side === 'left'
             ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
             : 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
@@ -234,8 +309,139 @@ function Sidebar({
         >
           {children}
         </div>
+        <SidebarResizeHandle side={side} />
       </div>
     </div>
+  );
+}
+
+function SidebarResizeHandle({
+  side,
+  className,
+  ...props
+}: React.ComponentProps<'div'> & {
+  side: 'left' | 'right';
+}) {
+  const {
+    isMobile,
+    state,
+    sidebarWidth,
+    setSidebarWidth,
+    resetSidebarWidth,
+    isResizing,
+    setIsResizing
+  } = useSidebar();
+  const dragStateRef = React.useRef<{ startX: number; startWidth: number } | null>(null);
+  const previousBodyCursorRef = React.useRef('');
+  const previousBodyUserSelectRef = React.useRef('');
+
+  const restoreBodyStyles = React.useCallback(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    document.body.style.cursor = previousBodyCursorRef.current;
+    document.body.style.userSelect = previousBodyUserSelectRef.current;
+  }, []);
+
+  React.useEffect(() => {
+    if (!isResizing || typeof window === 'undefined') {
+      return;
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const dragState = dragStateRef.current;
+      if (!dragState) {
+        return;
+      }
+
+      const delta =
+        side === 'left' ? event.clientX - dragState.startX : dragState.startX - event.clientX;
+      setSidebarWidth(dragState.startWidth + delta);
+    };
+
+    const handlePointerUp = () => {
+      dragStateRef.current = null;
+      setIsResizing(false);
+      restoreBodyStyles();
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      restoreBodyStyles();
+    };
+  }, [isResizing, restoreBodyStyles, setIsResizing, setSidebarWidth, side]);
+
+  if (isMobile || state === 'collapsed') {
+    return null;
+  }
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+
+    dragStateRef.current = {
+      startX: event.clientX,
+      startWidth: sidebarWidth
+    };
+
+    if (typeof document !== 'undefined') {
+      previousBodyCursorRef.current = document.body.style.cursor;
+      previousBodyUserSelectRef.current = document.body.style.userSelect;
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    setIsResizing(true);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const directionMultiplier = side === 'left' ? 1 : -1;
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setSidebarWidth(sidebarWidth - SIDEBAR_WIDTH_STEP * directionMultiplier);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setSidebarWidth(sidebarWidth + SIDEBAR_WIDTH_STEP * directionMultiplier);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      setSidebarWidth(SIDEBAR_WIDTH_MIN);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      setSidebarWidth(SIDEBAR_WIDTH_MAX);
+    }
+  };
+
+  return (
+    <div
+      role="separator"
+      aria-label="Resize navigation"
+      aria-orientation="vertical"
+      aria-valuemin={SIDEBAR_WIDTH_MIN}
+      aria-valuemax={SIDEBAR_WIDTH_MAX}
+      aria-valuenow={sidebarWidth}
+      aria-valuetext={`${sidebarWidth} pixels`}
+      tabIndex={0}
+      title="Drag to resize navigation"
+      data-slot="sidebar-resize-handle"
+      data-sidebar="resize-handle"
+      onDoubleClick={resetSidebarWidth}
+      onKeyDown={handleKeyDown}
+      onPointerDown={handlePointerDown}
+      className={cn(
+        'absolute inset-y-0 z-30 hidden w-3 cursor-ew-resize touch-none items-stretch justify-center outline-hidden md:flex',
+        side === 'left' ? '-right-1.5' : '-left-1.5',
+        'after:my-2 after:w-[2px] after:rounded-full after:bg-transparent after:transition-colors',
+        'hover:after:bg-sidebar-ring/55 focus-visible:after:bg-sidebar-ring active:after:bg-sidebar-ring',
+        isResizing && 'after:bg-sidebar-ring',
+        className
+      )}
+      {...props}
+    />
   );
 }
 

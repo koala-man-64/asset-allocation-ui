@@ -7,7 +7,7 @@ import { upsertRunningJobOverride } from '@/hooks/useSystemHealthJobOverrides';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 type QueryKeyLike = readonly string[];
-const DEFAULT_INVALIDATION_KEYS = [queryKeys.systemStatusView(), queryKeys.systemHealth()] as const;
+const DEFAULT_INVALIDATION_KEYS = [queryKeys.systemStatusView()] as const;
 
 function normalizeInvalidationKeys(
   queryKey: QueryKeyLike | ReadonlyArray<QueryKeyLike> = DEFAULT_INVALIDATION_KEYS

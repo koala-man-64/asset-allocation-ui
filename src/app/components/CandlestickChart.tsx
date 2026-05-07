@@ -124,8 +124,8 @@ export function CandlestickChart({ data, height = 320 }: CandlestickChartProps) 
   const chartDescriptionId = `candlestick-chart-description-${data.length}-${lastPoint.date}`;
 
   return (
-    <figure className="flex h-full min-w-0 flex-col rounded-[1.5rem] border border-border/35 bg-background/80 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/35 pb-3">
+    <figure className="terminal-grid-bg flex h-full min-w-0 flex-col rounded-sm border border-border bg-card p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-2">
         <div>
           <div className="page-kicker">Market Tape</div>
           <div className="text-sm text-muted-foreground">
@@ -133,21 +133,21 @@ export function CandlestickChart({ data, height = 320 }: CandlestickChartProps) 
           </div>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full border border-border/35 bg-mcm-cream/65 px-3 py-1 font-mono text-foreground">
+          <span className="rounded-sm border border-border bg-[#10172b] px-2 py-1 font-mono text-foreground">
             Last {formatCurrency(lastPoint.close)}
           </span>
           <span
-            className={`rounded-full border px-3 py-1 font-mono ${
+            className={`rounded-sm border px-2 py-1 font-mono ${
               priceDelta >= 0
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700'
-                : 'border-rose-500/30 bg-rose-500/10 text-rose-700'
+                ? 'border-primary/40 bg-primary/10 text-primary'
+                : 'border-destructive/40 bg-destructive/10 text-destructive'
             }`}
           >
             {priceDelta >= 0 ? '+' : ''}
             {formatCurrency(priceDelta)} ({priceDelta >= 0 ? '+' : ''}
             {percentDelta.toFixed(2)}%)
           </span>
-          <span className="rounded-full border border-border/35 bg-mcm-cream/65 px-3 py-1 font-mono text-foreground">
+          <span className="rounded-sm border border-border bg-[#10172b] px-2 py-1 font-mono text-foreground">
             Vol {formatCompactVolume(lastPoint.volume)}
           </span>
         </div>
@@ -212,10 +212,10 @@ export function CandlestickChart({ data, height = 320 }: CandlestickChartProps) 
           {chartPoints.map((point) => {
             const bodyTop = Math.min(point.openY, point.closeY);
             const bodyHeight = Math.max(Math.abs(point.openY - point.closeY), 2);
-            const candleColor = point.rising ? 'var(--mcm-teal)' : '#c25d2d';
+            const candleColor = point.rising ? 'var(--terminal-green)' : 'var(--terminal-red)';
             const candleFill = point.rising
-              ? 'color-mix(in srgb, var(--mcm-teal) 26%, transparent)'
-              : 'color-mix(in srgb, #c25d2d 26%, transparent)';
+              ? 'color-mix(in srgb, var(--terminal-green) 26%, transparent)'
+              : 'color-mix(in srgb, var(--terminal-red) 26%, transparent)';
 
             return (
               <g key={`${point.date}-${point.x}`}>

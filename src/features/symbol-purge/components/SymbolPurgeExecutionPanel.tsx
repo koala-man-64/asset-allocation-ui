@@ -22,6 +22,7 @@ type Props = {
 
 export function SymbolPurgeExecutionPanel({ controller }: Props) {
   const { candidate, execution, derived, actions } = controller;
+  const confirmationInputId = 'symbol-purge-confirmation-text';
 
   return (
     <>
@@ -73,13 +74,18 @@ export function SymbolPurgeExecutionPanel({ controller }: Props) {
           </label>
 
           <div className="grid gap-3 xl:grid-cols-[auto_200px_minmax(0,1fr)] xl:items-center">
-            <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide">
+            <label
+              htmlFor={confirmationInputId}
+              className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide"
+            >
               Type PURGE to confirm
-            </span>
+            </label>
             <Input
+              id={confirmationInputId}
               value={execution.confirmText}
               onChange={(event) => actions.setConfirmText(event.target.value)}
               placeholder="PURGE"
+              aria-invalid={execution.confirmText.length > 0 && execution.confirmText !== 'PURGE'}
               className={`${formInputClass} h-9 w-full xl:w-[200px]`}
             />
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">

@@ -4,6 +4,7 @@ import {
   buildEmptyStrategy,
   buildExitRule,
   buildStrategyDraft,
+  normalizeStrategyComponentRefs,
   normalizeStrategyDetail
 } from '@/features/strategies/lib/strategyDraft';
 
@@ -41,6 +42,43 @@ describe('strategyDraft helpers', () => {
 
     expect(strategy.config.regimePolicy?.modelName).toBe('desk-regime');
     expect(strategy.config.regimePolicy?.mode).toBe('observe_only');
+  });
+
+  it('normalizes component refs as the canonical reusable pins while dual-writing legacy fields', () => {
+    const config = normalizeStrategyComponentRefs({
+      universeConfigName: 'legacy-universe',
+      universeConfigVersion: 1,
+      rankingSchemaName: 'legacy-ranking',
+      rankingSchemaVersion: 2,
+      regimePolicyConfigName: 'legacy-regime',
+      regimePolicyConfigVersion: 3,
+      riskPolicyName: 'legacy-risk',
+      riskPolicyVersion: 4,
+      exitRuleSetName: 'legacy-exits',
+      exitRuleSetVersion: 5,
+      rebalance: 'monthly',
+      longOnly: true,
+      topN: 20,
+      lookbackWindow: 63,
+      holdingPeriod: 21,
+      costModel: 'default',
+      intrabarConflictPolicy: 'stop_first',
+      exits: [],
+      componentRefs: {
+        universe: { name: 'component-universe', version: 7 },
+        rebalance: { name: 'monthly-last-trading-day', version: 1 }
+      }
+    });
+
+    expect(config.componentRefs?.universe).toEqual({ name: 'component-universe', version: 7 });
+    expect(config.componentRefs?.ranking).toEqual({ name: 'legacy-ranking', version: 2 });
+    expect(config.componentRefs?.rebalance).toEqual({
+      name: 'monthly-last-trading-day',
+      version: 1
+    });
+    expect(config.universeConfigName).toBe('component-universe');
+    expect(config.universeConfigVersion).toBe(7);
+    expect(config.rankingSchemaName).toBe('legacy-ranking');
   });
 
   it('builds exit rules with type-specific defaults', () => {

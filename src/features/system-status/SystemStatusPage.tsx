@@ -1,23 +1,25 @@
-import React, { useCallback, useMemo, useState, lazy, Suspense } from 'react';
-import { Activity, Layers3, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle } from 'lucide-react';
 import { queryKeys } from '@/hooks/useDataQueries';
+import { useJobStatuses } from '@/hooks/useJobStatuses';
 import { useSystemStatusViewQuery } from '@/hooks/useSystemStatusView';
 import type {
   DomainMetadataSnapshotResponse,
   SystemStatusViewResponse
 } from '@/services/apiService';
 import { ErrorBoundary } from '@/app/components/common/ErrorBoundary';
+import { Alert, AlertDescription, AlertTitle } from '@/app/components/ui/alert';
 import { Skeleton } from '@/app/components/ui/skeleton';
 import { PageLoader } from '@/app/components/common/PageLoader';
-import { Badge } from '@/app/components/ui/badge';
-import { Button } from '@/app/components/ui/button';
+import { addRealtimeStatusListener, type RealtimeStatusDetail } from '@/services/realtimeBus';
 import type { ManagedContainerJob } from '@/features/system-status/types';
 import type { JobLogStreamTarget } from '@/features/system-status/components/JobLogStreamPanel';
 import type {
   JobCategory,
   JobMetadataSource,
   JobMetadataStatus,
+  JobRun,
   ResourceSignal
 } from '@/types/strategy';
 
@@ -46,21 +48,24 @@ const OperationalJobMonitorPanel = lazy(() =>
 );
 
 import {
-  buildAnchoredJobRunIndex,
   effectiveJobStatus,
-  formatTimeAgo,
-  getStatusConfig,
   normalizeAzureJobName,
-  resolveManagedJobName
+  resolveRunnableJobName
 } from '@/features/system-status/lib/SystemStatusHelpers';
 import {
   buildDomainJobKeySet,
-  buildOperationalJobTargets
+  buildOperationalJobTargets,
+  isExpectedOperationalJobName,
+  type OperationalJobTarget
 } from '@/features/system-status/lib/operationalJobs';
+import { augmentDomainLayersWithCatalogJobs } from '@/features/system-status/lib/domainJobCatalog';
+import { isDomainLayerCoverageDomainVisible } from '@/features/system-status/lib/coverageDomains';
 import { normalizeDomainKey } from '@/features/system-status/components/SystemPurgeControls';
+import { JobStatusDebugOverlay } from '@/features/system-status/components/JobStatusDebugOverlay';
 
 type JobResourceSummary = {
   name: string;
+  azureId?: string | null;
   jobCategory?: JobCategory | null;
   jobKey?: string | null;
   jobRole?: string | null;
@@ -73,98 +78,26 @@ type JobResourceSummary = {
   signals?: ResourceSignal[] | null;
 };
 
-type SummaryTone = 'good' | 'watch' | 'risk' | 'neutral';
-
 const JOB_CATEGORY_LABELS = new Map<JobCategory, string>([
   ['data-pipeline', 'Data Pipelines'],
   ['strategy-compute', 'Strategy Compute'],
   ['operational-support', 'Operational Support']
 ]);
 
-function pluralize(count: number, singular: string, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
-function getSummaryToneClasses(tone: SummaryTone): string {
-  switch (tone) {
-    case 'good':
-      return 'border-mcm-teal/35 bg-mcm-paper/80 text-foreground';
-    case 'watch':
-      return 'border-mcm-mustard/60 bg-mcm-mustard/10 text-foreground';
-    case 'risk':
-      return 'border-destructive/55 bg-destructive/10 text-foreground shadow-[inset_4px_0_0_rgba(180,35,24,0.55)]';
-    default:
-      return 'border-mcm-walnut/14 bg-mcm-paper/62 text-foreground';
-  }
-}
-
-function getSummaryBadgeVariant(
-  tone: SummaryTone
-): 'default' | 'secondary' | 'destructive' | 'outline' {
-  switch (tone) {
-    case 'good':
-      return 'default';
-    case 'watch':
-      return 'secondary';
-    case 'risk':
-      return 'destructive';
-    default:
-      return 'outline';
-  }
-}
-
-function determineTone({
-  overall,
-  failedJobs,
-  alertCount,
-  stressedLayers
-}: {
-  overall: string;
-  failedJobs: number;
-  alertCount: number;
-  stressedLayers: number;
-}): SummaryTone {
-  if (overall === 'critical' || failedJobs > 0) {
-    return 'risk';
-  }
-  if (overall === 'degraded' || alertCount > 0 || stressedLayers > 0) {
-    return 'watch';
-  }
-  if (overall === 'healthy') {
-    return 'good';
-  }
-  return 'neutral';
-}
-
-function SummaryCard({
-  label,
-  value,
-  detail,
-  icon,
-  tone = 'neutral'
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  icon: React.ReactNode;
-  tone?: SummaryTone;
-}) {
-  return (
-    <div className={`rounded-[1.15rem] border px-4 py-4 ${getSummaryToneClasses(tone)}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-2">
-          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-            {label}
-          </div>
-          <div className="font-display text-xl tracking-[0.04em] text-foreground">{value}</div>
-        </div>
-        <div className="rounded-full border border-mcm-walnut/12 bg-mcm-cream/55 p-2 text-mcm-walnut">
-          {icon}
-        </div>
-      </div>
-      <div className="mt-3 text-sm leading-5 text-muted-foreground">{detail}</div>
-    </div>
-  );
+function buildOperationalJobConsoleTargets(
+  operationalJobs: OperationalJobTarget[]
+): JobLogStreamTarget[] {
+  return operationalJobs.map((job) => ({
+    name: job.name,
+    label: job.label,
+    layerName: null,
+    domainName: job.categoryLabel,
+    jobUrl: job.jobUrl || null,
+    runningState: job.runningState || null,
+    recentStatus: job.recentStatus || null,
+    startTime: job.startTime || null,
+    signals: job.signals || null
+  }));
 }
 
 export function SystemStatusPage() {
@@ -173,25 +106,21 @@ export function SystemStatusPage() {
     isLoading,
     error,
     isFetching,
+    statusMeta,
     refresh: refreshSystemStatusView
   } = useSystemStatusViewQuery({
     autoRefresh: true
   });
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatusDetail | null>(null);
   const systemStatusView = data;
   const systemHealth = systemStatusView?.systemHealth;
+  const jobStatuses = useJobStatuses({ autoRefresh: false });
+  const jobStatusesByKey = jobStatuses.byKey;
   const errorMessage = error instanceof Error ? error.message : 'No telemetry available';
 
-  const displayDataLayers = useMemo(() => {
-    return (systemHealth?.dataLayers || []).map((layer) => ({
-      ...layer,
-      domains: (layer.domains || []).filter((domain) => {
-        const domainKey = normalizeDomainKey(String(domain?.name || ''));
-        return domainKey !== 'platinum';
-      })
-    }));
-  }, [systemHealth]);
+  useEffect(() => addRealtimeStatusListener(setRealtimeStatus), []);
 
   const jobResourcesByKey = useMemo(() => {
     const resources = new Map<string, JobResourceSummary>();
@@ -203,6 +132,7 @@ export function SystemStatusPage() {
       if (resources.has(jobKey)) continue;
       resources.set(jobKey, {
         name: rawName,
+        azureId: resource.azureId || null,
         jobCategory: resource.jobCategory || null,
         jobKey: resource.jobKey || null,
         jobRole: resource.jobRole || null,
@@ -234,6 +164,7 @@ export function SystemStatusPage() {
     for (const resource of jobResourcesByKey.values()) {
       items.push({
         name: resource.name,
+        azureId: resource.azureId || null,
         jobCategory: resource.jobCategory || null,
         jobKey: resource.jobKey || null,
         jobRole: resource.jobRole || null,
@@ -249,6 +180,27 @@ export function SystemStatusPage() {
     return items;
   }, [jobResourcesByKey]);
 
+  const augmentedDataLayers = useMemo(
+    () =>
+      augmentDomainLayersWithCatalogJobs({
+        dataLayers: systemHealth?.dataLayers || [],
+        recentJobs: systemHealth?.recentJobs || [],
+        managedContainerJobs,
+        jobStatusesByKey
+      }),
+    [jobStatusesByKey, managedContainerJobs, systemHealth?.dataLayers, systemHealth?.recentJobs]
+  );
+
+  const displayDataLayers = useMemo(() => {
+    return augmentedDataLayers.map((layer) => ({
+      ...layer,
+      domains: (layer.domains || []).filter((domain) => {
+        const domainKey = normalizeDomainKey(String(domain?.name || ''));
+        return domainKey !== 'platinum' && isDomainLayerCoverageDomainVisible(domainKey);
+      })
+    }));
+  }, [augmentedDataLayers]);
+
   const domainManagedContainerJobs = useMemo(() => {
     const domainJobKeys = buildDomainJobKeySet(displayDataLayers);
     return managedContainerJobs.filter((job) => {
@@ -261,10 +213,15 @@ export function SystemStatusPage() {
     });
   }, [displayDataLayers, managedContainerJobs]);
 
-  const anchoredJobRuns = useMemo(
-    () => buildAnchoredJobRunIndex(systemHealth?.recentJobs || []),
-    [systemHealth?.recentJobs]
-  );
+  const latestJobRuns = useMemo(() => {
+    const index = new Map<string, JobRun>();
+    for (const entry of jobStatusesByKey.values()) {
+      if (entry.latestRun) {
+        index.set(entry.jobKey, entry.latestRun);
+      }
+    }
+    return index;
+  }, [jobStatusesByKey]);
 
   const domainJobLogStreamJobs = useMemo<JobLogStreamTarget[]>(() => {
     type MutableJobTarget = Omit<
@@ -277,13 +234,12 @@ export function SystemStatusPage() {
 
     for (const layer of displayDataLayers || []) {
       for (const domain of layer.domains || []) {
-        const rawJobName = resolveManagedJobName({
+        const rawJobName = resolveRunnableJobName({
           jobName: domain.jobName,
-          jobUrl: domain.jobUrl,
-          layerName: layer.name,
-          domainName: domain.name
+          jobUrl: domain.jobUrl
         });
         if (!rawJobName) continue;
+        if (isExpectedOperationalJobName(rawJobName)) continue;
         const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();
         if (items.has(key)) continue;
         items.set(key, {
@@ -300,15 +256,16 @@ export function SystemStatusPage() {
     for (const resource of jobResourcesByKey.values()) {
       const hasStructuredMetadata = Boolean(
         resource.jobCategory ||
-          resource.jobKey ||
-          resource.jobRole ||
-          resource.metadataSource ||
-          resource.metadataStatus ||
-          resource.metadataErrors?.length
+        resource.jobKey ||
+        resource.jobRole ||
+        resource.metadataSource ||
+        resource.metadataStatus ||
+        resource.metadataErrors?.length
       );
       if (!hasStructuredMetadata) continue;
       const rawJobName = String(resource.name || '').trim();
       if (!rawJobName) continue;
+      if (isExpectedOperationalJobName(rawJobName)) continue;
       const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();
       if (items.has(key)) continue;
       const metadataLabel = [
@@ -328,18 +285,19 @@ export function SystemStatusPage() {
       });
     }
 
-    for (const run of anchoredJobRuns.values()) {
+    for (const run of latestJobRuns.values()) {
       const hasStructuredMetadata = Boolean(
         run.jobCategory ||
-          run.jobKey ||
-          run.jobRole ||
-          run.metadataSource ||
-          run.metadataStatus ||
-          run.metadataErrors?.length
+        run.jobKey ||
+        run.jobRole ||
+        run.metadataSource ||
+        run.metadataStatus ||
+        run.metadataErrors?.length
       );
       if (!hasStructuredMetadata) continue;
       const rawJobName = String(run.jobName || '').trim();
       if (!rawJobName) continue;
+      if (isExpectedOperationalJobName(rawJobName)) continue;
       const key = normalizeAzureJobName(rawJobName) || rawJobName.toLowerCase();
       if (items.has(key)) continue;
       items.set(key, {
@@ -354,7 +312,7 @@ export function SystemStatusPage() {
 
     return Array.from(items.entries())
       .map(([key, item]) => {
-        const latestRun = anchoredJobRuns.get(key);
+        const latestRun = latestJobRuns.get(key);
         const jobResource = jobResourcesByKey.get(key);
         return {
           ...item,
@@ -386,7 +344,7 @@ export function SystemStatusPage() {
         return left.label.localeCompare(right.label);
       })
       .map(({ sortLayerName: _sortLayerName, ...item }) => item);
-  }, [anchoredJobRuns, displayDataLayers, jobResourcesByKey, jobStates]);
+  }, [latestJobRuns, displayDataLayers, jobResourcesByKey, jobStates]);
 
   const operationalJobs = useMemo(
     () =>
@@ -394,9 +352,15 @@ export function SystemStatusPage() {
         dataLayers: displayDataLayers,
         recentJobs: systemHealth?.recentJobs || [],
         managedContainerJobs,
-        jobStates
+        jobStates,
+        jobStatusesByKey
       }),
-    [displayDataLayers, jobStates, managedContainerJobs, systemHealth?.recentJobs]
+    [displayDataLayers, jobStates, jobStatusesByKey, managedContainerJobs, systemHealth?.recentJobs]
+  );
+
+  const jobConsoleStreamJobs = useMemo(
+    () => [...domainJobLogStreamJobs, ...buildOperationalJobConsoleTargets(operationalJobs)],
+    [domainJobLogStreamJobs, operationalJobs]
   );
 
   const handleMetadataSnapshotChange = useCallback(
@@ -437,7 +401,7 @@ export function SystemStatusPage() {
     return <PageLoader text="Initializing System Link..." />;
   }
 
-  if (error || !systemHealth) {
+  if (!systemHealth) {
     return (
       <div className="p-6 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive font-mono">
         <h3 className="text-lg font-bold mb-2 uppercase">System Link Failure</h3>
@@ -447,48 +411,6 @@ export function SystemStatusPage() {
   }
 
   const { overall, recentJobs } = systemHealth;
-  const headerRefreshLabel = systemStatusView?.generatedAt
-    ? `Updated ${formatTimeAgo(systemStatusView.generatedAt)} ago`
-    : 'Link established';
-  const layerCount = displayDataLayers.length;
-  const domainCount = displayDataLayers.reduce(
-    (total, layer) => total + (layer.domains?.length || 0),
-    0
-  );
-  const configuredDomainKeys = new Set<string>();
-  for (const layer of displayDataLayers) {
-    for (const domain of layer.domains || []) {
-      const domainKey = normalizeDomainKey(String(domain?.name || ''));
-      if (domainKey) {
-        configuredDomainKeys.add(domainKey);
-      }
-    }
-  }
-  const configuredDomainCount = configuredDomainKeys.size;
-  const alertCount = systemHealth.alerts?.length || 0;
-  const stressedLayerCount = displayDataLayers.filter((layer) => {
-    const status = String(layer.status || '')
-      .trim()
-      .toLowerCase();
-    return status !== 'healthy' && status !== 'success';
-  }).length;
-  const runningJobCount = domainJobLogStreamJobs.filter(
-    (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'running'
-  ).length;
-  const warningJobCount = domainJobLogStreamJobs.filter(
-    (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'warning'
-  ).length;
-  const failedJobCount = domainJobLogStreamJobs.filter(
-    (job) => effectiveJobStatus(job.recentStatus, job.runningState) === 'failed'
-  ).length;
-  const overallTone = determineTone({
-    overall,
-    failedJobs: failedJobCount,
-    alertCount,
-    stressedLayers: stressedLayerCount
-  });
-  const overallStatus = getStatusConfig(overall);
-  const OverallIcon = overallStatus.icon;
 
   return (
     <div className="page-shell">
@@ -496,101 +418,43 @@ export function SystemStatusPage() {
         <div className="page-header">
           <p className="page-kicker">System Status</p>
           <h1 className="page-title">Operations Command Deck</h1>
-          <p className="page-subtitle">
-            Live medallion coverage, job state, runtime controls, and console tails for the current
-            operating session.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={getSummaryBadgeVariant(overallTone)}>
-            <OverallIcon
-              className={`h-3.5 w-3.5 ${overallStatus.animation === 'spin' ? 'animate-spin' : ''}`}
-            />
-            {overall.toUpperCase()}
-          </Badge>
-          <Badge variant="outline">{isFetching ? 'Receiving telemetry' : headerRefreshLabel}</Badge>
-          <Button
-            className="gap-2"
-            onClick={() => void handleRefresh()}
-            disabled={isRefreshing || isFetching}
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing || isFetching ? 'animate-spin' : ''}`} />
-            Refresh View
-          </Button>
         </div>
       </div>
 
       <div className="space-y-6">
-        <section className="mcm-panel overflow-hidden">
-          <div className="border-b border-border/40 px-6 py-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">
-                  Command Summary
-                </p>
-                <h2 className="font-display text-xl text-foreground">Risk Readout</h2>
-                <p className="text-sm text-muted-foreground">
-                  Scan failures, warnings, configured coverage, and open alerts before drilling into
-                  the matrix.
-                </p>
-              </div>
-            </div>
-          </div>
+        {statusMeta?.status === 'fallback' ? (
+          <Alert className="border-mcm-mustard/60 bg-mcm-mustard/10">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Status view degraded</AlertTitle>
+            <AlertDescription className="break-words">
+              The unified status view did not refresh cleanly, so this page is using the
+              health/metadata fallback endpoints.
+              {statusMeta.message ? ` Last error: ${statusMeta.message}` : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
-          <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard
-              label="Overall Status"
-              value={overall.toUpperCase()}
-              detail={
-                overallTone === 'risk'
-                  ? 'Do not treat green downstream cells as reliable until failures clear.'
-                  : overallTone === 'watch'
-                    ? 'Usable, but there is enough friction to keep this page open.'
-                    : 'No blocking risk is visible in the current status view.'
-              }
-              icon={<OverallIcon className="h-5 w-5" />}
-              tone={overallTone}
-            />
-            <SummaryCard
-              label="Configured Coverage"
-              value={`${domainCount} cells`}
-              detail={`${pluralize(configuredDomainCount, 'domain')} mapped across ${pluralize(layerCount, 'layer')}; ${pluralize(stressedLayerCount, 'layer')} under watch.`}
-              icon={<Layers3 className="h-5 w-5" />}
-              tone={stressedLayerCount > 0 ? 'watch' : 'neutral'}
-            />
-            <SummaryCard
-              label="Job Risk"
-              value={`${failedJobCount} fail / ${warningJobCount} warn`}
-              detail={
-                failedJobCount > 0
-                  ? `${pluralize(failedJobCount, 'failure')} visible across ${pluralize(domainJobLogStreamJobs.length, 'domain job')}.`
-                  : warningJobCount > 0
-                    ? `${pluralize(warningJobCount, 'warning')} visible; ${pluralize(runningJobCount, 'job')} currently running.`
-                    : `${pluralize(runningJobCount, 'job')} running; no failed jobs visible.`
-              }
-              icon={<Activity className="h-5 w-5" />}
-              tone={failedJobCount > 0 ? 'risk' : warningJobCount > 0 ? 'watch' : 'neutral'}
-            />
-            <SummaryCard
-              label="Open Alerts"
-              value={String(alertCount)}
-              detail={
-                alertCount > 0
-                  ? `${pluralize(alertCount, 'alert')} remain open across tracked system signals.`
-                  : `${pluralize((systemHealth.resources || []).length, 'resource')} checked with no open alert.`
-              }
-              icon={
-                alertCount > 0 ? (
-                  <TriangleAlert className="h-5 w-5" />
-                ) : (
-                  <ShieldCheck className="h-5 w-5" />
-                )
-              }
-              tone={alertCount > 0 ? 'watch' : 'good'}
-            />
-          </div>
-        </section>
+        {statusMeta?.status === 'error' ? (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Last refresh failed</AlertTitle>
+            <AlertDescription className="break-words">
+              Showing the last cached status view because the latest refresh failed.
+              {statusMeta.message ? ` Last error: ${statusMeta.message}` : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {realtimeStatus?.status === 'reconnecting' || realtimeStatus?.status === 'unavailable' ? (
+          <Alert className="border-mcm-mustard/60 bg-mcm-mustard/10">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Realtime updates degraded</AlertTitle>
+            <AlertDescription className="break-words">
+              {realtimeStatus.message ||
+                'Realtime updates are unavailable; polling and manual refresh remain active.'}
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
         <ErrorBoundary>
           <Suspense fallback={<Skeleton className="h-[360px] w-full rounded-xl bg-muted/20" />}>
@@ -619,6 +483,7 @@ export function SystemStatusPage() {
               onRefresh={handleRefresh}
               isRefreshing={isRefreshing}
               isFetching={isFetching}
+              autoRefreshStaleMetadata
             />
           </Suspense>
         </ErrorBoundary>
@@ -633,10 +498,11 @@ export function SystemStatusPage() {
 
         <ErrorBoundary>
           <Suspense fallback={<Skeleton className="h-[260px] w-full rounded-xl bg-muted/20" />}>
-            <JobLogStreamPanel jobs={domainJobLogStreamJobs} />
+            <JobLogStreamPanel jobs={jobConsoleStreamJobs} />
           </Suspense>
         </ErrorBoundary>
       </div>
+      <JobStatusDebugOverlay />
     </div>
   );
 }

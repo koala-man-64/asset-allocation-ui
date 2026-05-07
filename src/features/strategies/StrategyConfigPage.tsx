@@ -1,22 +1,26 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Database } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Plus } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { strategyApi } from '@/services/strategyApi';
 import { backtestApi } from '@/services/backtestApi';
+import { backtestKeys } from '@/services/backtestHooks';
+import { strategyKeys } from '@/services/queryKeyFactories';
 import type { StrategyDetail, StrategySummary } from '@/types/strategy';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
-import { StrategyActionRail } from '@/features/strategies/components/StrategyActionRail';
 import {
   StrategyBacktestDialog,
   type StrategyBacktestDraft
 } from '@/features/strategies/components/StrategyBacktestDialog';
 import { StrategyDeleteDialog } from '@/features/strategies/components/StrategyDeleteDialog';
-import { StrategyDossier } from '@/features/strategies/components/StrategyDossier';
+import { StrategyEditorPanel } from '@/features/strategies/components/StrategyEditorPanel';
 import { StrategyEditorWorkspace } from '@/features/strategies/components/StrategyEditorWorkspace';
+import { StrategyExplorerPanel } from '@/features/strategies/components/StrategyExplorerPanel';
 import { StrategyLibraryRail } from '@/features/strategies/components/StrategyLibraryRail';
-import type { StrategyEditorMode } from '@/features/strategies/lib/strategyDraft';
+import {
+  normalizeStrategyDetail,
+  type StrategyEditorMode
+} from '@/features/strategies/lib/strategyDraft';
 import {
   getStrategySearchText,
   sortStrategies,
@@ -61,7 +65,7 @@ export function StrategyConfigPage() {
     isLoading: isStrategiesLoading,
     error: strategiesError
   } = useQuery({
-    queryKey: ['strategies'],
+    queryKey: strategyKeys.all(),
     queryFn: () => strategyApi.listStrategies()
   });
 
@@ -69,13 +73,17 @@ export function StrategyConfigPage() {
     strategies.find((strategy) => strategy.name === selectedStrategyName) || null;
 
   const detailQuery = useQuery({
-    queryKey: ['strategies', 'detail', selectedStrategyName],
+    queryKey: strategyKeys.detail(selectedStrategyName),
     queryFn: () => strategyApi.getStrategyDetail(String(selectedStrategyName)),
     enabled: Boolean(selectedStrategyName)
   });
+  const strategyDetail = useMemo(
+    () => (detailQuery.data ? normalizeStrategyDetail(detailQuery.data) : undefined),
+    [detailQuery.data]
+  );
 
   const recentRunsQuery = useQuery({
-    queryKey: ['backtest', 'runs', selectedStrategyName],
+    queryKey: backtestKeys.runList({ q: String(selectedStrategyName), limit: 6, offset: 0 }),
     queryFn: () =>
       backtestApi.listRuns({
         q: String(selectedStrategyName),
@@ -84,20 +92,6 @@ export function StrategyConfigPage() {
       }),
     enabled: Boolean(selectedStrategyName)
   });
-  const latestTradeHistoryRun =
-    recentRunsQuery.data?.runs.find((run) => run.status === 'completed') ||
-    recentRunsQuery.data?.runs[0] ||
-    null;
-  const recentTradesQuery = useQuery({
-    queryKey: ['backtest', 'trades', latestTradeHistoryRun?.run_id],
-    queryFn: () =>
-      backtestApi.getTrades(String(latestTradeHistoryRun?.run_id), {
-        limit: 20,
-        offset: 0
-      }),
-    enabled: Boolean(latestTradeHistoryRun?.run_id)
-  });
-
   const filteredStrategies = useMemo(() => {
     const query = deferredSearchText.trim().toLowerCase();
     const matchingStrategies = query
@@ -113,7 +107,10 @@ export function StrategyConfigPage() {
       return;
     }
 
-    if (!selectedStrategyName || !strategies.some((strategy) => strategy.name === selectedStrategyName)) {
+    if (
+      !selectedStrategyName ||
+      !strategies.some((strategy) => strategy.name === selectedStrategyName)
+    ) {
       const fallbackStrategy = sortStrategies(strategies, 'updated-desc')[0];
       setSelectedStrategyName(fallbackStrategy?.name || strategies[0].name);
     }
@@ -122,7 +119,7 @@ export function StrategyConfigPage() {
   const deleteMutation = useMutation({
     mutationFn: (name: string) => strategyApi.deleteStrategy(name),
     onSuccess: async (_, name) => {
-      await queryClient.invalidateQueries({ queryKey: ['strategies'] });
+      await queryClient.invalidateQueries({ queryKey: strategyKeys.all() });
       setStrategyPendingDelete(null);
       setEditorState((current) => (current?.strategyName === name ? null : current));
       setSelectedStrategyName((current) => (current === name ? null : current));
@@ -155,7 +152,7 @@ export function StrategyConfigPage() {
       });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['backtest'] });
+      await queryClient.invalidateQueries({ queryKey: backtestKeys.all });
       setIsBacktestOpen(false);
       setBacktestDraft(DEFAULT_BACKTEST_DRAFT);
       toast.success('Strategy backtest submitted to the queue');
@@ -168,11 +165,10 @@ export function StrategyConfigPage() {
   const strategiesErrorMessage = formatSystemStatusText(strategiesError);
   const detailErrorMessage = formatSystemStatusText(detailQuery.error);
   const recentRunsErrorMessage = formatSystemStatusText(recentRunsQuery.error);
-  const recentTradesErrorMessage = formatSystemStatusText(recentTradesQuery.error);
 
   const editorSourceDetail =
     editorState?.strategyName && editorState.strategyName === selectedStrategyName
-      ? detailQuery.data
+      ? strategyDetail
       : undefined;
   const editorHydrating =
     Boolean(editorState?.strategyName) &&
@@ -211,24 +207,22 @@ export function StrategyConfigPage() {
           <p className="page-kicker">Strategies</p>
           <h1 className="page-title">Strategy Workspace</h1>
           <p className="page-subtitle">
-            A trading-desk workspace for browsing strategies, reading the dossier, and making safer
-            CRUD changes without leaving the existing contracts and backtest APIs.
+            A single trading-desk workspace for strategy editing, universe and ranking drafts,
+            portfolio-backed allocations, historical evidence, and server-backed comparisons.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" asChild className="gap-2">
-            <Link to="/strategy-exploration">
-              <Database className="h-4 w-4" />
-              Strategy Exploration
-            </Link>
+          <Button onClick={() => openEditor('create')}>
+            <Plus className="h-4 w-4" />
+            Create Strategy
           </Button>
-          <Button onClick={() => openEditor('create')}>Create Strategy</Button>
         </div>
       </div>
 
-      <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1.15fr)_minmax(360px,0.92fr)]">
+      <div className="flex flex-col gap-6">
         <StrategyLibraryRail
+          layout="stacked"
           strategies={filteredStrategies}
           selectedStrategyName={selectedStrategyName}
           searchText={librarySearchText}
@@ -239,20 +233,6 @@ export function StrategyConfigPage() {
           onSortOrderChange={setLibrarySortOrder}
           onSelectStrategy={setSelectedStrategyName}
           onCreateStrategy={() => openEditor('create')}
-        />
-
-        <StrategyDossier
-          selectedStrategyName={selectedStrategyName}
-          strategy={detailQuery.data}
-          isLoading={detailQuery.isLoading}
-          errorMessage={detailErrorMessage}
-          recentRuns={recentRunsQuery.data?.runs || []}
-          recentRunsLoading={recentRunsQuery.isLoading}
-          recentRunsError={recentRunsErrorMessage}
-          recentTrades={recentTradesQuery.data?.trades || []}
-          recentTradesLoading={recentTradesQuery.isLoading}
-          recentTradesError={recentTradesErrorMessage}
-          recentTradesRunId={latestTradeHistoryRun?.run_id || null}
         />
 
         {editorState ? (
@@ -266,10 +246,16 @@ export function StrategyConfigPage() {
             onSaved={handleSaved}
           />
         ) : (
-          <StrategyActionRail
+          <StrategyEditorPanel
+            selectedStrategyName={selectedStrategyName}
             selectedStrategy={selectedStrategy}
-            selectedDetail={detailQuery.data}
-            detailReady={Boolean(detailQuery.data) && !detailQuery.isLoading && !detailErrorMessage}
+            strategy={strategyDetail}
+            isLoading={detailQuery.isLoading}
+            errorMessage={detailErrorMessage}
+            detailReady={Boolean(strategyDetail) && !detailQuery.isLoading && !detailErrorMessage}
+            recentRuns={recentRunsQuery.data?.runs || []}
+            recentRunsLoading={recentRunsQuery.isLoading}
+            recentRunsError={recentRunsErrorMessage}
             onCreateStrategy={() => openEditor('create')}
             onEditStrategy={() => openEditor('edit')}
             onDuplicateStrategy={() => openEditor('duplicate')}
@@ -277,6 +263,13 @@ export function StrategyConfigPage() {
             onDeleteStrategy={() => selectedStrategy && setStrategyPendingDelete(selectedStrategy)}
           />
         )}
+
+        <StrategyExplorerPanel
+          selectedStrategyName={selectedStrategyName}
+          strategy={strategyDetail}
+          strategies={strategies}
+          recentRuns={recentRunsQuery.data?.runs || []}
+        />
       </div>
 
       <StrategyBacktestDialog

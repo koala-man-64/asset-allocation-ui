@@ -6,11 +6,28 @@ interface Props {
   children: ReactNode;
   fallback?: ReactNode;
   onReset?: () => void;
+  onReload?: () => void;
 }
 
 interface State {
   hasError: boolean;
   error: Error | null;
+}
+
+const CHUNK_LOAD_ERROR_PATTERNS = [
+  'failed to fetch dynamically imported module',
+  'error loading dynamically imported module',
+  'importing a module script failed',
+  'chunkloaderror',
+  'chunk load failed',
+  'loading chunk'
+] as const;
+
+export function isChunkLoadError(error: Error | null): boolean {
+  if (!error) return false;
+
+  const errorText = `${error.name || ''} ${error.message || ''}`.toLowerCase();
+  return CHUNK_LOAD_ERROR_PATTERNS.some((pattern) => errorText.includes(pattern));
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -32,10 +49,42 @@ export class ErrorBoundary extends Component<Props, State> {
     this.props.onReset?.();
   };
 
+  handleReload = () => {
+    if (this.props.onReload) {
+      this.props.onReload();
+      return;
+    }
+
+    window.location.reload();
+  };
+
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
         return this.props.fallback;
+      }
+
+      if (isChunkLoadError(this.state.error)) {
+        return (
+          <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 rounded-lg border border-amber-200 bg-amber-50 p-6 text-amber-950">
+            <div className="flex items-center gap-2 text-lg font-semibold">
+              <RefreshCw className="h-6 w-6 text-amber-700" />
+              <span>New version available</span>
+            </div>
+            <p className="max-w-md text-center text-sm text-amber-800">
+              This page was updated while your browser still had an older app bundle loaded. Reload
+              the application to get the current version.
+            </p>
+            <Button
+              variant="default"
+              onClick={this.handleReload}
+              className="bg-amber-700 text-white hover:bg-amber-800"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Reload Application
+            </Button>
+          </div>
+        );
       }
 
       return (

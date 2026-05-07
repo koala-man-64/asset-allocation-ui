@@ -2,24 +2,41 @@ import { describe, expect, it } from 'vitest';
 
 import type { JobRun } from '@/types/strategy';
 import {
-  buildAnchoredJobRunIndex,
+  buildLatestJobRunIndex,
   effectiveJobStatus,
   hasActiveJobRunningState,
   isSuspendedJobRunningState,
   normalizeJobStatus,
-  selectAnchoredJobRun
+  resolveRunnableJobName,
+  selectAnchoredJobRun,
+  selectLatestJobRun
 } from '@/features/system-status/lib/SystemStatusHelpers';
 
 describe('SystemStatusHelpers', () => {
-  it('prefers active live running state over the last completed run', () => {
+  it('prefers active live resource running state over stale terminal execution status', () => {
     expect(effectiveJobStatus('success', 'Running')).toBe('running');
+    expect(effectiveJobStatus('failed', 'Running')).toBe('running');
+    expect(effectiveJobStatus('success', 'Queued')).toBe('running');
   });
 
-  it('maps suspended live state to pending', () => {
+  it('reports execution status when live resource state is terminal or absent', () => {
+    expect(effectiveJobStatus('success', 'Succeeded')).toBe('success');
+    expect(effectiveJobStatus('failed', 'Failed')).toBe('failed');
+    expect(effectiveJobStatus('failed', null)).toBe('failed');
+    expect(effectiveJobStatus('success', undefined)).toBe('success');
+  });
+
+  it('uses live resource state only when no execution status is available', () => {
+    expect(effectiveJobStatus(null, 'Running')).toBe('running');
+    expect(effectiveJobStatus(undefined, 'Suspended')).toBe('pending');
+  });
+
+  it('reports pending when live state is suspended even if a prior run was terminal', () => {
     expect(effectiveJobStatus('success', 'Suspended')).toBe('pending');
+    expect(effectiveJobStatus('failed', 'Suspended')).toBe('pending');
   });
 
-  it('uses terminal live running state when no recent run is available', () => {
+  it('uses terminal live resource state when no recent run is available', () => {
     expect(effectiveJobStatus(null, 'Failed')).toBe('failed');
     expect(effectiveJobStatus(undefined, 'Succeeded')).toBe('success');
   });
@@ -53,25 +70,57 @@ describe('SystemStatusHelpers', () => {
     });
   });
 
-  it('indexes each job by its anchored run rather than the newest completed run', () => {
-    const anchored = buildAnchoredJobRunIndex([
+  it('selects the latest execution when displaying status', () => {
+    expect(
+      selectLatestJobRun([
+        {
+          status: 'running',
+          startTime: '2026-03-20T12:00:00Z'
+        },
+        {
+          status: 'failed',
+          startTime: '2026-03-21T12:00:00Z'
+        }
+      ])
+    ).toEqual({
+      status: 'failed',
+      startTime: '2026-03-21T12:00:00Z'
+    });
+  });
+
+  it('indexes each job by its latest execution for status display', () => {
+    const latest = buildLatestJobRunIndex([
       {
         jobName: 'bronze-market-job',
-        status: 'success',
-        startTime: '2026-03-21T12:00:00Z'
+        status: 'running',
+        startTime: '2026-03-20T12:00:00Z'
       },
       {
         jobName: 'bronze-market-job',
-        status: 'running',
-        startTime: '2026-03-20T12:00:00Z'
+        status: 'failed',
+        startTime: '2026-03-21T12:00:00Z'
       }
     ] as JobRun[]);
 
-    expect(anchored.get('bronze-market-job')).toEqual(
+    expect(latest.get('bronze-market-job')).toEqual(
       expect.objectContaining({
-        status: 'running',
-        startTime: '2026-03-20T12:00:00Z'
+        status: 'failed',
+        startTime: '2026-03-21T12:00:00Z'
       })
     );
+  });
+
+  it('only resolves runnable jobs from explicit metadata', () => {
+    expect(
+      resolveRunnableJobName({
+        jobName: null,
+        jobUrl:
+          'https://portal.azure.com/#resource/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/jobs/bronze-market-job/overview'
+      })
+    ).toBe('bronze-market-job');
+    expect(resolveRunnableJobName({ jobName: 'bronze-finance-job' })).toBe(
+      'bronze-finance-job'
+    );
+    expect(resolveRunnableJobName({ jobName: null, jobUrl: null })).toBe('');
   });
 });

@@ -29,7 +29,10 @@ import type { JobLogRunResponse, JobLogsResponse } from '@/services/apiService';
 import { DataService } from '@/services/DataService';
 import {
   addConsoleLogStreamListener,
+  addRealtimeStatusListener,
+  buildJobLogTopics,
   buildJobLogTopic,
+  isJobLogTopicForJob,
   requestRealtimeSubscription,
   requestRealtimeUnsubscription,
   type ConsoleLogStreamLine
@@ -49,6 +52,7 @@ import { getLogStreamFeedback } from '@/features/system-status/lib/logStreamFeed
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
 const LOG_LINE_LIMIT = 200;
+const JOB_LOG_SNAPSHOT_RUNS = 3;
 const LOG_AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 16;
 const JOB_USAGE_REFRESH_INTERVAL_MS = 5_000;
 const CPU_SIGNAL_NAMES = ['usagenanocores', 'cpupercent', 'cpupercentage', 'cpuusage'];
@@ -96,6 +100,11 @@ type LogState = {
   lines: ConsoleTailLine[];
   loading: boolean;
   error: string | null;
+};
+
+type JobLogSelection = {
+  lines: ConsoleTailLine[];
+  executionName: string | null;
 };
 
 function isFiniteNumber(value: unknown): value is number {
@@ -253,8 +262,32 @@ function formatUsageValue(signal: ResourceSignal | null, metric: 'cpu' | 'memory
   return suffix ? `${value} ${suffix}` : value;
 }
 
+function jobDisplayRank(job: JobLogStreamTarget): number {
+  const status = effectiveJobStatus(job.recentStatus, job.runningState);
+  if (status === 'running') return 0;
+  if (status === 'failed') return 1;
+  if (status === 'warning') return 2;
+  if (status === 'pending') return 3;
+  return 4;
+}
+
+function jobStartEpoch(job: JobLogStreamTarget): number {
+  const parsed = job.startTime ? Date.parse(job.startTime) : NaN;
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
 function sortJobsForDisplay(jobs: JobLogStreamTarget[]): JobLogStreamTarget[] {
   return [...jobs].sort((left, right) => {
+    const rankDiff = jobDisplayRank(left) - jobDisplayRank(right);
+    if (rankDiff !== 0) {
+      return rankDiff;
+    }
+
+    const startDiff = jobStartEpoch(right) - jobStartEpoch(left);
+    if (startDiff !== 0) {
+      return startDiff;
+    }
+
     const labelComparison = left.label.localeCompare(right.label, undefined, {
       numeric: true,
       sensitivity: 'base'
@@ -275,10 +308,17 @@ function normalizeLogLine(
     id?: string | null;
   }
 ): ConsoleTailLine | null {
-  const message = formatSystemStatusText(line.message);
+  let message = String(line.message || '').trim();
   if (!message) {
     return null;
   }
+
+  // Try formatting for system status messages, but preserve original if it strips content
+  const formatted = formatSystemStatusText(message);
+  if (formatted) {
+    message = formatted;
+  }
+  // else: keep original message if formatting resulted in empty string
 
   const timestamp = typeof line.timestamp === 'string' ? line.timestamp.trim() || null : null;
   const stream_s = typeof line.stream_s === 'string' ? line.stream_s.trim() || null : null;
@@ -327,17 +367,49 @@ function extractAnchoredJobLogRun(response: JobLogsResponse): JobLogRunResponse 
   return selectAnchoredJobRun(response?.runs ?? []);
 }
 
-function extractJobLogLines(response: JobLogsResponse): ConsoleTailLine[] {
-  const run = extractAnchoredJobLogRun(response);
+function extractRunExecutionName(
+  run: JobLogRunResponse | null,
+  lines: ConsoleTailLine[] = []
+): string | null {
+  const executionName = typeof run?.executionName === 'string' ? run.executionName.trim() : '';
+  if (executionName) {
+    return executionName;
+  }
+
+  for (const line of lines) {
+    const lineExecutionName =
+      typeof line.executionName === 'string' ? line.executionName.trim() : '';
+    if (lineExecutionName) {
+      return lineExecutionName;
+    }
+  }
+
+  if (Array.isArray(run?.consoleLogs)) {
+    for (const entry of run.consoleLogs) {
+      const lineExecutionName =
+        typeof entry?.executionName === 'string' ? entry.executionName.trim() : '';
+      if (lineExecutionName) {
+        return lineExecutionName;
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractRunLogLines(run: JobLogRunResponse | null): ConsoleTailLine[] {
   if (!run) {
     return [];
   }
 
   if (Array.isArray(run.consoleLogs) && run.consoleLogs.length > 0) {
-    return run.consoleLogs
+    const consoleLines = run.consoleLogs
       .map((line) => normalizeLogLine(line))
       .filter((line): line is ConsoleTailLine => line !== null)
       .slice(-LOG_LINE_LIMIT);
+    if (consoleLines.length > 0) {
+      return consoleLines;
+    }
   }
 
   return (run.tail ?? [])
@@ -352,24 +424,39 @@ function extractJobLogLines(response: JobLogsResponse): ConsoleTailLine[] {
     .slice(-LOG_LINE_LIMIT);
 }
 
-function extractAnchoredExecutionName(response: JobLogsResponse): string | null {
-  const run = extractAnchoredJobLogRun(response);
-  const executionName = typeof run?.executionName === 'string' ? run.executionName.trim() : '';
-  if (executionName) {
-    return executionName;
+function orderedJobLogRunCandidates(response: JobLogsResponse): JobLogRunResponse[] {
+  const runs = response?.runs ?? [];
+  const anchoredRun = extractAnchoredJobLogRun(response);
+  if (!anchoredRun) {
+    return runs;
   }
 
-  if (Array.isArray(run?.consoleLogs)) {
-    for (const entry of run.consoleLogs) {
-      const lineExecutionName =
-        typeof entry?.executionName === 'string' ? entry.executionName.trim() : '';
-      if (lineExecutionName) {
-        return lineExecutionName;
-      }
+  return [anchoredRun, ...runs.filter((run) => run !== anchoredRun)];
+}
+
+function extractJobLogSelection(response: JobLogsResponse): JobLogSelection {
+  let fallbackExecutionName: string | null = null;
+
+  for (const run of orderedJobLogRunCandidates(response)) {
+    const lines = extractRunLogLines(run);
+    const executionName = extractRunExecutionName(run, lines);
+    if (
+      !fallbackExecutionName &&
+      executionName &&
+      effectiveJobStatus(run.status, null) === 'running'
+    ) {
+      fallbackExecutionName = executionName;
+    }
+
+    if (lines.length > 0) {
+      return {
+        lines,
+        executionName
+      };
     }
   }
 
-  return null;
+  return { lines: [], executionName: fallbackExecutionName };
 }
 
 function formatConsoleTimestamp(timestamp?: string | null): string | null {
@@ -415,6 +502,7 @@ export function JobLogStreamPanel({
     : internalSelectedJobName;
   const [selectedExecutionName, setSelectedExecutionName] = useState<string | null>(null);
   const [liveSignals, setLiveSignals] = useState<ResourceSignal[] | null>(null);
+  const [usageRefreshError, setUsageRefreshError] = useState<string | null>(null);
   const [logState, setLogState] = useState<LogState>({
     lines: [],
     loading: false,
@@ -423,8 +511,11 @@ export function JobLogStreamPanel({
   const requestControllerRef = useRef<AbortController | null>(null);
   const usageRequestControllerRef = useRef<AbortController | null>(null);
   const usageRequestInFlightRef = useRef(false);
+  const logRequestSequenceRef = useRef(0);
+  const realtimeStatusRef = useRef<string | null>(null);
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
+  const manualSelectionRef = useRef(false);
   const monitoredJobSelectId = useId();
   const sortedJobs = useMemo(() => sortJobsForDisplay(jobs), [jobs]);
   const updateSelectedJobName = useCallback(
@@ -435,6 +526,13 @@ export function JobLogStreamPanel({
       onSelectedJobNameChange?.(jobName);
     },
     [isSelectedJobControlled, onSelectedJobNameChange]
+  );
+  const handleSelectedJobNameChange = useCallback(
+    (jobName: string) => {
+      manualSelectionRef.current = true;
+      updateSelectedJobName(jobName);
+    },
+    [updateSelectedJobName]
   );
   const runningJobCount = useMemo(
     () =>
@@ -449,14 +547,19 @@ export function JobLogStreamPanel({
     [sortedJobs, selectedJobName]
   );
   const selectedJobStartTime = selectedJob?.startTime ?? null;
-  const selectedJobTopic =
-    selectedJobName && selectedExecutionName
-      ? buildJobLogTopic(selectedJobName, selectedExecutionName)
-      : null;
+  const selectedJobEffectiveStatus = effectiveJobStatus(
+    selectedJob?.recentStatus,
+    selectedJob?.runningState
+  );
+  const selectedJobTopics = useMemo(
+    () => (selectedJobName ? buildJobLogTopics(selectedJobName, selectedExecutionName) : []),
+    [selectedExecutionName, selectedJobName]
+  );
   const logFeedback = getLogStreamFeedback(logState.error, 'job');
 
   useEffect(() => {
     if (!sortedJobs.length) {
+      manualSelectionRef.current = false;
       updateSelectedJobName('');
       setSelectedExecutionName(null);
       setLogState({ lines: [], loading: false, error: null });
@@ -464,12 +567,23 @@ export function JobLogStreamPanel({
     }
 
     const selectionStillExists = sortedJobs.some((job) => job.name === selectedJobName);
-    if (selectionStillExists) {
+    const preferredJobName = sortedJobs[0]?.name ?? '';
+
+    if (!selectionStillExists) {
+      manualSelectionRef.current = false;
+      updateSelectedJobName(preferredJobName);
       return;
     }
 
-    updateSelectedJobName(sortedJobs[0]?.name ?? '');
-  }, [sortedJobs, selectedJobName, updateSelectedJobName]);
+    if (
+      !isSelectedJobControlled &&
+      !manualSelectionRef.current &&
+      preferredJobName &&
+      selectedJobName !== preferredJobName
+    ) {
+      updateSelectedJobName(preferredJobName);
+    }
+  }, [isSelectedJobControlled, sortedJobs, selectedJobName, updateSelectedJobName]);
 
   useEffect(() => {
     return () => {
@@ -482,34 +596,42 @@ export function JobLogStreamPanel({
     shouldAutoScrollRef.current = true;
     setSelectedExecutionName(null);
     setLiveSignals(null);
+    setUsageRefreshError(null);
   }, [selectedJobName, selectedJobStartTime]);
 
   useEffect(() => {
     setLiveSignals((current) => preferNewerSignals(current, selectedJob?.signals ?? null));
   }, [selectedJob?.signals, selectedJobName]);
 
-  useEffect(() => {
+  const loadSnapshot = useCallback(() => {
+    const requestSequence = logRequestSequenceRef.current + 1;
+    logRequestSequenceRef.current = requestSequence;
+    requestControllerRef.current?.abort();
+
     if (!selectedJobName) {
       setLogState({ lines: [], loading: false, error: null });
       return;
     }
 
-    requestControllerRef.current?.abort();
     const controller = new AbortController();
     requestControllerRef.current = controller;
 
     setLogState({ lines: [], loading: true, error: null });
-    DataService.getJobLogs(selectedJobName, { runs: 1 }, controller.signal)
+    DataService.getJobLogs(selectedJobName, { runs: JOB_LOG_SNAPSHOT_RUNS }, controller.signal)
       .then((response) => {
-        setSelectedExecutionName(extractAnchoredExecutionName(response));
+        if (controller.signal.aborted || logRequestSequenceRef.current !== requestSequence) {
+          return;
+        }
+        const selection = extractJobLogSelection(response);
+        setSelectedExecutionName(selection.executionName);
         setLogState({
-          lines: extractJobLogLines(response),
+          lines: selection.lines,
           loading: false,
           error: null
         });
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted || logRequestSequenceRef.current !== requestSequence) {
           return;
         }
         setSelectedExecutionName(null);
@@ -519,28 +641,31 @@ export function JobLogStreamPanel({
           error: formatSystemStatusText(error)
         });
       });
-
-    return () => {
-      controller.abort();
-    };
-  }, [selectedJobName, selectedJobStartTime]);
+  }, [selectedJobName]);
 
   useEffect(() => {
-    if (!selectedJobTopic) {
+    loadSnapshot();
+    return () => {
+      requestControllerRef.current?.abort();
+    };
+  }, [loadSnapshot, selectedJobStartTime]);
+
+  useEffect(() => {
+    if (!selectedJobTopics.length) {
       return;
     }
 
-    requestRealtimeSubscription([selectedJobTopic]);
-    return () => requestRealtimeUnsubscription([selectedJobTopic]);
-  }, [selectedJobTopic]);
+    requestRealtimeSubscription(selectedJobTopics);
+    return () => requestRealtimeUnsubscription(selectedJobTopics);
+  }, [selectedJobTopics]);
 
   useEffect(() => {
-    if (!selectedJobTopic) {
+    if (!selectedJobName) {
       return;
     }
 
     return addConsoleLogStreamListener((detail) => {
-      if (detail.topic !== selectedJobTopic) {
+      if (!isJobLogTopicForJob(detail.topic, selectedJobName, selectedExecutionName)) {
         return;
       }
 
@@ -552,13 +677,35 @@ export function JobLogStreamPanel({
         return;
       }
 
+      if (detail.topic === buildJobLogTopic(selectedJobName)) {
+        const liveExecutionName = incoming
+          .map((line) => String(line.executionName || '').trim())
+          .find((value) => value.length > 0);
+        if (liveExecutionName && liveExecutionName !== selectedExecutionName) {
+          setSelectedExecutionName(liveExecutionName);
+        }
+      }
+
       setLogState((current) => ({
         lines: mergeLogLines(current.lines, incoming),
         loading: false,
         error: null
       }));
     });
-  }, [selectedJobTopic]);
+  }, [selectedExecutionName, selectedJobName]);
+
+  useEffect(() => {
+    return addRealtimeStatusListener((detail) => {
+      const previousStatus = realtimeStatusRef.current;
+      realtimeStatusRef.current = detail.status;
+      if (
+        detail.status === 'connected' &&
+        (previousStatus === 'reconnecting' || previousStatus === 'unavailable')
+      ) {
+        loadSnapshot();
+      }
+    });
+  }, [loadSnapshot]);
 
   useEffect(() => {
     const viewport = logViewportRef.current;
@@ -596,8 +743,10 @@ export function JobLogStreamPanel({
 
         const nextSignals = findJobResourceSignals(selectedJobName, systemHealth.resources);
         setLiveSignals((current) => preferNewerSignals(current, nextSignals));
+        setUsageRefreshError(null);
       } catch (error: unknown) {
         if (!controller.signal.aborted) {
+          setUsageRefreshError('Showing last known metrics.');
           console.debug('[JobLogStreamPanel] live usage refresh failed', error);
         }
       } finally {
@@ -639,7 +788,7 @@ export function JobLogStreamPanel({
 
   const executionUrl = getAzureJobExecutionsUrl(selectedJob?.jobUrl);
   const portalUrl = normalizeAzurePortalUrl(selectedJob?.jobUrl);
-  const status = effectiveJobStatus(selectedJob?.recentStatus, selectedJob?.runningState);
+  const status = selectedJobEffectiveStatus;
   const usageSignals = preferNewerSignals(selectedJob?.signals, liveSignals);
   const cpuSignal = findUsageSignal(usageSignals, CPU_SIGNAL_NAMES);
   const memorySignal = findUsageSignal(usageSignals, MEMORY_SIGNAL_NAMES);
@@ -689,7 +838,7 @@ export function JobLogStreamPanel({
             >
               Monitored Job
             </label>
-            <Select value={selectedJobName} onValueChange={updateSelectedJobName}>
+            <Select value={selectedJobName} onValueChange={handleSelectedJobNameChange}>
               <SelectTrigger
                 id={monitoredJobSelectId}
                 aria-label="Monitored job"
@@ -753,6 +902,12 @@ export function JobLogStreamPanel({
           </div>
         </div>
 
+        {usageRefreshError ? (
+          <div className="rounded-xl border border-mcm-mustard/45 bg-mcm-mustard/10 px-3 py-2 text-xs font-semibold text-mcm-walnut">
+            {usageRefreshError}
+          </div>
+        ) : null}
+
         <div className="rounded-[1.5rem] border border-mcm-walnut/20 bg-mcm-paper/80">
           <div className="flex items-center justify-between gap-3 border-b border-mcm-walnut/15 px-3 py-2 text-xs font-semibold text-muted-foreground">
             <span>Live Console Tail</span>
@@ -783,7 +938,11 @@ export function JobLogStreamPanel({
               <div className="text-muted-foreground">{logFeedback.message}</div>
             ) : null}
             {!logState.loading && logFeedback.tone === 'none' && logState.lines.length === 0 ? (
-              <div className="text-muted-foreground">No log output available.</div>
+              <div className="text-muted-foreground">
+                {status === 'running'
+                  ? 'Waiting for live console output from the running execution.'
+                  : `No console log lines were returned for the last ${JOB_LOG_SNAPSHOT_RUNS} executions.`}
+              </div>
             ) : null}
             {!logState.loading && logFeedback.tone === 'none' && logState.lines.length > 0 ? (
               <Table className="min-w-full text-xs">

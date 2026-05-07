@@ -51,7 +51,11 @@ vi.mock('@/config', () => ({
 import { useRealtime } from './useRealtime';
 import { queryKeys } from '@/hooks/useDataQueries';
 import { intradayMonitorKeys } from '@/services/intradayMonitorApi';
-import { REALTIME_SUBSCRIBE_EVENT, addConsoleLogStreamListener } from '@/services/realtimeBus';
+import {
+  REALTIME_STATUS_EVENT,
+  REALTIME_SUBSCRIBE_EVENT,
+  addConsoleLogStreamListener
+} from '@/services/realtimeBus';
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -310,7 +314,6 @@ describe('useRealtime', () => {
       expect(invalidatedKeys).toEqual(
         expect.arrayContaining([
           JSON.stringify(queryKeys.systemStatusView()),
-          JSON.stringify(queryKeys.systemHealth()),
           JSON.stringify(queryKeys.domainMetadataSnapshot('all', 'all'))
         ])
       );
@@ -399,6 +402,11 @@ describe('useRealtime', () => {
 
   it('recovers from realtime ticket timeouts by surfacing an operator error and retrying', async () => {
     vi.useFakeTimers();
+    const statuses: string[] = [];
+    const captureStatus = (event: Event) => {
+      statuses.push((event as CustomEvent<{ status: string }>).detail.status);
+    };
+    window.addEventListener(REALTIME_STATUS_EVENT, captureStatus);
     const fetchMock = vi
       .fn()
       .mockImplementationOnce(
@@ -450,6 +458,13 @@ describe('useRealtime', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(MockWebSocket.instances).toHaveLength(1);
+    act(() => {
+      MockWebSocket.instances[0]?.open();
+    });
+    expect(statuses).toEqual(
+      expect.arrayContaining(['connecting', 'unavailable', 'reconnecting', 'connected'])
+    );
+    window.removeEventListener(REALTIME_STATUS_EVENT, captureStatus);
   });
 
   it('does not redirect to login when the websocket closes 4401 but the UI session still validates', async () => {

@@ -75,7 +75,9 @@ describe('DataExplorerPage', () => {
   it('renders delta-backed previews as a table', async () => {
     renderWithProviders(<DataExplorerPage />);
 
-    const fileButton = await screen.findByRole('button', { name: /part-00000\.snappy\.parquet/i });
+    const fileButton = await screen.findByRole('treeitem', {
+      name: /part-00000\.snappy\.parquet/i
+    });
     fireEvent.click(fileButton);
 
     expect(await screen.findByRole('table')).toBeInTheDocument();
@@ -206,8 +208,8 @@ describe('DataExplorerPage', () => {
 
     renderWithProviders(<DataExplorerPage />);
 
-    await user.click(await screen.findByRole('button', { name: /_metadata/i }));
-    await user.click(await screen.findByRole('button', { name: /domain\.json/i }));
+    await user.click(await screen.findByRole('treeitem', { name: /_metadata/i }));
+    await user.click(await screen.findByRole('treeitem', { name: /domain\.json/i }));
 
     await waitFor(() => {
       expect(DataService.getAdlsTree).toHaveBeenCalledWith({

@@ -4,6 +4,7 @@ import { LayoutPanelLeft, Plus } from 'lucide-react';
 import { PageHero } from '@/app/components/common/PageHero';
 import { PageLoader } from '@/app/components/common/PageLoader';
 import { StatePanel } from '@/app/components/common/StatePanel';
+import { useConfirmAction } from '@/app/components/common/ConfirmActionDialog';
 import { Button } from '@/app/components/ui/button';
 import {
   Collapsible,
@@ -38,6 +39,7 @@ import {
 import { rankingApi } from '@/services/rankingApi';
 import { strategyApi } from '@/services/strategyApi';
 import { universeApi } from '@/services/universeApi';
+import { rankingKeys, strategyKeys, universeKeys } from '@/services/queryKeyFactories';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import type {
   RankingCatalogColumn,
@@ -51,7 +53,11 @@ function getInitialPreviewDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function RankingConfigPage() {
+interface RankingConfigPageProps {
+  embedded?: boolean;
+}
+
+export function RankingConfigPage({ embedded = false }: RankingConfigPageProps = {}) {
   const queryClient = useQueryClient();
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -66,13 +72,14 @@ export function RankingConfigPage() {
   const [previewStrategyName, setPreviewStrategyName] = useState('');
   const [previewDate, setPreviewDate] = useState(getInitialPreviewDate);
   const [lastPreviewSignature, setLastPreviewSignature] = useState<string | null>(null);
+  const { confirmAction, confirmationDialog } = useConfirmAction();
 
   const {
     data: schemas = [],
     isLoading: isSchemasLoading,
     error: schemasError
   } = useQuery({
-    queryKey: ['ranking-schemas'],
+    queryKey: rankingKeys.all(),
     queryFn: () => rankingApi.listRankingSchemas()
   });
 
@@ -81,28 +88,28 @@ export function RankingConfigPage() {
     isLoading: isCatalogLoading,
     error: rankingCatalogError
   } = useQuery({
-    queryKey: ['ranking-catalog'],
+    queryKey: rankingKeys.catalog(),
     queryFn: () => rankingApi.getRankingCatalog()
   });
 
   const { data: strategies = [] } = useQuery({
-    queryKey: ['strategies'],
+    queryKey: strategyKeys.all(),
     queryFn: () => strategyApi.listStrategies()
   });
 
   const { data: universeConfigs = [] } = useQuery({
-    queryKey: ['universe-configs'],
+    queryKey: universeKeys.all(),
     queryFn: () => universeApi.listUniverseConfigs()
   });
 
   const detailQuery = useQuery({
-    queryKey: ['ranking-schemas', 'detail', selectedSchemaName],
+    queryKey: rankingKeys.detail(selectedSchemaName),
     queryFn: () => rankingApi.getRankingSchemaDetail(String(selectedSchemaName)),
     enabled: Boolean(selectedSchemaName)
   });
 
   const selectedStrategyDetailQuery = useQuery({
-    queryKey: ['strategies', 'detail', previewStrategyName],
+    queryKey: strategyKeys.detail(previewStrategyName),
     queryFn: () => strategyApi.getStrategyDetail(previewStrategyName),
     enabled: Boolean(previewStrategyName)
   });
@@ -169,13 +176,19 @@ export function RankingConfigPage() {
     setLastPreviewSignature(null);
   };
 
-  const confirmLeaveCurrentDraft = () => {
+  const confirmLeaveCurrentDraft = async () => {
     if (!hasUnsavedChanges) return true;
-    return window.confirm('Discard the current unsaved ranking changes and switch workspaces?');
+    return confirmAction({
+      title: 'Discard Ranking Changes',
+      description: 'Discard the current unsaved ranking changes and switch workspaces?',
+      confirmLabel: 'Discard Changes',
+      cancelLabel: 'Keep Editing',
+      tone: 'destructive'
+    });
   };
 
-  const openNewDraft = () => {
-    if (!confirmLeaveCurrentDraft()) return;
+  const openNewDraft = async () => {
+    if (!(await confirmLeaveCurrentDraft())) return;
 
     const emptyDraft = buildEmptySchema(rankingCatalog);
     setDraft(emptyDraft);
@@ -190,13 +203,13 @@ export function RankingConfigPage() {
     resetPreviewState();
   };
 
-  const loadSchema = (name: string) => {
+  const loadSchema = async (name: string) => {
     if (!isCreatingNew && selectedSchemaName === name) {
       setIsLibraryOpen(false);
       return;
     }
 
-    if (!confirmLeaveCurrentDraft()) return;
+    if (!(await confirmLeaveCurrentDraft())) return;
 
     setSelectedSchemaName(name);
     setIsCreatingNew(false);
@@ -221,9 +234,9 @@ export function RankingConfigPage() {
       };
 
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['ranking-schemas'] }),
-        queryClient.invalidateQueries({ queryKey: ['ranking-schemas', 'detail', draft.name] }),
-        queryClient.invalidateQueries({ queryKey: ['strategies'] })
+        queryClient.invalidateQueries({ queryKey: rankingKeys.all() }),
+        queryClient.invalidateQueries({ queryKey: rankingKeys.detail(draft.name) }),
+        queryClient.invalidateQueries({ queryKey: strategyKeys.all() })
       ]);
 
       setSelectedSchemaName(draft.name);
@@ -241,9 +254,9 @@ export function RankingConfigPage() {
     mutationFn: (name: string) => rankingApi.deleteRankingSchema(name),
     onSuccess: async (_, name) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['ranking-schemas'] }),
-        queryClient.invalidateQueries({ queryKey: ['ranking-schemas', 'detail', name] }),
-        queryClient.invalidateQueries({ queryKey: ['strategies'] })
+        queryClient.invalidateQueries({ queryKey: rankingKeys.all() }),
+        queryClient.invalidateQueries({ queryKey: rankingKeys.detail(name) }),
+        queryClient.invalidateQueries({ queryKey: strategyKeys.all() })
       ]);
 
       const nextSchemaName = schemas.find((schema) => schema.name !== name)?.name ?? null;
@@ -258,7 +271,7 @@ export function RankingConfigPage() {
         setBaselineSnapshot(serializeSchemaDetail(emptyDraft));
       }
       resetPreviewState();
-      toast.success(`Ranking schema ${name} deleted`);
+      toast.success(`Ranking schema ${name} archived`);
     },
     onError: (error) => {
       toast.error(`Failed to delete ranking schema: ${formatSystemStatusText(error)}`);
@@ -529,83 +542,103 @@ export function RankingConfigPage() {
     );
   };
 
-  const handleDeleteSchema = () => {
+  const handleDeleteSchema = async () => {
     if (!selectedSchemaName) return;
 
-    const shouldDelete = window.confirm(`Delete ranking schema ${selectedSchemaName}?`);
+    const shouldDelete = await confirmAction({
+      title: 'Delete Ranking Schema',
+      description: `Delete ranking schema ${selectedSchemaName}?`,
+      confirmLabel: 'Delete Schema',
+      cancelLabel: 'Cancel',
+      tone: 'destructive',
+      requiredConfirmationText: selectedSchemaName,
+      confirmationLabel: `Type ${selectedSchemaName} to confirm`
+    });
     if (!shouldDelete) return;
 
     deleteMutation.mutate(selectedSchemaName);
   };
 
   return (
-    <div className="page-shell space-y-6">
-      <PageHero
-        kicker="Ranking Configuration"
-        title="Ranking Workbench"
-        subtitle="Build ranking schemas as a guided scoring stack instead of managing one long ladder of dropdowns and nested buttons."
-        actions={
-          <>
-            <Sheet open={isLibraryOpen} onOpenChange={setIsLibraryOpen}>
-              <SheetTrigger asChild>
-                <Button type="button" variant="outline" className="xl:hidden">
-                  <LayoutPanelLeft className="h-4 w-4" />
-                  Browse Schemas
-                </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                className="w-[92vw] border-mcm-walnut bg-background p-0 sm:max-w-xl"
-              >
-                <SheetHeader className="border-b border-border/40">
-                  <SheetTitle>Ranking Schema Library</SheetTitle>
-                  <SheetDescription>
-                    Switch between saved schemas or open a new draft workspace.
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="h-[calc(100vh-84px)] overflow-hidden p-4">
-                  <RankingSchemaLibrary
-                    schemas={schemas}
-                    selectedSchemaName={selectedSchemaName}
-                    isCreatingNew={isCreatingNew}
-                    hasUnsavedChanges={hasUnsavedChanges}
-                    draftName={draft.name}
-                    isLoading={isSchemasLoading}
-                    error={listError}
-                    onCreateNew={openNewDraft}
-                    onSelectSchema={loadSchema}
-                    className="h-full border-0 shadow-none before:hidden after:hidden"
-                  />
-                </div>
-              </SheetContent>
-            </Sheet>
+    <div className={embedded ? 'space-y-6' : 'page-shell space-y-6'}>
+      {!embedded && (
+        <PageHero
+          kicker="Ranking Configuration"
+          title="Ranking Workbench"
+          subtitle="Build ranking schemas as a guided scoring stack instead of managing one long ladder of dropdowns and nested buttons."
+          actions={
+            <>
+              <Sheet open={isLibraryOpen} onOpenChange={setIsLibraryOpen}>
+                <SheetTrigger asChild>
+                  <Button type="button" variant="outline" className="xl:hidden">
+                    <LayoutPanelLeft className="h-4 w-4" />
+                    Browse Schemas
+                  </Button>
+                </SheetTrigger>
+                <SheetContent
+                  side="left"
+                  className="w-[92vw] border-mcm-walnut bg-background p-0 sm:max-w-xl"
+                >
+                  <SheetHeader className="border-b border-border/40">
+                    <SheetTitle>Ranking Schema Library</SheetTitle>
+                    <SheetDescription>
+                      Switch between saved schemas or open a new draft workspace.
+                    </SheetDescription>
+                  </SheetHeader>
+                  <div className="h-[calc(100vh-84px)] overflow-hidden p-4">
+                    <RankingSchemaLibrary
+                      schemas={schemas}
+                      selectedSchemaName={selectedSchemaName}
+                      isCreatingNew={isCreatingNew}
+                      hasUnsavedChanges={hasUnsavedChanges}
+                      draftName={draft.name}
+                      isLoading={isSchemasLoading}
+                      error={listError}
+                      onCreateNew={() => {
+                        void openNewDraft();
+                      }}
+                      onSelectSchema={(name) => {
+                        void loadSchema(name);
+                      }}
+                      className="h-full border-0 shadow-none before:hidden after:hidden"
+                    />
+                  </div>
+                </SheetContent>
+              </Sheet>
 
-            <Button type="button" variant="secondary" onClick={openNewDraft}>
-              <Plus className="h-4 w-4" />
-              New Draft
-            </Button>
-          </>
-        }
-        metrics={[
-          {
-            label: 'Saved Schemas',
-            value: String(schemas.length),
-            detail: 'Published ranking schemas available in the library.'
-          },
-          {
-            label: 'Draft Status',
-            value: hasUnsavedChanges ? 'Unsaved' : 'Saved',
-            detail: hasUnsavedChanges
-              ? 'The current workspace differs from the saved baseline.'
-              : 'The current workspace matches the last saved baseline.'
-          },
-          {
-            label: 'Structure',
-            value: `${draft.config.groups.length}G / ${factorCount}F`,
-            detail: 'Current groups and factors in the active workspace.'
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  void openNewDraft();
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                New Draft
+              </Button>
+            </>
           }
-        ]}
-      />
+          metrics={[
+            {
+              label: 'Saved Schemas',
+              value: String(schemas.length),
+              detail: 'Published ranking schemas available in the library.'
+            },
+            {
+              label: 'Draft Status',
+              value: hasUnsavedChanges ? 'Unsaved' : 'Saved',
+              detail: hasUnsavedChanges
+                ? 'The current workspace differs from the saved baseline.'
+                : 'The current workspace matches the last saved baseline.'
+            },
+            {
+              label: 'Structure',
+              value: `${draft.config.groups.length}G / ${factorCount}F`,
+              detail: 'Current groups and factors in the active workspace.'
+            }
+          ]}
+        />
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
         <div className="hidden xl:block">
@@ -617,8 +650,12 @@ export function RankingConfigPage() {
             draftName={draft.name}
             isLoading={isSchemasLoading}
             error={listError}
-            onCreateNew={openNewDraft}
-            onSelectSchema={loadSchema}
+            onCreateNew={() => {
+              void openNewDraft();
+            }}
+            onSelectSchema={(name) => {
+              void loadSchema(name);
+            }}
           />
         </div>
 
@@ -738,10 +775,12 @@ export function RankingConfigPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleDeleteSchema}
+                  onClick={() => {
+                    void handleDeleteSchema();
+                  }}
                   disabled={!selectedSchemaName || deleteMutation.isPending}
                 >
-                  {deleteMutation.isPending ? 'Deleting...' : 'Delete Schema'}
+                  {deleteMutation.isPending ? 'Archiving...' : 'Archive Schema'}
                 </Button>
               </div>
 
@@ -812,6 +851,7 @@ export function RankingConfigPage() {
           hasUnsavedChanges={hasUnsavedChanges}
         />
       </div>
+      {confirmationDialog}
     </div>
   );
 }
