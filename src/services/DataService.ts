@@ -191,35 +191,6 @@ export const DataService = {
     }
   },
 
-  async createPasswordAuthSession(password: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
-    try {
-      const response = await apiService.createPasswordAuthSession(password);
-      return response;
-    } catch (error) {
-      console.error('[DataService] createPasswordAuthSession error', error);
-      throw error;
-    }
-  },
-
-  async createOidcAuthSession(accessToken: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
-    try {
-      const response = await apiService.createOidcAuthSession(accessToken);
-      return response;
-    } catch (error) {
-      console.error('[DataService] createOidcAuthSession error', error);
-      throw error;
-    }
-  },
-
-  async deleteAuthSession(): Promise<Record<string, never>> {
-    try {
-      return await apiService.deleteAuthSession();
-    } catch (error) {
-      console.error('[DataService] deleteAuthSession error', error);
-      throw error;
-    }
-  },
-
   getDomainMetadata(
     layer: 'bronze' | 'silver' | 'gold' | 'platinum',
     domain: string,

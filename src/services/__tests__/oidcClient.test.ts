@@ -6,7 +6,7 @@ const loginRedirectMock = vi.hoisted(() => vi.fn());
 const mockConfig = vi.hoisted(() => ({
   authProvider: 'oidc' as const,
   authRequired: true,
-  authSessionMode: 'cookie' as const,
+  authSessionMode: 'bearer' as const,
   oidcAudience: [] as string[],
   oidcAuthority: 'https://login.microsoftonline.com/example',
   oidcClientId: 'spa-client-id',

@@ -1,24 +1,25 @@
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '@/services/apiService';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AuthPage } from '@/app/components/auth/AuthPage';
 import { DataService } from '@/services/DataService';
+import { startOidcLogin } from '@/services/oidcClient';
 
 const mockConfig = vi.hoisted(() => ({
   apiBaseUrl: '/api',
-  authProvider: 'password' as 'password' | 'disabled' | 'oidc',
-  authSessionMode: 'cookie' as 'cookie' | 'bearer',
-  oidcEnabled: false,
+  authProvider: 'oidc' as 'disabled' | 'oidc',
+  authSessionMode: 'bearer' as 'bearer',
+  oidcEnabled: true,
   authRequired: true,
   uiAuthEnabled: true,
-  oidcAuthority: '',
-  oidcClientId: '',
-  oidcScopes: [] as string[],
-  oidcRedirectUri: '',
-  oidcPostLogoutRedirectUri: '',
+  oidcAuthority: 'https://login.microsoftonline.com/example',
+  oidcClientId: 'spa-client-id',
+  oidcScopes: ['api://asset-allocation/user_impersonation'],
+  oidcRedirectUri: 'https://ui.example.com/auth/callback',
+  oidcPostLogoutRedirectUri: 'https://ui.example.com/auth/logout-complete',
   oidcAudience: [] as string[]
 }));
 
@@ -29,15 +30,13 @@ vi.mock('@/config', () => ({
 vi.mock('@/services/oidcClient', () => ({
   consumeOidcRedirectAccessToken: vi.fn(),
   disposeOidcClient: vi.fn(),
+  getOidcAccessToken: vi.fn(),
   startOidcLogin: vi.fn(),
   startOidcLogout: vi.fn()
 }));
 
 vi.mock('@/services/DataService', () => ({
   DataService: {
-    createOidcAuthSession: vi.fn(),
-    createPasswordAuthSession: vi.fn(),
-    deleteAuthSession: vi.fn(),
     getAuthSessionStatusWithMeta: vi.fn()
   }
 }));
@@ -45,20 +44,13 @@ vi.mock('@/services/DataService', () => ({
 describe('AuthPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockConfig.authProvider = 'password';
-    mockConfig.authRequired = true;
-    mockConfig.uiAuthEnabled = true;
-    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockImplementation(
-      () =>
-        new Promise((_, reject) => {
-          window.setTimeout(() => {
-            reject(new ApiError(401, 'API Error: 401 Unauthorized'));
-          }, 0);
-        })
+    vi.mocked(startOidcLogin).mockResolvedValue(undefined);
+    vi.mocked(DataService.getAuthSessionStatusWithMeta).mockRejectedValue(
+      new ApiError(401, 'API Error: 401 Unauthorized')
     );
   });
 
-  it('shows password sign-in after the initial session probe returns 401', async () => {
+  it('starts Microsoft Entra sign-in instead of showing password UI', async () => {
     render(
       <MemoryRouter initialEntries={['/login?returnTo=%2Fsystem-status']}>
         <AuthProvider>
@@ -67,7 +59,10 @@ describe('AuthPage', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByLabelText('Shared password')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(startOidcLogin).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByLabelText('Shared password')).not.toBeInTheDocument();
     expect(DataService.getAuthSessionStatusWithMeta).toHaveBeenCalled();
   });
 });

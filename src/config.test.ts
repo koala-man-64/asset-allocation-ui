@@ -36,7 +36,7 @@ describe('config auth resolution', () => {
     const { config } = await import('./config');
 
     expect(config.authProvider).toBe('disabled');
-    expect(config.authSessionMode).toBe('cookie');
+    expect(config.authSessionMode).toBe('bearer');
     expect(config.authRequired).toBe(true);
     expect(config.oidcEnabled).toBe(false);
   });
@@ -44,8 +44,8 @@ describe('config auth resolution', () => {
   it('forces auth off when the runtime UI auth toggle is disabled', async () => {
     window.__API_UI_CONFIG__ = {
       apiBaseUrl: '/api',
-      authProvider: 'password',
-      authSessionMode: 'cookie',
+      authProvider: 'oidc',
+      authSessionMode: 'bearer',
       uiAuthEnabled: false,
       authRequired: true
     };
@@ -57,7 +57,7 @@ describe('config auth resolution', () => {
     expect(config.authRequired).toBe(false);
   });
 
-  it('accepts an explicit password provider and forces cookie mode', async () => {
+  it('rejects password provider and falls back to disabled', async () => {
     window.__API_UI_CONFIG__ = {
       apiBaseUrl: '/api',
       authProvider: 'password',
@@ -68,15 +68,15 @@ describe('config auth resolution', () => {
 
     const { config } = await import('./config');
 
-    expect(config.authProvider).toBe('password');
-    expect(config.authSessionMode).toBe('cookie');
+    expect(config.authProvider).toBe('disabled');
+    expect(config.authSessionMode).toBe('bearer');
   });
 
   it('keeps oidc runtime settings when the provider is explicitly oidc', async () => {
     window.__API_UI_CONFIG__ = {
       apiBaseUrl: '/api',
       authProvider: 'oidc',
-      authSessionMode: 'cookie',
+      authSessionMode: 'bearer',
       uiAuthEnabled: true,
       authRequired: true,
       oidcAuthority: 'https://login.microsoftonline.com/example',
@@ -87,7 +87,7 @@ describe('config auth resolution', () => {
     const { config } = await import('./config');
 
     expect(config.authProvider).toBe('oidc');
-    expect(config.authSessionMode).toBe('cookie');
+    expect(config.authSessionMode).toBe('bearer');
     expect(config.oidcEnabled).toBe(true);
     expect(config.oidcRedirectUri).toBe(
       new URL('/auth/callback', window.location.origin).toString()
@@ -96,7 +96,7 @@ describe('config auth resolution', () => {
 
   it('falls back to disabled when auth is off even if Vite advertises a provider', async () => {
     vi.stubEnv('VITE_UI_AUTH_ENABLED', 'false');
-    vi.stubEnv('VITE_UI_AUTH_PROVIDER', 'password');
+    vi.stubEnv('VITE_UI_AUTH_PROVIDER', 'oidc');
     window.__API_UI_CONFIG__ = {
       apiBaseUrl: '/api'
     };

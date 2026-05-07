@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type ApiServiceModule = typeof import('@/services/apiService');
 
+const mockGetOidcAccessToken = vi.hoisted(() => vi.fn());
+
+vi.mock('@/services/oidcClient', () => ({
+  getOidcAccessToken: mockGetOidcAccessToken
+}));
+
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,
@@ -9,7 +15,7 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
-describe('apiService cookie auth transport', () => {
+describe('apiService bearer auth transport', () => {
   const fetchMock = vi.fn();
   const windowWithConfig = window as typeof window & {
     __API_UI_CONFIG__?: {
@@ -17,6 +23,11 @@ describe('apiService cookie auth transport', () => {
       authProvider?: string;
       authSessionMode?: string;
       authRequired?: boolean;
+      oidcEnabled?: boolean;
+      oidcAuthority?: string;
+      oidcClientId?: string;
+      oidcScopes?: string[];
+      oidcRedirectUri?: string;
     };
   };
 
@@ -26,9 +37,16 @@ describe('apiService cookie auth transport', () => {
     windowWithConfig.__API_UI_CONFIG__ = {
       apiBaseUrl: '/api',
       authProvider: 'oidc',
-      authSessionMode: 'cookie',
-      authRequired: true
+      authSessionMode: 'bearer',
+      authRequired: true,
+      oidcEnabled: true,
+      oidcAuthority: 'https://login.microsoftonline.com/example',
+      oidcClientId: 'spa-client-id',
+      oidcScopes: ['api://asset-allocation/user_impersonation'],
+      oidcRedirectUri: 'https://ui.example.com/auth/callback'
     };
+    mockGetOidcAccessToken.mockReset();
+    mockGetOidcAccessToken.mockResolvedValue('oidc-access-token');
     vi.stubGlobal('fetch', fetchMock);
   });
 
@@ -80,70 +98,31 @@ describe('apiService cookie auth transport', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('sends cookie credentials and csrf without Authorization headers', async () => {
-    Object.defineProperty(document, 'cookie', {
-      configurable: true,
-      value: 'aa_csrf_dev=csrf-token'
-    });
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
-
-    const { request } = await importApiService();
-
-    await expect(
-      request('/auth/session', {
-        method: 'DELETE',
-        retryOnStatusCodes: false
-      })
-    ).resolves.toEqual({});
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const headers = init.headers as Headers;
-    expect(init.credentials).toBe('include');
-    expect(headers.get('Authorization')).toBeNull();
-    expect(headers.get('X-CSRF-Token')).toBe('csrf-token');
-  });
-
-  it('posts the password session request body to /auth/session', async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        authMode: 'password',
-        subject: 'shared-password',
-        requiredRoles: [],
-        grantedRoles: []
-      })
-    );
-
-    const { apiService } = await importApiService();
-
-    await apiService.createPasswordAuthSession('shared-password');
-
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(init.method).toBe('POST');
-    expect(init.credentials).toBe('include');
-    expect(init.body).toBe(JSON.stringify({ password: 'shared-password' }));
-  });
-
-  it('posts the OIDC bootstrap bearer exactly once to /auth/session', async () => {
+  it('sends bearer Authorization without cookie credentials or CSRF headers', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         authMode: 'oidc',
         subject: 'user-123',
         requiredRoles: [],
-        grantedRoles: ['AssetAllocation.System.Read']
+        grantedRoles: []
       })
     );
 
-    const { apiService } = await importApiService();
+    const { request } = await importApiService();
 
-    await apiService.createOidcAuthSession('oidc-access-token');
+    await expect(
+      request('/auth/session', {
+        retryOnStatusCodes: false
+      })
+    ).resolves.toMatchObject({ authMode: 'oidc' });
 
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const headers = init.headers as Headers;
-    expect(init.method).toBe('POST');
-    expect(init.credentials).toBe('include');
+    expect(init.credentials).toBeUndefined();
     expect(init.body).toBeUndefined();
     expect(headers.get('Authorization')).toBe('Bearer oidc-access-token');
+    expect(headers.get('X-CSRF-Token')).toBeNull();
   });
 
   it('throws an ApiError directly when the backend returns 401', async () => {
@@ -158,12 +137,17 @@ describe('apiService cookie auth transport', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('forces cookie-session API traffic back onto the same-origin /api mount', async () => {
+  it('preserves configured API base URL for bearer traffic', async () => {
     windowWithConfig.__API_UI_CONFIG__ = {
       apiBaseUrl: 'https://asset-allocation-api.example.com/api',
       authProvider: 'oidc',
-      authSessionMode: 'cookie',
-      authRequired: true
+      authSessionMode: 'bearer',
+      authRequired: true,
+      oidcEnabled: true,
+      oidcAuthority: 'https://login.microsoftonline.com/example',
+      oidcClientId: 'spa-client-id',
+      oidcScopes: ['api://asset-allocation/user_impersonation'],
+      oidcRedirectUri: 'https://ui.example.com/auth/callback'
     };
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
@@ -172,7 +156,7 @@ describe('apiService cookie auth transport', () => {
     const { request } = await importApiService();
 
     await expect(request('/system/status-view')).resolves.toMatchObject({ ok: true });
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('/healthz');
-    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/system/status-view');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://asset-allocation-api.example.com/healthz');
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('https://asset-allocation-api.example.com/api/system/status-view');
   });
 });

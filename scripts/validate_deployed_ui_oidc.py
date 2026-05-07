@@ -154,9 +154,9 @@ def validate_deployed_ui_oidc(
         )
 
     if normalized_provider == "oidc":
-        if advertised_auth_session_mode != "cookie":
+        if advertised_auth_session_mode != "bearer":
             raise ValidationError(
-                "ui-config.js must advertise authSessionMode=cookie for oidc auth."
+                "ui-config.js must advertise authSessionMode=bearer for oidc auth."
             )
         if not parse_bool(config.get("oidcEnabled", False)):
             raise ValidationError(
@@ -166,7 +166,7 @@ def validate_deployed_ui_oidc(
         validate_required_string(config, "oidcClientId")
         validate_required_string(config, "oidcScopes")
     else:
-        if advertised_auth_session_mode not in {"", "bearer", "cookie"}:
+        if advertised_auth_session_mode not in {"", "bearer"}:
             raise ValidationError(
                 f"Unexpected authSessionMode={advertised_auth_session_mode} for disabled auth."
             )

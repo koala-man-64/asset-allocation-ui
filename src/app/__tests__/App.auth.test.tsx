@@ -15,8 +15,8 @@ import {
 const mockUseRealtime = vi.hoisted(() => vi.fn());
 const mockConfig = vi.hoisted(() => ({
   apiBaseUrl: '/api',
-  authProvider: 'oidc' as 'password' | 'disabled' | 'oidc',
-  authSessionMode: 'cookie' as 'cookie' | 'bearer',
+  authProvider: 'oidc' as 'disabled' | 'oidc',
+  authSessionMode: 'bearer' as 'bearer',
   oidcEnabled: true,
   authRequired: true,
   uiAuthEnabled: true,
@@ -39,7 +39,6 @@ const mockAuth = vi.hoisted(() => ({
   interactionReason: null as string | null,
   interactionRequest: null as null,
   getAccessToken: vi.fn(),
-  login: vi.fn(),
   checkSession: vi.fn(),
   signIn: vi.fn(),
   signOut: vi.fn(),
@@ -83,14 +82,12 @@ vi.mock('@/config', () => ({
 vi.mock('@/services/oidcClient', () => ({
   startOidcLogin: vi.fn(),
   consumeOidcRedirectAccessToken: vi.fn(),
-  disposeOidcClient: vi.fn()
+  disposeOidcClient: vi.fn(),
+  getOidcAccessToken: vi.fn()
 }));
 
 vi.mock('@/services/DataService', () => ({
   DataService: {
-    createOidcAuthSession: vi.fn(),
-    createPasswordAuthSession: vi.fn(),
-    deleteAuthSession: vi.fn(),
     getAuthSessionStatusWithMeta: vi.fn(),
     getSystemHealthWithMeta: vi.fn()
   }
@@ -109,7 +106,7 @@ vi.mock('@/features/postgres-explorer/PostgresExplorerPage', () => ({
 describe('App OIDC auth flow', () => {
   beforeEach(() => {
     mockConfig.authProvider = 'oidc';
-    mockConfig.authSessionMode = 'cookie';
+    mockConfig.authSessionMode = 'bearer';
     mockConfig.oidcEnabled = true;
     mockConfig.authRequired = true;
     mockConfig.uiAuthEnabled = true;
@@ -123,7 +120,6 @@ describe('App OIDC auth flow', () => {
     mockAuth.interactionReason = null;
     mockAuth.interactionRequest = null;
     mockUseRealtime.mockReset();
-    mockAuth.login.mockReset();
     mockAuth.checkSession.mockReset();
     mockAuth.checkSession.mockResolvedValue(validSessionResponse().data);
     mockAuth.signIn.mockReset();
@@ -140,8 +136,6 @@ describe('App OIDC auth flow', () => {
     vi.mocked(consumeOidcRedirectAccessToken).mockReset();
     vi.mocked(consumeOidcRedirectAccessToken).mockResolvedValue('oidc-access-token');
     vi.mocked(disposeOidcClient).mockReset();
-    vi.mocked(DataService.createOidcAuthSession).mockReset();
-    vi.mocked(DataService.createOidcAuthSession).mockResolvedValue(validSessionResponse());
     vi.mocked(DataService.getAuthSessionStatusWithMeta).mockReset();
     vi.mocked(DataService.getAuthSessionStatusWithMeta).mockRejectedValue(
       new ApiError(401, 'API Error: 401 Unauthorized')
@@ -205,7 +199,6 @@ describe('App OIDC auth flow', () => {
 
     await waitFor(() => {
       expect(consumeOidcRedirectAccessToken).toHaveBeenCalledTimes(1);
-      expect(DataService.createOidcAuthSession).toHaveBeenCalledWith('oidc-access-token');
       expect(mockAuth.checkSession).toHaveBeenCalledTimes(1);
       expect(disposeOidcClient).toHaveBeenCalledTimes(1);
       expect(window.location.pathname).toBe('/system-status');

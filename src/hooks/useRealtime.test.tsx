@@ -4,10 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/services/apiService';
 
-const { mockToastError, mockRedirectToLogin, mockGetAuthSessionStatusWithMeta } = vi.hoisted(() => ({
+const { mockToastError, mockRedirectToLogin, mockGetAuthSessionStatusWithMeta, mockGetOidcAccessToken } = vi.hoisted(() => ({
   mockToastError: vi.fn(),
   mockRedirectToLogin: vi.fn(),
-  mockGetAuthSessionStatusWithMeta: vi.fn()
+  mockGetAuthSessionStatusWithMeta: vi.fn(),
+  mockGetOidcAccessToken: vi.fn()
 }));
 
 vi.mock('sonner', () => ({
@@ -23,6 +24,27 @@ vi.mock('@/utils/authNavigation', () => ({
 vi.mock('@/services/DataService', () => ({
   DataService: {
     getAuthSessionStatusWithMeta: mockGetAuthSessionStatusWithMeta
+  }
+}));
+
+vi.mock('@/services/oidcClient', () => ({
+  getOidcAccessToken: mockGetOidcAccessToken
+}));
+
+vi.mock('@/config', () => ({
+  config: {
+    apiBaseUrl: '/api',
+    authProvider: 'oidc',
+    authSessionMode: 'bearer',
+    authRequired: true,
+    uiAuthEnabled: true,
+    oidcEnabled: true,
+    oidcAuthority: 'https://login.microsoftonline.com/example',
+    oidcClientId: 'spa-client-id',
+    oidcScopes: ['api://asset-allocation/user_impersonation'],
+    oidcRedirectUri: 'https://ui.example.com/auth/callback',
+    oidcPostLogoutRedirectUri: 'https://ui.example.com/auth/logout-complete',
+    oidcAudience: []
   }
 }));
 
@@ -106,13 +128,16 @@ describe('useRealtime', () => {
     (window as Window & { __API_UI_CONFIG__?: Record<string, unknown> }).__API_UI_CONFIG__ = {
       apiBaseUrl: '/api',
       authProvider: 'oidc',
-      authSessionMode: 'cookie',
-      authRequired: true
+      authSessionMode: 'bearer',
+      authRequired: true,
+      oidcEnabled: true,
+      oidcAuthority: 'https://login.microsoftonline.com/example',
+      oidcClientId: 'spa-client-id',
+      oidcScopes: ['api://asset-allocation/user_impersonation'],
+      oidcRedirectUri: 'https://ui.example.com/auth/callback'
     };
-    Object.defineProperty(document, 'cookie', {
-      configurable: true,
-      value: 'aa_csrf_dev=csrf-token'
-    });
+    mockGetOidcAccessToken.mockReset();
+    mockGetOidcAccessToken.mockResolvedValue('oidc-access-token');
     mockRedirectToLogin.mockReset();
     mockGetAuthSessionStatusWithMeta.mockReset();
   });
@@ -217,7 +242,7 @@ describe('useRealtime', () => {
     view.unmount();
   });
 
-  it('fetches a websocket ticket before connecting with cookie credentials and csrf', async () => {
+  it('fetches a websocket ticket before connecting with bearer auth', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ ticket: 'ticket-123', expiresAt: '2026-03-15T12:00:00Z' })
@@ -239,10 +264,10 @@ describe('useRealtime', () => {
     const request = fetchMock.mock.calls[0];
     expect(request[0]).toBe('/api/realtime/ticket');
     expect(request[1]?.method).toBe('POST');
-    expect(request[1]?.credentials).toBe('include');
+    expect(request[1]?.credentials).toBeUndefined();
     expect(request[1]?.headers).toBeInstanceOf(Headers);
-    expect((request[1]?.headers as Headers).get('Authorization')).toBeNull();
-    expect((request[1]?.headers as Headers).get('X-CSRF-Token')).toBe('csrf-token');
+    expect((request[1]?.headers as Headers).get('Authorization')).toBe('Bearer oidc-access-token');
+    expect((request[1]?.headers as Headers).get('X-CSRF-Token')).toBeNull();
     expect(MockWebSocket.instances[0]?.url).toBe(
       'ws://localhost:3000/api/ws/updates?ticket=ticket-123'
     );
@@ -442,7 +467,7 @@ describe('useRealtime', () => {
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
     mockGetAuthSessionStatusWithMeta.mockResolvedValue({
       data: {
-        authMode: 'password',
+        authMode: 'oidc',
         subject: 'user-123',
         requiredRoles: ['AssetAllocation.Access'],
         grantedRoles: ['AssetAllocation.Access']

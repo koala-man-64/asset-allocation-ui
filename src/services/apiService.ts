@@ -4,6 +4,7 @@ import { FinanceData, MarketData } from '@/types/data';
 import { DomainMetadata, SystemHealth } from '@/types/strategy';
 import { config as uiConfig } from '@/config';
 import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
+import { getOidcAccessToken } from '@/services/oidcClient';
 import {
   clipTextForLogs,
   logUiDiagnostic,
@@ -25,7 +26,6 @@ const DOMAIN_METADATA_TIMEOUT_MS = 20_000;
 const DOMAIN_METADATA_SNAPSHOT_TIMEOUT_MS = 20_000;
 const SYSTEM_STATUS_VIEW_TIMEOUT_MS = 20_000;
 const AUTH_SESSION_STATUS_ENDPOINT = '/auth/session';
-const CSRF_COOKIE_NAMES = ['__Host-aa_csrf', 'aa_csrf_dev'] as const;
 
 const apiWarmupAttempted = new Set<string>();
 const apiWarmupInFlight = new Map<string, Promise<void>>();
@@ -56,40 +56,6 @@ function summarizeResponseForLogs(response: Response): Record<string, unknown> {
 
 function shouldWarmUpBeforeRequest(endpoint: string): boolean {
   return endpoint !== AUTH_SESSION_STATUS_ENDPOINT && endpoint !== '/realtime/ticket';
-}
-
-function readCookie(name: string): string {
-  if (typeof document === 'undefined') {
-    return '';
-  }
-
-  const target = `${name}=`;
-  return document.cookie
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(target))
-    ?.slice(target.length) ?? '';
-}
-
-function readCsrfToken(): string {
-  for (const name of CSRF_COOKIE_NAMES) {
-    const token = readCookie(name);
-    if (token) {
-      return decodeURIComponent(token);
-    }
-  }
-  return '';
-}
-
-function appendCookieAuthHeaders(headers: Headers, method: string): Headers {
-  const nextHeaders = new Headers(headers);
-  if (!isSafeReplayMethod(method) && !nextHeaders.has('X-CSRF-Token')) {
-    const csrfToken = readCsrfToken();
-    if (csrfToken) {
-      nextHeaders.set('X-CSRF-Token', csrfToken);
-    }
-  }
-  return nextHeaders;
 }
 
 function isRetryableStatusCode(statusCode: number): boolean {
@@ -134,13 +100,6 @@ function resolveWarmupUrl(apiBaseUrl: string): string {
   return API_WARMUP_PATH;
 }
 
-function isSafeReplayMethod(method?: string): boolean {
-  const normalizedMethod = String(method ?? 'GET')
-    .trim()
-    .toUpperCase();
-  return normalizedMethod === 'GET' || normalizedMethod === 'HEAD';
-}
-
 function buildRequestUrl(
   apiBaseUrl: string,
   endpoint: string,
@@ -162,31 +121,16 @@ function buildRequestUrl(
   return url;
 }
 
-function normalizeCookieSessionApiBaseUrl(apiBaseUrl: string): string {
-  const trimmed = String(apiBaseUrl || '').trim().replace(/\/+$/, '');
-  if (!trimmed) {
-    return '/api';
+async function appendBearerAuthHeaders(headers: Headers): Promise<Headers> {
+  const nextHeaders = new Headers(headers);
+  if (
+    uiConfig.authProvider === 'oidc' &&
+    uiConfig.oidcEnabled &&
+    !nextHeaders.has('Authorization')
+  ) {
+    nextHeaders.set('Authorization', `Bearer ${await getOidcAccessToken()}`);
   }
-  if (typeof window === 'undefined' || !/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-
-  try {
-    const parsed = new URL(trimmed, window.location.origin);
-    const normalizedPath = parsed.pathname.replace(/\/+$/, '') || '/api';
-    if (parsed.origin === window.location.origin) {
-      return normalizedPath;
-    }
-
-    logApiRequest('cookie-session-cross-origin-api-base-coerced', {
-      configuredApiBaseUrl: summarizeUrlForLogs(trimmed),
-      coercedApiBaseUrl: summarizeUrlForLogs(normalizedPath),
-      currentOrigin: window.location.origin
-    }, 'warn');
-    return normalizedPath.startsWith('/api') ? normalizedPath : '/api';
-  } catch {
-    return '/api';
-  }
+  return nextHeaders;
 }
 
 async function wait(delayMs: number): Promise<void> {
@@ -347,10 +291,7 @@ async function performRequest<T>(
   config: RequestConfig = {}
 ): Promise<ResponseWithMeta<T>> {
   const { params, headers, timeoutMs, retryOnStatusCodes, retryAttempts, ...customConfig } = config;
-  const useCookieSession = uiConfig.authSessionMode === 'cookie';
-  const apiBaseUrl = useCookieSession
-    ? normalizeCookieSessionApiBaseUrl(uiConfig.apiBaseUrl)
-    : uiConfig.apiBaseUrl;
+  const apiBaseUrl = uiConfig.apiBaseUrl;
   const maxAttempts = Number.isFinite(retryAttempts)
     ? Math.max(1, Math.floor(Number(retryAttempts)))
     : API_REQUEST_MAX_ATTEMPTS;
@@ -374,9 +315,7 @@ async function performRequest<T>(
   if (!requestHeaders.has('X-Request-ID')) {
     requestHeaders.set('X-Request-ID', createRequestId());
   }
-  const authHeaders = useCookieSession
-    ? appendCookieAuthHeaders(requestHeaders, requestMethod)
-    : new Headers(requestHeaders);
+  const authHeaders = await appendBearerAuthHeaders(requestHeaders);
   const requestId = authHeaders.get('X-Request-ID') || '';
   logApiRequest('request-prepared', {
     endpoint,
@@ -420,7 +359,7 @@ async function performRequest<T>(
         {
           ...customConfig,
           headers: authHeaders,
-          credentials: useCookieSession ? 'include' : customConfig.credentials
+          credentials: customConfig.credentials
         },
         {
           timeoutMs,
@@ -1072,31 +1011,6 @@ export const apiService = {
 
   getAuthSessionStatusWithMeta(): Promise<ResponseWithMeta<AuthSessionStatus>> {
     return requestWithMeta<AuthSessionStatus>('/auth/session');
-  },
-
-  createPasswordAuthSession(password: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
-    return requestWithMeta<AuthSessionStatus>('/auth/session', {
-      method: 'POST',
-      body: JSON.stringify({ password }),
-      retryOnStatusCodes: false
-    });
-  },
-
-  createOidcAuthSession(accessToken: string): Promise<ResponseWithMeta<AuthSessionStatus>> {
-    return requestWithMeta<AuthSessionStatus>('/auth/session', {
-      method: 'POST',
-      headers: new Headers({
-        Authorization: `Bearer ${accessToken}`
-      }),
-      retryOnStatusCodes: false
-    });
-  },
-
-  deleteAuthSession(): Promise<Record<string, never>> {
-    return request<Record<string, never>>('/auth/session', {
-      method: 'DELETE',
-      retryOnStatusCodes: false
-    });
   },
 
   getDomainMetadata(

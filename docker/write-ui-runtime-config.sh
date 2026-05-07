@@ -28,7 +28,7 @@ case "${lower_auth_enabled}" in
         : "${ui_oidc_client_id:?UI_OIDC_CLIENT_ID is required when UI_AUTH_ENABLED=true and UI_AUTH_PROVIDER=oidc.}"
         : "${ui_oidc_scopes:?UI_OIDC_SCOPES is required when UI_AUTH_ENABLED=true and UI_AUTH_PROVIDER=oidc.}"
         resolved_auth_provider='oidc'
-        resolved_auth_session_mode='cookie'
+        resolved_auth_session_mode='bearer'
         resolved_oidc_enabled='true'
         ;;
       disabled)

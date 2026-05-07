@@ -3,8 +3,8 @@ import type { UiRuntimeConfig } from '@asset-allocation/contracts';
 import { normalizeApiBaseUrl } from '@/utils/apiBaseUrl';
 import { logUiDiagnostic, summarizeUrlForLogs } from '@/services/uiDiagnostics';
 
-export type AuthProvider = 'disabled' | 'oidc' | 'password';
-export type AuthSessionMode = 'bearer' | 'cookie';
+export type AuthProvider = 'disabled' | 'oidc';
+export type AuthSessionMode = 'bearer';
 
 type RuntimeUiConfigSource = Omit<
   Partial<UiRuntimeConfig>,
@@ -81,7 +81,7 @@ function resolveAuthProvider(...values: unknown[]): AuthProvider | null {
     const normalized = String(value ?? '')
       .trim()
       .toLowerCase();
-    if (normalized === 'disabled' || normalized === 'oidc' || normalized === 'password') {
+    if (normalized === 'disabled' || normalized === 'oidc') {
       return normalized;
     }
   }
@@ -96,7 +96,7 @@ function resolveAuthSessionMode(
     const normalized = String(value ?? '')
       .trim()
       .toLowerCase();
-    if (normalized === 'cookie' || normalized === 'bearer') {
+    if (normalized === 'bearer') {
       return normalized;
     }
   }
@@ -191,13 +191,9 @@ const authRequired = uiAuthEnabled
     )
   : false;
 const authSessionMode = resolveAuthSessionMode(
-  'cookie',
-  authProvider === 'password' ? 'cookie' : runtimeConfig.authSessionMode,
-  authProvider === 'password'
-    ? 'cookie'
-    : isDevLike
-      ? import.meta.env.VITE_AUTH_SESSION_MODE
-      : undefined
+  'bearer',
+  runtimeConfig.authSessionMode,
+  isDevLike ? import.meta.env.VITE_AUTH_SESSION_MODE : undefined
 );
 const oidcEnabled =
   authRequired &&

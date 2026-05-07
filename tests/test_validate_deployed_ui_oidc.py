@@ -35,7 +35,7 @@ def build_ui_config_js(
     api_base_url: str = "/api",
     ui_auth_enabled: bool = True,
     auth_provider: str = "oidc",
-    auth_session_mode: str = "cookie",
+    auth_session_mode: str = "bearer",
     include_oidc: bool = False,
 ) -> str:
     payload = {
@@ -85,11 +85,11 @@ def test_validator_accepts_oidc_bootstrap() -> None:
     assert result["config"]["apiBaseUrl"] == "/api"
 
 
-def test_validator_retries_stale_password_bootstrap_until_oidc() -> None:
+def test_validator_retries_stale_cookie_bootstrap_until_bearer_oidc() -> None:
     validator = load_validator_module()
     ui_origin = "https://asset-allocation-ui.example.com"
     responses = [
-        build_ui_config_js(auth_provider="password"),
+        build_ui_config_js(auth_session_mode="cookie", include_oidc=True),
         build_ui_config_js(include_oidc=True),
     ]
     sleep_delays: list[float] = []

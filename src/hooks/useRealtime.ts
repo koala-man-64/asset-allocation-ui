@@ -8,6 +8,7 @@ import { DataService } from '@/services/DataService';
 import { ApiError } from '@/services/apiService';
 import { backtestKeys } from '@/services/backtestHooks';
 import { fetchWithOptionalTimeout } from '@/services/fetchWithTimeout';
+import { getOidcAccessToken } from '@/services/oidcClient';
 import { intradayMonitorKeys } from '@/services/intradayMonitorApi';
 import {
   CONSOLE_LOG_STREAM_EVENT_TYPE,
@@ -28,7 +29,6 @@ const SUBSCRIPTION_TOPICS = [
 
 const CONTAINER_APPS_QUERY_KEY = ['system', 'container-apps'] as const;
 const REALTIME_TICKET_TIMEOUT_MS = 5_000;
-const CSRF_COOKIE_NAMES = ['__Host-aa_csrf', 'aa_csrf_dev'] as const;
 
 type RealtimeEvent = {
   type?: unknown;
@@ -55,25 +55,6 @@ function createRealtimeRequestId(): string {
     return crypto.randomUUID();
   }
   return `realtime-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function readCookie(name: string): string {
-  const target = `${name}=`;
-  return document.cookie
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(target))
-    ?.slice(target.length) ?? '';
-}
-
-function readCsrfToken(): string {
-  for (const name of CSRF_COOKIE_NAMES) {
-    const token = readCookie(name);
-    if (token) {
-      return decodeURIComponent(token);
-    }
-  }
-  return '';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -225,9 +206,8 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
 
     async function fetchRealtimeTicket(): Promise<string> {
       const headers = new Headers({ 'X-Request-ID': createRealtimeRequestId() });
-      const csrfToken = readCsrfToken();
-      if (csrfToken) {
-        headers.set('X-CSRF-Token', csrfToken);
+      if (config.authProvider === 'oidc' && config.oidcEnabled) {
+        headers.set('Authorization', `Bearer ${await getOidcAccessToken()}`);
       }
 
       const response = await fetchWithOptionalTimeout(
@@ -235,8 +215,7 @@ export function useRealtime({ enabled = true }: { enabled?: boolean } = {}) {
         {
           method: 'POST',
           headers,
-          cache: 'no-store',
-          credentials: 'include'
+          cache: 'no-store'
         },
         {
           timeoutMs: REALTIME_TICKET_TIMEOUT_MS,

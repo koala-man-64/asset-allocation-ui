@@ -111,7 +111,7 @@ describe('DataService.getSystemStatusView', () => {
     });
   });
 
-  it('falls back for an ordinary status-view 401 when the cookie session is still valid', async () => {
+  it('falls back for an ordinary status-view 401 when auth status is still valid', async () => {
     mockApiService.getSystemStatusView.mockRejectedValueOnce(
       new MockApiError(401, 'API Error: 401 Unauthorized')
     );

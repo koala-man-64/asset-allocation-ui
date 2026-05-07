@@ -12,7 +12,7 @@ import {
   storePostLoginRedirectPath,
   storePostLogoutRestartPath
 } from '@/services/authRedirectStorage';
-import { startOidcLogout } from '@/services/oidcClient';
+import { getOidcAccessToken, startOidcLogout } from '@/services/oidcClient';
 import type { AuthSessionStatus } from '@/services/apiService';
 import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
@@ -52,7 +52,6 @@ export interface AuthContextType {
   interactionReason: string | null;
   interactionRequest: InteractiveAuthRequest | null;
   getAccessToken: () => Promise<string | null>;
-  login: (password: string) => Promise<AuthSessionStatus>;
   checkSession: () => Promise<AuthSessionStatus | null>;
   signIn: (returnPath?: string) => void;
   signOut: () => void;
@@ -155,47 +154,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [enabled]
   );
 
-  const login = useMemo(
-    () => async (password: string): Promise<AuthSessionStatus> => {
-      if (config.authProvider !== 'password') {
-        throw new Error('Password login is not enabled for this deployment.');
-      }
-      const trimmedPassword = String(password ?? '');
-      setBusy(true);
-      setPhase('initializing');
-      setError(null);
-      try {
-        const response = await DataService.createPasswordAuthSession(trimmedPassword);
-        if (!mountedRef.current) {
-          return response.data;
-        }
-        setAuthenticated(true);
-        setPhase('authenticated');
-        setUserLabel(sessionUserLabel(response.data));
-        clearStoredAuthRedirects();
-        logUiDiagnostic('Auth', 'login-success', {
-          authMode: response.data.authMode,
-          userLabel: sessionUserLabel(response.data),
-          requestId: response.meta.requestId
-        });
-        return response.data;
-      } catch (loginError) {
-        if (mountedRef.current) {
-          setAuthenticated(false);
-          setPhase('signed-out');
-          setUserLabel(null);
-          setError(loginError instanceof Error ? loginError.message : String(loginError ?? 'Unknown error'));
-        }
-        throw loginError;
-      } finally {
-        if (mountedRef.current) {
-          setBusy(false);
-        }
-      }
-    },
-    []
-  );
-
   const signIn = useMemo(
     () => (returnPath?: string) => {
       const nextReturnPath = resolveReturnPath(returnPath);
@@ -214,18 +172,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setPhase('signing-out');
       setError(null);
       clearStoredAuthRedirects();
-      try {
-        if (enabled) {
-          await DataService.deleteAuthSession();
-        }
-      } catch (logoutError) {
-        if (mountedRef.current) {
-          setError(logoutError instanceof Error ? logoutError.message : String(logoutError ?? 'Unknown error'));
-        }
-      } finally {
-        if (!mountedRef.current) {
-          shouldFinalize = false;
-        }
+      if (!mountedRef.current) {
+        shouldFinalize = false;
       }
       if (!shouldFinalize) {
         return;
@@ -268,18 +216,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       clearStoredAuthRedirects();
       storePostLogoutRestartPath(nextReturnPath);
-      try {
-        if (enabled) {
-          await DataService.deleteAuthSession();
-        }
-      } catch (logoutError) {
-        if (mountedRef.current) {
-          setError(logoutError instanceof Error ? logoutError.message : String(logoutError ?? 'Unknown error'));
-        }
-      } finally {
-        if (!mountedRef.current) {
-          shouldFinalize = false;
-        }
+      if (!mountedRef.current) {
+        shouldFinalize = false;
       }
       if (!shouldFinalize) {
         return;
@@ -324,8 +262,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error,
         interactionReason: null,
         interactionRequest: null,
-        getAccessToken: async () => null,
-        login,
+        getAccessToken: async () => {
+          if (config.authProvider !== 'oidc' || !config.oidcEnabled) {
+            return null;
+          }
+          return getOidcAccessToken();
+        },
         checkSession,
         signIn,
         signOut: () => {

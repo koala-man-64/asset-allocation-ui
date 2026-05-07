@@ -103,6 +103,32 @@ export async function consumeOidcRedirectAccessToken(): Promise<string> {
   return accessToken;
 }
 
+export async function getOidcAccessToken(): Promise<string> {
+  const app = await getOidcClient();
+  const account = resolveAccount(app, null);
+  if (!account) {
+    throw new Error('OIDC account is not available. Sign in again to continue.');
+  }
+  app.setActiveAccount(account);
+  try {
+    const result = await app.acquireTokenSilent({
+      account,
+      scopes: config.oidcScopes
+    });
+    if (!result.accessToken) {
+      throw new Error('OIDC silent token acquisition did not return an access token.');
+    }
+    logUiDiagnostic('OIDC', 'silent-token-acquired', {
+      hasAccount: true,
+      scopes: config.oidcScopes
+    });
+    return result.accessToken;
+  } catch (error) {
+    logUiDiagnostic('OIDC', 'silent-token-failed', { error }, 'warn');
+    throw error;
+  }
+}
+
 export async function startOidcLogout(): Promise<void> {
   const app = await getOidcClient();
   const account = resolveAccount(app, null);

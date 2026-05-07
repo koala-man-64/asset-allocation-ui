@@ -285,7 +285,7 @@ def test_ui_runtime_config_sources_publish_same_origin_api_bootstrap_and_auth_pr
             '"authProvider": "${escaped_auth_provider}"',
             '"authSessionMode": "${escaped_auth_session_mode}"',
             "UI_AUTH_PROVIDER",
-            "resolved_auth_session_mode='cookie'",
+            "resolved_auth_session_mode='bearer'",
         ],
     }
     for relative_path, fragments in required_fragments.items():

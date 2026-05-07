@@ -1,8 +1,7 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/app/components/ui/button';
-import { Input } from '@/app/components/ui/input';
 import { config } from '@/config';
 import {
   consumePostLoginRedirectPath,
@@ -11,13 +10,13 @@ import {
   useAuth
 } from '@/contexts/AuthContext';
 import { ApiError } from '@/services/apiService';
-import { DataService } from '@/services/DataService';
 import { storePostLoginRedirectPath } from '@/services/authRedirectStorage';
 import {
   consumeOidcRedirectAccessToken,
   disposeOidcClient,
   startOidcLogin
 } from '@/services/oidcClient';
+import { DataService } from '@/services/DataService';
 import { logUiDiagnostic } from '@/services/uiDiagnostics';
 
 export type AuthPageMode = 'login' | 'callback' | 'logout-complete';
@@ -67,10 +66,10 @@ function titleForState(mode: AuthPageMode, state: AuthPageState): string {
     return 'Checking session';
   }
   if (state === 'submitting') {
-    return config.authProvider === 'oidc' ? 'Completing sign-in' : 'Signing in';
+    return 'Completing sign-in';
   }
   if (state === 'redirecting') {
-    return config.authProvider === 'oidc' ? 'Redirecting to Microsoft Entra' : 'Redirecting';
+    return 'Redirecting to Microsoft Entra';
   }
   if (state === 'access-denied') {
     return 'Access denied';
@@ -81,22 +80,16 @@ function titleForState(mode: AuthPageMode, state: AuthPageState): string {
   if (mode === 'logout-complete') {
     return 'Signed out';
   }
-  return config.authProvider === 'oidc' ? 'Restricted access' : 'Break-glass access';
+  return 'Restricted access';
 }
 
 function getMisconfigurationMessage(): string | null {
   if (!config.authRequired) {
     return null;
   }
-  if (config.authProvider === 'password') {
-    if (config.authSessionMode !== 'cookie') {
-      return `This deployment requires cookie auth for the UI, but the runtime advertised authSessionMode=${config.authSessionMode}.`;
-    }
-    return null;
-  }
   if (config.authProvider === 'oidc') {
-    if (config.authSessionMode !== 'cookie') {
-      return `This deployment requires cookie auth for OIDC, but the runtime advertised authSessionMode=${config.authSessionMode}.`;
+    if (config.authSessionMode !== 'bearer') {
+      return `This deployment requires bearer auth for OIDC, but the runtime advertised authSessionMode=${config.authSessionMode}.`;
     }
     if (
       !config.oidcEnabled ||
@@ -109,24 +102,20 @@ function getMisconfigurationMessage(): string | null {
     }
     return null;
   }
-  return `This deployment requires authProvider=oidc or authProvider=password, but the runtime advertised authProvider=${config.authProvider}.`;
+  return `This deployment requires authProvider=oidc, but the runtime advertised authProvider=${config.authProvider}.`;
 }
 
 function defaultMessage(mode: AuthPageMode, busy: boolean): string {
   if (mode === 'logout-complete') {
-    return config.authProvider === 'oidc'
-      ? 'Signed out successfully. Start a new Microsoft Entra session when you are ready.'
-      : 'Signed out successfully.';
+    return 'Signed out successfully. Start a new Microsoft Entra session when you are ready.';
   }
   if (busy) {
-    return config.authProvider === 'oidc'
-      ? 'The login page is validating or establishing your secure session before protected routes load.'
-      : 'The login page is validating your secure session before protected routes load.';
+    return 'The login page is validating your Microsoft Entra access before protected routes load.';
   }
   if (config.authProvider === 'oidc') {
-    return 'Continue to Microsoft Entra to establish a backend session cookie for the protected UI.';
+    return 'Continue to Microsoft Entra to access the protected UI.';
   }
-  return 'Enter the shared password to continue to the protected UI.';
+  return 'Authentication is not configured for this deployment.';
 }
 
 export function AuthPage({ mode }: { mode: AuthPageMode }) {
@@ -139,7 +128,6 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
     mode === 'callback' ? 'submitting' : 'checking-session'
   );
   const [message, setMessage] = useState('');
-  const [password, setPassword] = useState('');
   const checkedSessionRef = useRef(false);
   const oidcLaunchAttemptedRef = useRef(false);
   const callbackHandledRef = useRef(false);
@@ -193,22 +181,21 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
 
     void (async () => {
       try {
-        const accessToken = await consumeOidcRedirectAccessToken();
+        await consumeOidcRedirectAccessToken();
         try {
-          await DataService.createOidcAuthSession(accessToken);
+          const session = await checkSession();
+          if (cancelled) {
+            return;
+          }
+          logUiDiagnostic('AuthPage', 'oidc-sign-in-success', {
+            mode,
+            returnTo,
+            authMode: session?.authMode || null
+          });
+          navigate(sanitizeReturnTo(consumePostLoginRedirectPath()), { replace: true });
         } finally {
           disposeOidcClient();
         }
-        const session = await checkSession();
-        if (cancelled) {
-          return;
-        }
-        logUiDiagnostic('AuthPage', 'oidc-bootstrap-success', {
-          mode,
-          returnTo,
-          authMode: session?.authMode || null
-        });
-        navigate(sanitizeReturnTo(consumePostLoginRedirectPath()), { replace: true });
       } catch (callbackError) {
         disposeOidcClient();
         if (cancelled) {
@@ -294,6 +281,10 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
           setMessage(sessionError.message);
           return;
         }
+        if (config.authProvider === 'oidc') {
+          await launchOidcRedirect('session-missing');
+          return;
+        }
         setState('error');
         setMessage(
           sessionError instanceof Error
@@ -309,43 +300,8 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
     };
   }, [launchOidcRedirect, mode, navigate, returnTo, signIn]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const nextPassword = password;
-    if (!nextPassword) {
-      setState('error');
-      setMessage('Password is required.');
-      return;
-    }
-
-    setState('submitting');
-    setMessage('');
-    try {
-      await auth.login(nextPassword);
-      setPassword('');
-      logUiDiagnostic('AuthPage', 'password-login-success', {
-        mode,
-        returnTo
-      });
-      navigate(returnTo, { replace: true });
-    } catch (loginError) {
-      setPassword('');
-      setState(
-        loginError instanceof ApiError && loginError.status === 403 ? 'access-denied' : 'error'
-      );
-      setMessage(
-        loginError instanceof Error ? loginError.message : String(loginError ?? 'Unknown error')
-      );
-    }
-  }
-
   const title = titleForState(mode, state);
   const busy = state === 'checking-session' || state === 'submitting' || state === 'redirecting';
-  const showPasswordForm =
-    config.authProvider === 'password' &&
-    mode !== 'callback' &&
-    config.authRequired &&
-    (state === 'ready' || state === 'error');
   const showOidcAction =
     config.authProvider === 'oidc' &&
     mode !== 'callback' &&
@@ -365,30 +321,6 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
 
         {auth.error && state !== 'error' ? (
           <p className="mt-4 text-sm text-destructive">{auth.error}</p>
-        ) : null}
-
-        {showPasswordForm ? (
-          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground" htmlFor="shared-password">
-                Shared password
-              </label>
-              <Input
-                autoComplete="current-password"
-                autoFocus
-                id="shared-password"
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Enter the operator password"
-                type="password"
-                value={password}
-              />
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Button disabled={auth.busy || !password} type="submit">
-                Sign in
-              </Button>
-            </div>
-          </form>
         ) : null}
 
         {showOidcAction ? (
