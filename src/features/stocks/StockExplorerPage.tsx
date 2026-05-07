@@ -159,6 +159,21 @@ function formatCoveragePct(value: number | null | undefined): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function coverageRatio(count: number | null | undefined, total: number | null | undefined): number | null {
+  if (
+    count === null ||
+    count === undefined ||
+    total === null ||
+    total === undefined ||
+    !Number.isFinite(count) ||
+    !Number.isFinite(total) ||
+    total <= 0
+  ) {
+    return null;
+  }
+  return count / total;
+}
+
 function asBoolean(value: boolean | number | null | undefined): boolean {
   return value === true || value === 1;
 }
@@ -409,10 +424,10 @@ export function StockExplorerPage() {
   const resolvedAsOf = firstPage?.asOf ?? null;
   const showing = rows.length;
   const universeCount = summary?.universeCount ?? total;
-  const filteredCount = summary?.filteredCount ?? total;
+  const filteredCount = summary?.totalResultCount ?? total;
   const coverage = summary?.coverage;
-  const goldPct = coverage?.goldPct ?? null;
-  const silverPct = coverage?.silverPct ?? null;
+  const goldPct = coverageRatio(coverage?.withGold, coverage?.total);
+  const silverPct = coverageRatio(coverage?.withSilver, coverage?.total);
   const topSector = facets?.sectors?.[0];
   const sortChip = `${metricLabel(sort)} ${direction === 'asc' ? 'up' : 'down'}`;
   const selectedRow =

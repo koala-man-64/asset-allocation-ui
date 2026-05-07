@@ -1,5 +1,17 @@
 /* global RequestInit */
 
+import type {
+  StockScreenerCoverageSummary,
+  StockScreenerFacetBucket,
+  StockScreenerFacets,
+  StockScreenerRequest as ContractStockScreenerRequest,
+  StockScreenerResponse,
+  StockScreenerRow,
+  StockScreenerSummary,
+  StockScreenerSortDirection,
+  StockScreenerSortKey
+} from '@asset-allocation/contracts';
+
 import { FinanceData, MarketData } from '@/types/data';
 import { DomainMetadata, SystemHealth } from '@/types/strategy';
 import { config as uiConfig } from '@/config';
@@ -616,146 +628,32 @@ export interface JobLogsResponse {
   runs: JobLogRunResponse[];
 }
 
-export interface StockScreenerRow {
-  symbol: string;
-  name?: string | null;
-  sector?: string | null;
-  industry?: string | null;
-  country?: string | null;
-  isOptionable?: boolean | null;
-  open?: number | null;
-  high?: number | null;
-  low?: number | null;
-  close?: number | null;
-  volume?: number | null;
-  return1d?: number | null;
-  return5d?: number | null;
-  vol20d?: number | null;
-  drawdown1y?: number | null;
-  atr14d?: number | null;
-  gapAtr?: number | null;
-  sma50d?: number | null;
-  sma200d?: number | null;
-  trend50_200?: number | null;
-  aboveSma50?: boolean | number | null;
-  bbWidth20d?: number | null;
-  compressionScore?: number | null;
-  volumeZ20d?: number | null;
-  volumePctRank252d?: number | null;
-  hasSilver?: boolean | number | null;
-  hasGold?: boolean | number | null;
-}
+export type {
+  StockScreenerCoverageSummary,
+  StockScreenerFacetBucket,
+  StockScreenerFacets,
+  StockScreenerResponse,
+  StockScreenerRow,
+  StockScreenerSummary,
+  StockScreenerSortDirection,
+  StockScreenerSortKey
+} from '@asset-allocation/contracts';
 
-export type StockScreenerSortDirection = 'asc' | 'desc';
+type StockScreenerStringFilter = string | readonly string[] | null;
 
-export type StockScreenerSortKey =
-  | 'symbol'
-  | 'close'
-  | 'volume'
-  | 'return_1d'
-  | 'return_5d'
-  | 'vol_20d'
-  | 'drawdown_1y'
-  | 'atr_14d'
-  | 'gap_atr'
-  | 'sma_50d'
-  | 'sma_200d'
-  | 'trend_50_200'
-  | 'above_sma_50'
-  | 'bb_width_20d'
-  | 'compression_score'
-  | 'volume_z_20d'
-  | 'volume_pct_rank_252d';
-
-type StockScreenerStringFilter = string | readonly string[];
-
-export interface StockScreenerRequestParams {
-  q?: string;
-  asOf?: string;
-  as_of?: string;
-  limit?: number;
-  offset?: number;
-  sort?: StockScreenerSortKey;
-  direction?: StockScreenerSortDirection;
+export type StockScreenerRequestParams = Partial<
+  Omit<ContractStockScreenerRequest, 'as_of' | 'sectors' | 'industries' | 'countries'>
+> & {
+  asOf?: string | null;
+  as_of?: string | null;
   sectors?: StockScreenerStringFilter;
   industries?: StockScreenerStringFilter;
   countries?: StockScreenerStringFilter;
-  is_optionable?: boolean;
-  has_silver?: boolean;
-  has_gold?: boolean;
-  above_sma_50?: boolean;
-  min_close?: number;
-  max_close?: number;
-  min_volume?: number;
-  max_volume?: number;
-  min_return_1d?: number;
-  max_return_1d?: number;
-  min_return_5d?: number;
-  max_return_5d?: number;
-  min_vol_20d?: number;
-  max_vol_20d?: number;
-  min_drawdown_1y?: number;
-  max_drawdown_1y?: number;
-  min_atr_14d?: number;
-  max_atr_14d?: number;
-  min_gap_atr?: number;
-  max_gap_atr?: number;
-  min_sma_50d?: number;
-  max_sma_50d?: number;
-  min_sma_200d?: number;
-  max_sma_200d?: number;
-  min_trend_50_200?: number;
-  max_trend_50_200?: number;
-  min_bb_width_20d?: number;
-  max_bb_width_20d?: number;
-  min_compression_score?: number;
-  max_compression_score?: number;
-  min_volume_z_20d?: number;
-  max_volume_z_20d?: number;
-  min_volume_pct_rank_252d?: number;
-  max_volume_pct_rank_252d?: number;
-}
+};
 
-export interface StockScreenerCoverageSummary {
-  silverRows: number;
-  goldRows: number;
-  bothRows: number;
-  silverPct?: number | null;
-  goldPct?: number | null;
-}
-
-export interface StockScreenerSummary {
-  universeCount: number;
-  filteredCount: number;
-  coverage: StockScreenerCoverageSummary;
-  sectorCount?: number | null;
-  countryCount?: number | null;
-}
-
-export interface StockScreenerFacetBucket {
-  value: string;
-  count: number;
-}
-
-export interface StockScreenerFacets {
-  sectors?: StockScreenerFacetBucket[];
-  industries?: StockScreenerFacetBucket[];
-  countries?: StockScreenerFacetBucket[];
-  coverage?: Partial<StockScreenerCoverageSummary>;
-}
-
-export interface StockScreenerResponse {
-  asOf: string;
-  total: number;
-  limit: number;
-  offset: number;
-  rows: StockScreenerRow[];
-  summary?: StockScreenerSummary | null;
-  facets?: StockScreenerFacets | null;
-  filters?: Partial<StockScreenerRequestParams> | null;
-}
-
-function serializeStockScreenerList(value: StockScreenerStringFilter | undefined): string | undefined {
+function serializeStockScreenerList(
+  value: StockScreenerStringFilter | undefined
+): string | undefined {
   if (Array.isArray(value)) {
     const serialized = value
       .map((item) => String(item).trim())
