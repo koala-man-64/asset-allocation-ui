@@ -471,7 +471,7 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     expect((await screen.findAllByText('9 cols • 2.0 KB')).length).toBeGreaterThan(0);
   });
 
-  it('shows the average runtime for the mapped job in coverage metadata', async () => {
+  it('shows the latest runtime for the mapped job in coverage metadata', async () => {
     const user = userEvent.setup();
 
     renderPanel({
@@ -495,12 +495,12 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
       ]
     });
 
-    expect(await screen.findByText('avg runtime 3m')).toBeInTheDocument();
+    expect(await screen.findByText('Latest runtime 2m')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Expand market details' }));
 
-    expect(screen.getByText('avg runtime:')).toBeInTheDocument();
-    expect(screen.getByText('3m (2 runs)')).toBeInTheDocument();
+    expect(screen.getByText('Latest runtime:')).toBeInTheDocument();
+    expect(screen.getByText('2m')).toBeInTheDocument();
   });
 
   it('shows live cpu and memory percentages for running jobs in the coverage panel', async () => {
