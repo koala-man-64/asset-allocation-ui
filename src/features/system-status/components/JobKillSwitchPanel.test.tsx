@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/utils';
@@ -24,11 +24,6 @@ vi.mock('sonner', () => ({
 describe('JobKillSwitchPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   it('stops currently running jobs', async () => {
@@ -49,6 +44,7 @@ describe('JobKillSwitchPanel', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Stop running jobs' }));
+    await user.click(await screen.findByRole('button', { name: 'Stop Jobs' }));
 
     await waitFor(() => {
       expect(backtestApi.stopJob).toHaveBeenCalledTimes(1);
@@ -76,6 +72,7 @@ describe('JobKillSwitchPanel', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Suspend all jobs' }));
+    await user.click(await screen.findByRole('button', { name: 'Suspend Jobs' }));
 
     await waitFor(() => {
       expect(backtestApi.suspendJob).toHaveBeenCalledTimes(2);
@@ -104,6 +101,7 @@ describe('JobKillSwitchPanel', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Resume all jobs' }));
+    await user.click(await screen.findByRole('button', { name: 'Resume Jobs' }));
 
     await waitFor(() => {
       expect(backtestApi.resumeJob).toHaveBeenCalledTimes(2);

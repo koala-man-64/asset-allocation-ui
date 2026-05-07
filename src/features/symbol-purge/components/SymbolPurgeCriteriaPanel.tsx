@@ -2,6 +2,13 @@ import { Loader2, RefreshCw } from 'lucide-react';
 
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/app/components/ui/select';
 
 import type { SymbolPurgeController } from '../hooks/useSymbolPurgeController';
 import {
@@ -35,18 +42,24 @@ export function SymbolPurgeCriteriaPanel({ controller }: Props) {
 
       <div className="space-y-3">
         <div className={formFieldClass}>
-          <label className={formLabelClass}>Medallion layer</label>
-          <select
+          <label htmlFor="symbol-purge-layer" className={formLabelClass}>
+            Medallion layer
+          </label>
+          <Select
             value={criteria.layer}
-            className={formSelectClass}
-            onChange={(event) => actions.setLayer(event.target.value as typeof criteria.layer)}
+            onValueChange={(value) => actions.setLayer(value as typeof criteria.layer)}
           >
-            {layerOptions.map((layerKey) => (
-              <option key={layerKey} value={layerKey}>
-                {layerKey.toUpperCase()}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="symbol-purge-layer" className={formSelectClass}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {layerOptions.map((layerKey) => (
+                <SelectItem key={layerKey} value={layerKey}>
+                  {layerKey.toUpperCase()}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {derived.showBronzeWarning ? (
             <p className="text-[11px] leading-relaxed text-amber-600">
               Bronze-wide criteria are approximated from the silver preview layer. Silver/gold is
@@ -56,37 +69,48 @@ export function SymbolPurgeCriteriaPanel({ controller }: Props) {
         </div>
 
         <div className={formFieldClass}>
-          <label className={formLabelClass}>Domain</label>
-          <select
+          <label htmlFor="symbol-purge-domain" className={formLabelClass}>
+            Domain
+          </label>
+          <Select
             value={criteria.domain}
-            className={formSelectClass}
-            onChange={(event) => actions.setDomain(event.target.value as typeof criteria.domain)}
+            onValueChange={(value) => actions.setDomain(value as typeof criteria.domain)}
           >
-            {domainOptions.map((entry) => (
-              <option key={entry.value} value={entry.value}>
-                {entry.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="symbol-purge-domain" className={formSelectClass}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {domainOptions.map((entry) => (
+                <SelectItem key={entry.value} value={entry.value}>
+                  {entry.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className={formFieldClass}>
-          <label className={formLabelClass}>Column</label>
-          <select
+          <label htmlFor="symbol-purge-column" className={formLabelClass}>
+            Column
+          </label>
+          <Select
             value={criteria.column}
-            className={formSelectClass}
             disabled={columns.columnsLoading}
-            onChange={(event) => actions.setColumn(event.target.value)}
+            onValueChange={actions.setColumn}
           >
-            <option value="" disabled>
-              {columns.columnsLoading ? 'Loading columns...' : 'Select a column'}
-            </option>
-            {columns.availableColumns.map((column) => (
-              <option key={column} value={column}>
-                {column}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="symbol-purge-column" className={formSelectClass}>
+              <SelectValue
+                placeholder={columns.columnsLoading ? 'Loading columns...' : 'Select a column'}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {columns.availableColumns.map((column) => (
+                <SelectItem key={column} value={column}>
+                  {column}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="mt-2 flex items-center justify-between gap-2">
             <Button
               type="button"
@@ -117,20 +141,24 @@ export function SymbolPurgeCriteriaPanel({ controller }: Props) {
 
         <div className="grid grid-cols-2 gap-2.5">
           <div className={formFieldClass}>
-            <label className={formLabelClass}>Rule type</label>
-            <select
+            <label htmlFor="symbol-purge-operator" className={formLabelClass}>
+              Rule type
+            </label>
+            <Select
               value={criteria.operator}
-              className={formSelectClass}
-              onChange={(event) =>
-                actions.setOperator(event.target.value as typeof criteria.operator)
-              }
+              onValueChange={(value) => actions.setOperator(value as typeof criteria.operator)}
             >
-              {operatorOptions.map((entry) => (
-                <option key={entry.value} value={entry.value}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="symbol-purge-operator" className={formSelectClass}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {operatorOptions.map((entry) => (
+                  <SelectItem key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className={formFieldClass}>
             <label className={formLabelClass}>
@@ -155,20 +183,26 @@ export function SymbolPurgeCriteriaPanel({ controller }: Props) {
 
         <div className="grid grid-cols-2 gap-2.5">
           <div className={formFieldClass}>
-            <label className={formLabelClass}>Aggregation</label>
-            <select
+            <label htmlFor="symbol-purge-aggregation" className={formLabelClass}>
+              Aggregation
+            </label>
+            <Select
               value={criteria.aggregation}
-              className={formSelectClass}
-              onChange={(event) =>
-                actions.setAggregation(event.target.value as typeof criteria.aggregation)
+              onValueChange={(value) =>
+                actions.setAggregation(value as typeof criteria.aggregation)
               }
             >
-              {aggregationOptions.map((entry) => (
-                <option key={entry.value} value={entry.value}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="symbol-purge-aggregation" className={formSelectClass}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {aggregationOptions.map((entry) => (
+                  <SelectItem key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className={formFieldClass}>

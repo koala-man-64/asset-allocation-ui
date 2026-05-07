@@ -7,6 +7,7 @@ import {
   useLineageQuery
 } from '@/hooks/useDataQueries';
 import { DataService } from '@/services/DataService';
+import { dataQualityKeys } from '@/services/queryKeyFactories';
 import { PageHero } from '@/app/components/common/PageHero';
 import { StatePanel } from '@/app/components/common/StatePanel';
 import { Button } from '@/app/components/ui/button';
@@ -210,7 +211,7 @@ export function DataQualityPage() {
     rows
   });
   const storageUsageQuery = useQuery<StorageUsageResponse>({
-    queryKey: ['data-quality', 'storage-usage'],
+    queryKey: dataQualityKeys.storageUsage(),
     queryFn: ({ signal }) => DataService.getStorageUsage(signal),
     staleTime: 1000 * 60 * 5,
     retry: 1

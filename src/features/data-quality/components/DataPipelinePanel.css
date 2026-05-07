@@ -60,15 +60,15 @@
 }
 
 .dq-stage-bronze .dq-stage-dot {
-  background-color: var(--amber-600);
+  background-color: var(--mcm-rust);
 }
 
 .dq-stage-silver .dq-stage-dot {
-  background-color: var(--slate-500);
+  background-color: var(--terminal-muted);
 }
 
 .dq-stage-gold .dq-stage-dot {
-  background-color: var(--yellow-500);
+  background-color: var(--terminal-yellow);
 }
 
 /* Yellow 500 */
@@ -196,15 +196,15 @@
 }
 
 .dq-stat-good {
-  color: var(--emerald-600);
+  color: var(--terminal-green);
 }
 
 .dq-stat-warn {
-  color: var(--amber-600);
+  color: var(--terminal-yellow);
 }
 
 .dq-stat-bad {
-  color: var(--rose-600);
+  color: var(--terminal-red);
 }
 
 /* Connectors */

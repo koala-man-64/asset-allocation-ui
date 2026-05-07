@@ -42,6 +42,7 @@
   --mcm-teal: var(--terminal-cyan);
   --mcm-mustard: var(--terminal-green);
   --mcm-olive: var(--terminal-muted);
+  --mcm-rust: #ff7a45;
 
   --background: var(--terminal-canvas);
   --foreground: var(--terminal-text);
@@ -154,6 +155,7 @@
   --color-mcm-teal: var(--mcm-teal);
   --color-mcm-mustard: var(--mcm-mustard);
   --color-mcm-olive: var(--mcm-olive);
+  --color-mcm-rust: var(--mcm-rust);
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
   --font-mono: var(--font-code);

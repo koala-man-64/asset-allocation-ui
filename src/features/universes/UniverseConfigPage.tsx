@@ -28,6 +28,7 @@ import { Label } from '@/app/components/ui/label';
 import { Textarea } from '@/app/components/ui/textarea';
 import { cn } from '@/app/components/ui/utils';
 import { universeApi } from '@/services/universeApi';
+import { rankingKeys, strategyKeys, universeKeys } from '@/services/queryKeyFactories';
 import type { UniverseConfigDetail } from '@/types/strategy';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
@@ -64,12 +65,12 @@ export function UniverseConfigPage({ embedded = false }: UniverseConfigPageProps
     isLoading,
     error
   } = useQuery({
-    queryKey: ['universe-configs'],
+    queryKey: universeKeys.all(),
     queryFn: () => universeApi.listUniverseConfigs()
   });
 
   const detailQuery = useQuery({
-    queryKey: ['universe-configs', 'detail', selectedUniverseName],
+    queryKey: universeKeys.detail(selectedUniverseName),
     queryFn: () => universeApi.getUniverseConfigDetail(String(selectedUniverseName)),
     enabled: Boolean(selectedUniverseName)
   });
@@ -95,10 +96,10 @@ export function UniverseConfigPage({ embedded = false }: UniverseConfigPageProps
       }),
     onSuccess: async (result) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['universe-configs'] }),
-        queryClient.invalidateQueries({ queryKey: ['universe-configs', 'detail', draft.name] }),
-        queryClient.invalidateQueries({ queryKey: ['ranking-schemas'] }),
-        queryClient.invalidateQueries({ queryKey: ['strategies'] })
+        queryClient.invalidateQueries({ queryKey: universeKeys.all() }),
+        queryClient.invalidateQueries({ queryKey: universeKeys.detail(draft.name) }),
+        queryClient.invalidateQueries({ queryKey: rankingKeys.all() }),
+        queryClient.invalidateQueries({ queryKey: strategyKeys.all() })
       ]);
       setSelectedUniverseName(draft.name);
       setDraft((current) => ({ ...current, version: result.version }));
@@ -113,10 +114,10 @@ export function UniverseConfigPage({ embedded = false }: UniverseConfigPageProps
     mutationFn: (name: string) => universeApi.deleteUniverseConfig(name),
     onSuccess: async (_, name) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['universe-configs'] }),
-        queryClient.invalidateQueries({ queryKey: ['universe-configs', 'detail', name] }),
-        queryClient.invalidateQueries({ queryKey: ['ranking-schemas'] }),
-        queryClient.invalidateQueries({ queryKey: ['strategies'] })
+        queryClient.invalidateQueries({ queryKey: universeKeys.all() }),
+        queryClient.invalidateQueries({ queryKey: universeKeys.detail(name) }),
+        queryClient.invalidateQueries({ queryKey: rankingKeys.all() }),
+        queryClient.invalidateQueries({ queryKey: strategyKeys.all() })
       ]);
       setSelectedUniverseName(null);
       setDraft(buildEmptyUniverseConfig());
@@ -376,7 +377,9 @@ export function UniverseConfigPage({ embedded = false }: UniverseConfigPageProps
                         disabled={deleteMutation.isPending}
                       >
                         <Trash2 className="h-4 w-4" />
-                        {deleteMutation.isPending ? 'Archiving...' : 'Archive Universe Configuration'}
+                        {deleteMutation.isPending
+                          ? 'Archiving...'
+                          : 'Archive Universe Configuration'}
                       </Button>
                     </div>
                   )}

@@ -3,6 +3,7 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { DataService } from '@/services/DataService';
 import type { DomainMetadata, SystemHealth } from '@/types/strategy';
 import type { RequestMeta } from '@/services/apiService';
+import { queryTiming } from '@/services/queryTiming';
 import {
   useSystemStatusViewQuery,
   type UseSystemStatusViewQueryOptions
@@ -28,7 +29,11 @@ function systemHealthRefetchInterval(query: {
   }
   const payload = query.state.data as SystemHealth | undefined;
   const baseMs =
-    payload?.overall === 'critical' ? 10_000 : payload?.overall === 'degraded' ? 15_000 : 30_000;
+    payload?.overall === 'critical'
+      ? queryTiming.systemHealth.criticalMs
+      : payload?.overall === 'degraded'
+        ? queryTiming.systemHealth.degradedMs
+        : queryTiming.systemHealth.healthyMs;
   const jitter = Math.round(baseMs * 0.1 * Math.random());
   return baseMs + jitter;
 }

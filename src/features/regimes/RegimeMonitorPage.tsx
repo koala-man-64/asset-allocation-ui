@@ -26,6 +26,13 @@ import {
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/app/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -35,6 +42,7 @@ import {
 } from '@/app/components/ui/table';
 import { Textarea } from '@/app/components/ui/textarea';
 import { regimeApi } from '@/services/regimeApi';
+import { regimeKeys } from '@/services/queryKeyFactories';
 import type { RegimeSignal, RegimeSnapshot } from '@/types/regime';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 import { toast } from 'sonner';
@@ -307,7 +315,7 @@ export function RegimeMonitorPage() {
   });
 
   const modelsQuery = useQuery({
-    queryKey: ['regimes', 'models'],
+    queryKey: regimeKeys.models(),
     queryFn: () => regimeApi.listModels(),
     refetchInterval: REGIME_REFETCH_INTERVAL_MS
   });
@@ -320,21 +328,21 @@ export function RegimeMonitorPage() {
   }, [modelsQuery.data?.models, selectedModelName]);
 
   const selectedModelDetailQuery = useQuery({
-    queryKey: ['regimes', 'models', selectedModelName],
+    queryKey: regimeKeys.model(selectedModelName),
     queryFn: () => regimeApi.getModel(selectedModelName),
     enabled: Boolean(selectedModelName),
     refetchInterval: REGIME_REFETCH_INTERVAL_MS
   });
 
   const currentQuery = useQuery({
-    queryKey: ['regimes', 'current', selectedModelName],
+    queryKey: regimeKeys.current(selectedModelName),
     queryFn: () => regimeApi.getCurrent({ modelName: selectedModelName }),
     enabled: Boolean(selectedModelName),
     refetchInterval: REGIME_REFETCH_INTERVAL_MS
   });
 
   const historyQuery = useQuery({
-    queryKey: ['regimes', 'history', selectedModelName],
+    queryKey: regimeKeys.history(selectedModelName),
     queryFn: () => regimeApi.getHistory({ modelName: selectedModelName, limit: 24 }),
     enabled: Boolean(selectedModelName),
     refetchInterval: REGIME_REFETCH_INTERVAL_MS
@@ -348,7 +356,7 @@ export function RegimeMonitorPage() {
         config
       }),
     onSuccess: async (payload) => {
-      await queryClient.invalidateQueries({ queryKey: ['regimes'] });
+      await queryClient.invalidateQueries({ queryKey: regimeKeys.all() });
       setSelectedModelName(payload.model.name);
       setConfigJsonError(null);
       setIsModelAdminOpen(false);
@@ -369,10 +377,10 @@ export function RegimeMonitorPage() {
       regimeApi.activateModel(modelName, { version }),
     onSuccess: async (_, variables) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['regimes'] }),
-        queryClient.invalidateQueries({ queryKey: ['regimes', 'models', variables.modelName] }),
-        queryClient.invalidateQueries({ queryKey: ['regimes', 'current', variables.modelName] }),
-        queryClient.invalidateQueries({ queryKey: ['regimes', 'history', variables.modelName] })
+        queryClient.invalidateQueries({ queryKey: regimeKeys.all() }),
+        queryClient.invalidateQueries({ queryKey: regimeKeys.model(variables.modelName) }),
+        queryClient.invalidateQueries({ queryKey: regimeKeys.current(variables.modelName) }),
+        queryClient.invalidateQueries({ queryKey: regimeKeys.history(variables.modelName) })
       ]);
       toast.success(`Activated ${variables.modelName} v${variables.version}`);
     },
@@ -409,7 +417,7 @@ export function RegimeMonitorPage() {
   const coreError = modelsQuery.error || selectedModelDetailQuery.error || currentQuery.error;
 
   const refreshRegimeView = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['regimes'] });
+    await queryClient.invalidateQueries({ queryKey: regimeKeys.all() });
     toast.success('Regime monitor refreshed');
   };
 
@@ -439,22 +447,22 @@ export function RegimeMonitorPage() {
         <div className="grid gap-3 lg:grid-cols-[minmax(16rem,1.25fr)_repeat(3,minmax(9rem,0.7fr))_auto] lg:items-end">
           <div className="min-w-0">
             <Label htmlFor="regime-model-selector">Selected Model</Label>
-            <select
-              id="regime-model-selector"
-              value={selectedModelName}
-              onChange={(event) => setSelectedModelName(event.target.value)}
-              className="mt-2 h-10 w-full rounded-md border-2 border-input bg-background px-3 py-2 text-sm font-mono"
-            >
-              {modelOptions.length ? (
-                modelOptions.map((model) => (
-                  <option key={model.name} value={model.name}>
-                    {model.name}
-                  </option>
-                ))
-              ) : (
-                <option value={selectedModelName}>{selectedModelName}</option>
-              )}
-            </select>
+            <Select value={selectedModelName} onValueChange={setSelectedModelName}>
+              <SelectTrigger id="regime-model-selector" className="mt-2 font-mono">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {modelOptions.length ? (
+                  modelOptions.map((model) => (
+                    <SelectItem key={model.name} value={model.name}>
+                      {model.name}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value={selectedModelName}>{selectedModelName}</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
           </div>
 
           <MiniMetric label="Active Version" value={activeVersion ? `v${activeVersion}` : 'n/a'} />

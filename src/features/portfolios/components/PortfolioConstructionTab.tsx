@@ -26,6 +26,7 @@ import {
   statusBadgeVariant
 } from '@/features/portfolios/lib/portfolioPresentation';
 import { backtestApi } from '@/services/backtestApi';
+import { portfolioKeys } from '@/services/queryKeyFactories';
 import { strategyApi } from '@/services/strategyApi';
 import type {
   PortfolioDetail,
@@ -191,18 +192,18 @@ function SleeveCard({
   onRemove: () => void;
 }) {
   const strategyDetailQuery = useQuery({
-    queryKey: ['portfolios', 'strategy-detail', sleeve.strategyName],
+    queryKey: portfolioKeys.strategyDetail(sleeve.strategyName),
     queryFn: () => strategyApi.getStrategyDetail(sleeve.strategyName),
     enabled: Boolean(sleeve.strategyName)
   });
   const backtestRunsQuery = useQuery({
-    queryKey: ['portfolios', 'strategy-backtest-runs', sleeve.strategyName],
+    queryKey: portfolioKeys.strategyBacktestRuns(sleeve.strategyName),
     queryFn: () => backtestApi.listRuns({ q: sleeve.strategyName, limit: 1 }),
     enabled: Boolean(sleeve.strategyName)
   });
   const latestRunId = backtestRunsQuery.data?.runs[0]?.run_id;
   const backtestSummaryQuery = useQuery({
-    queryKey: ['portfolios', 'strategy-backtest-summary', latestRunId],
+    queryKey: portfolioKeys.strategyBacktestSummary(latestRunId ?? null),
     queryFn: () => backtestApi.getSummary(String(latestRunId)),
     enabled: Boolean(latestRunId)
   });

@@ -28,6 +28,7 @@ import {
   titleCaseWords
 } from '@/features/portfolios/lib/portfolioPresentation';
 import { portfolioApi } from '@/services/portfolioApi';
+import { portfolioKeys } from '@/services/queryKeyFactories';
 import type { PortfolioMonitorSnapshot } from '@/types/portfolio';
 import type { RegimeSnapshot } from '@/types/regime';
 
@@ -114,15 +115,13 @@ export function PortfolioPerformanceTab({
     ]
   );
   const forecastQuery = useQuery({
-    queryKey: [
-      'portfolios',
-      'forecast',
+    queryKey: portfolioKeys.forecast(
       monitorSnapshot?.accountId,
       regimeModelName,
       selectedHorizon,
       selectedAssumption,
       costDragOverrideBps
-    ],
+    ),
     queryFn: ({ signal }) =>
       portfolioApi.getForecast(
         {
@@ -255,9 +254,7 @@ export function PortfolioPerformanceTab({
               <Badge variant={outlook.confidence === 'thin' ? 'secondary' : 'default'}>
                 {outlook.confidenceLabel}
               </Badge>
-              <Badge variant={forecastQuery.data ? 'default' : 'secondary'}>
-                {outlookSource}
-              </Badge>
+              <Badge variant={forecastQuery.data ? 'default' : 'secondary'}>{outlookSource}</Badge>
             </div>
           </div>
 

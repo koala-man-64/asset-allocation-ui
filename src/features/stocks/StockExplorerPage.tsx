@@ -25,6 +25,13 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { ScrollArea } from '@/app/components/ui/scroll-area';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/app/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -44,13 +51,7 @@ import type {
 import { DataService } from '@/services/DataService';
 import { formatSystemStatusText } from '@/utils/formatSystemStatusText';
 
-type ScreenerPresetId =
-  | 'momentum'
-  | 'trend'
-  | 'compression'
-  | 'risk'
-  | 'liquidity'
-  | 'data-gaps';
+type ScreenerPresetId = 'momentum' | 'trend' | 'compression' | 'risk' | 'liquidity' | 'data-gaps';
 type ActivePresetId = ScreenerPresetId | 'custom';
 type CoverageMode = 'all' | 'complete' | 'missing-silver' | 'missing-gold';
 
@@ -285,7 +286,9 @@ function FactorLine({ label, value, className }: FactorLineProps) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border/40 py-2 last:border-b-0">
       <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={cn('rounded px-2 py-1 text-right font-mono text-xs font-semibold', className)}>
+      <span
+        className={cn('rounded px-2 py-1 text-right font-mono text-xs font-semibold', className)}
+      >
         {value}
       </span>
     </div>
@@ -479,8 +482,8 @@ export function StockExplorerPage() {
               <div>
                 <h1 className="text-2xl font-black tracking-normal">Quant Stock Screener</h1>
                 <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-                  Cross-sectional research signals, coverage controls, and drill-through into
-                  symbol detail.
+                  Cross-sectional research signals, coverage controls, and drill-through into symbol
+                  detail.
                 </p>
               </div>
               <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
@@ -583,17 +586,20 @@ export function StockExplorerPage() {
             className="h-9 font-mono text-xs"
             aria-label="Country filter"
           />
-          <select
-            aria-label="Coverage filter"
+          <Select
             value={coverageMode}
-            onChange={(event) => setCoverageMode(event.target.value as CoverageMode)}
-            className="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs font-semibold text-foreground outline-none focus-visible:border-mcm-teal focus-visible:ring-2 focus-visible:ring-mcm-teal/30"
+            onValueChange={(value) => setCoverageMode(value as CoverageMode)}
           >
-            <option value="all">All coverage</option>
-            <option value="complete">Complete</option>
-            <option value="missing-silver">Missing Silver</option>
-            <option value="missing-gold">Missing Gold</option>
-          </select>
+            <SelectTrigger aria-label="Coverage filter" className="h-9 font-mono text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All coverage</SelectItem>
+              <SelectItem value="complete">Complete</SelectItem>
+              <SelectItem value="missing-silver">Missing Silver</SelectItem>
+              <SelectItem value="missing-gold">Missing Gold</SelectItem>
+            </SelectContent>
+          </Select>
           <label className="flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 font-mono text-xs font-semibold">
             <input
               type="checkbox"
@@ -706,11 +712,7 @@ export function StockExplorerPage() {
                       onToggleSort={onToggleSort}
                     />
                     <SortableHead label="Vol20" sortKey="vol_20d" onToggleSort={onToggleSort} />
-                    <SortableHead
-                      label="DD1Y"
-                      sortKey="drawdown_1y"
-                      onToggleSort={onToggleSort}
-                    />
+                    <SortableHead label="DD1Y" sortKey="drawdown_1y" onToggleSort={onToggleSort} />
                     <SortableHead label="ATR14" sortKey="atr_14d" onToggleSort={onToggleSort} />
                     <SortableHead label="Volume" sortKey="volume" onToggleSort={onToggleSort} />
                     <SortableHead
@@ -858,8 +860,8 @@ export function StockExplorerPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/40 px-4 py-3">
             <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-              {resolvedAsOf ? `As-of ${resolvedAsOf}` : 'As-of latest'} |{' '}
-              {showing.toLocaleString()} shown | {total.toLocaleString()} total
+              {resolvedAsOf ? `As-of ${resolvedAsOf}` : 'As-of latest'} | {showing.toLocaleString()}{' '}
+              shown | {total.toLocaleString()} total
             </div>
             <Button
               type="button"
@@ -928,10 +930,7 @@ export function StockExplorerPage() {
                   className={returnHeatClass(selectedRow.return5d)}
                 />
                 <FactorLine label="Trend 50/200" value={formatPercent(selectedRow.trend50_200)} />
-                <FactorLine
-                  label="20D volatility"
-                  value={formatPercent(selectedRow.vol20d, 1)}
-                />
+                <FactorLine label="20D volatility" value={formatPercent(selectedRow.vol20d, 1)} />
                 <FactorLine
                   label="1Y drawdown"
                   value={formatPercent(selectedRow.drawdown1y, 1)}
@@ -1028,7 +1027,12 @@ interface HeatCellProps {
 function HeatCell({ children, className }: HeatCellProps) {
   return (
     <TableCell className="text-right">
-      <span className={cn('inline-flex min-w-16 justify-end rounded px-2 py-1 font-mono text-xs font-semibold', className)}>
+      <span
+        className={cn(
+          'inline-flex min-w-16 justify-end rounded px-2 py-1 font-mono text-xs font-semibold',
+          className
+        )}
+      >
         {children}
       </span>
     </TableCell>

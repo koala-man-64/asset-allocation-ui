@@ -13,7 +13,13 @@ import {
 
 import { PageHero } from '@/app/components/common/PageHero';
 import { PageLoader } from '@/app/components/common/PageLoader';
+import { QueryStateBoundary } from '@/app/components/common/QueryStateBoundary';
 import { StatePanel } from '@/app/components/common/StatePanel';
+import {
+  DeskGrid,
+  DeskPane,
+  PersistentStatusBanner
+} from '@/app/components/common/WorkspacePrimitives';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { Checkbox } from '@/app/components/ui/checkbox';
@@ -32,6 +38,7 @@ import {
   tradeDeskApi,
   tradeDeskKeys
 } from '@/services/tradeDeskApi';
+import { queryTiming } from '@/services/queryTiming';
 import type {
   TradeOrder,
   TradeOrderPlaceRequest,
@@ -324,7 +331,12 @@ function DeskControlsRail({
         </div>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-y-auto p-5">
+      <div
+        role="region"
+        aria-label="Trade desk account controls"
+        tabIndex={0}
+        className="flex-1 space-y-5 overflow-y-auto p-5"
+      >
         <section className="space-y-3">
           <h2 className="text-sm font-black uppercase tracking-[0.16em] text-muted-foreground">
             Readiness
@@ -447,7 +459,8 @@ function OrderTicket({
   onLiveConfirmedChange,
   onRiskAcknowledgementChange,
   previewPending,
-  submitPending
+  submitPending,
+  detailErrorMessage
 }: {
   account: TradeAccountSummaryView;
   detail: TradeAccountDetailView | null;
@@ -462,6 +475,7 @@ function OrderTicket({
   onRiskAcknowledgementChange: (checkId: string, checked: boolean) => void;
   previewPending: boolean;
   submitPending: boolean;
+  detailErrorMessage?: string | null;
 }) {
   const allowedOrderTypes = getAllowedOrderTypes(account, detail);
   const warningChecks =
@@ -469,13 +483,23 @@ function OrderTicket({
   const missingAcknowledgements = warningChecks.some(
     (check) => !acknowledgedRiskCheckIds.has(check.checkId)
   );
-  const equityActionDisabledReason = !account.capabilities.supportsEquities
-    ? 'Equity orders are not supported for this account.'
-    : account.capabilities.readOnly
-      ? account.capabilities.unsupportedReason || 'This account is read-only.'
-      : !account.capabilities.canPreview
-        ? 'Order preview is not supported for this account.'
-        : null;
+  const equityActionDisabledReason = detailErrorMessage
+    ? 'Account risk detail is unavailable; refresh this account before previewing or submitting.'
+    : !account.capabilities.supportsEquities
+      ? 'Equity orders are not supported for this account.'
+      : account.capabilities.readOnly
+        ? account.capabilities.unsupportedReason || 'This account is read-only.'
+        : !account.capabilities.canPreview
+          ? 'Order preview is not supported for this account.'
+          : null;
+  const quantityValue = parsePositiveNumber(draft.quantity);
+  const notionalValue = parsePositiveNumber(draft.notional);
+  const hasQuantity = draft.quantity.trim().length > 0;
+  const hasNotional = draft.notional.trim().length > 0;
+  const quantityInvalid =
+    (hasQuantity && Number.isNaN(quantityValue)) || (hasQuantity && hasNotional);
+  const notionalInvalid =
+    (hasNotional && Number.isNaN(notionalValue)) || (hasQuantity && hasNotional);
   const previewDisabled = previewPending || Boolean(equityActionDisabledReason);
   const submitDisabled =
     !preview ||
@@ -487,7 +511,7 @@ function OrderTicket({
     (account.environment === 'live' && !account.capabilities.canSubmitLive);
 
   return (
-    <aside className="mcm-panel min-h-[42rem] overflow-hidden">
+    <DeskPane as="aside" className="min-h-[42rem] overflow-hidden" data-testid="trade-ticket">
       <div className="border-b border-border/40 px-5 py-4">
         <div className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
           Manual Ticket
@@ -502,7 +526,24 @@ function OrderTicket({
         </div>
       </div>
 
-      <div className="space-y-4 p-5">
+      <form
+        className="space-y-4 p-5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!previewDisabled) {
+            onPreview();
+          }
+        }}
+      >
+        {detailErrorMessage ? (
+          <PersistentStatusBanner
+            tone="error"
+            title="Account Risk Detail Unavailable"
+            message={detailErrorMessage}
+            testId="trade-ticket-detail-error"
+          />
+        ) : null}
+
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2 space-y-2">
             <Label htmlFor="trade-symbol" className="text-foreground">
@@ -512,6 +553,8 @@ function OrderTicket({
               id="trade-symbol"
               value={draft.symbol}
               disabled={Boolean(equityActionDisabledReason)}
+              aria-invalid={!draft.symbol.trim()}
+              data-testid="trade-ticket-symbol"
               onChange={(event) => onDraftChange({ ...draft, symbol: event.target.value })}
               placeholder="MSFT"
             />
@@ -569,6 +612,8 @@ function OrderTicket({
               inputMode="decimal"
               value={draft.quantity}
               disabled={Boolean(equityActionDisabledReason)}
+              aria-invalid={quantityInvalid || undefined}
+              data-testid="trade-ticket-quantity"
               onChange={(event) => onDraftChange({ ...draft, quantity: event.target.value })}
             />
           </div>
@@ -582,6 +627,8 @@ function OrderTicket({
               inputMode="decimal"
               value={draft.notional}
               disabled={Boolean(equityActionDisabledReason)}
+              aria-invalid={notionalInvalid || undefined}
+              data-testid="trade-ticket-notional"
               onChange={(event) => onDraftChange({ ...draft, notional: event.target.value })}
             />
           </div>
@@ -595,6 +642,7 @@ function OrderTicket({
               inputMode="decimal"
               value={draft.limitPrice}
               disabled={Boolean(equityActionDisabledReason)}
+              data-testid="trade-ticket-limit-price"
               onChange={(event) => onDraftChange({ ...draft, limitPrice: event.target.value })}
             />
           </div>
@@ -608,6 +656,7 @@ function OrderTicket({
               inputMode="decimal"
               value={draft.stopPrice}
               disabled={Boolean(equityActionDisabledReason)}
+              data-testid="trade-ticket-stop-price"
               onChange={(event) => onDraftChange({ ...draft, stopPrice: event.target.value })}
             />
           </div>
@@ -640,6 +689,8 @@ function OrderTicket({
         {account.environment === 'live' ? (
           <label className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm">
             <Checkbox
+              id="trade-live-confirmation"
+              data-testid="trade-ticket-live-confirmation"
               checked={liveConfirmed}
               onCheckedChange={(checked) => onLiveConfirmedChange(checked === true)}
             />
@@ -649,10 +700,10 @@ function OrderTicket({
 
         <div className="flex flex-wrap gap-3">
           <Button
-            type="button"
-            onClick={onPreview}
+            type="submit"
             disabled={previewDisabled}
             title={equityActionDisabledReason ?? undefined}
+            data-testid="trade-ticket-preview"
           >
             <Ticket className="size-4" />
             {previewPending ? 'Previewing...' : 'Preview'}
@@ -663,6 +714,7 @@ function OrderTicket({
             onClick={onSubmit}
             disabled={submitDisabled}
             title={equityActionDisabledReason ?? undefined}
+            data-testid="trade-ticket-submit"
           >
             <ShieldCheck className="size-4" />
             {submitPending ? 'Submitting...' : 'Submit'}
@@ -734,6 +786,8 @@ function OrderTicket({
                     {requiresAcknowledgement ? (
                       <label className="mt-3 flex items-start gap-3 rounded-xl border border-mcm-walnut/20 bg-background/40 p-3 text-sm">
                         <Checkbox
+                          id={`trade-risk-ack-${check.checkId}`}
+                          data-testid={`trade-ticket-risk-ack-${check.checkId}`}
                           checked={acknowledgedRiskCheckIds.has(check.checkId)}
                           onCheckedChange={(checked) =>
                             onRiskAcknowledgementChange(check.checkId, checked === true)
@@ -748,8 +802,8 @@ function OrderTicket({
             </div>
           </section>
         ) : null}
-      </div>
-    </aside>
+      </form>
+    </DeskPane>
   );
 }
 
@@ -768,7 +822,7 @@ export function TradeDeskPage() {
   const accountsQuery = useQuery({
     queryKey: tradeDeskKeys.accounts(),
     queryFn: ({ signal }) => tradeDeskApi.listAccounts(signal),
-    refetchInterval: 30_000
+    refetchInterval: queryTiming.tradeDesk.accountsMs
   });
   const accounts = accountsQuery.data?.accounts ?? EMPTY_ACCOUNTS;
 
@@ -809,22 +863,28 @@ export function TradeDeskPage() {
     queryKey: tradeDeskKeys.detail(activeAccountId),
     queryFn: ({ signal }) => tradeDeskApi.getAccountDetail(activeAccountId ?? '', signal),
     enabled: Boolean(activeAccountId),
-    refetchInterval: 30_000
+    refetchInterval: queryTiming.tradeDesk.detailMs
   });
   const positionsQuery = useQuery({
     queryKey: tradeDeskKeys.positions(activeAccountId),
     queryFn: ({ signal }) => tradeDeskApi.listPositions(activeAccountId ?? '', signal),
     enabled: Boolean(activeAccountId),
-    refetchInterval: 30_000
+    refetchInterval: queryTiming.tradeDesk.positionsMs
   });
   const ordersQuery = useQuery({
     queryKey: tradeDeskKeys.orders(activeAccountId),
     queryFn: ({ signal }) => tradeDeskApi.listOrders(activeAccountId ?? '', signal),
     enabled: Boolean(activeAccountId),
-    refetchInterval: 15_000
+    refetchInterval: queryTiming.tradeDesk.ordersMs
   });
 
   const selectedDetail = detailQuery.data ?? null;
+  const detailErrorMessage = detailQuery.error
+    ? extractTradeDeskErrorMessage(
+        detailQuery.error,
+        'The selected account detail could not be loaded.'
+      )
+    : null;
 
   useEffect(() => {
     if (!selectedAccount) {
@@ -959,6 +1019,30 @@ export function TradeDeskPage() {
     return <PageLoader text="Loading trade accounts..." />;
   }
 
+  if (accountsQuery.error && !accounts.length) {
+    return (
+      <div className="space-y-6">
+        <PageHero
+          kicker="Trade Desk"
+          title="Trade Desk"
+          subtitle="Execution entry is unavailable until the trade account snapshot can be loaded."
+        />
+        <QueryStateBoundary
+          error={accountsQuery.error}
+          errorTitle="Account Snapshot Unavailable"
+          errorMessage={(error) =>
+            extractTradeDeskErrorMessage(error, 'The trade account list could not be loaded.')
+          }
+          onRetry={() => {
+            void accountsQuery.refetch();
+          }}
+        >
+          {null}
+        </QueryStateBoundary>
+      </div>
+    );
+  }
+
   if (!selectedAccount) {
     return (
       <div className="space-y-6">
@@ -1061,23 +1145,45 @@ export function TradeDeskPage() {
       />
 
       {workflowMessage ? (
-        <StatePanel
+        <PersistentStatusBanner
           tone={workflowMessage.tone === 'info' ? 'info' : workflowMessage.tone}
           title={workflowMessage.title}
           message={workflowMessage.message}
+          testId="trade-workflow-banner"
         />
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[18rem_minmax(0,1fr)_24rem]">
+      <DeskGrid className="xl:grid-cols-[18rem_minmax(0,1fr)_24rem]">
         <DeskControlsRail account={selectedAccount} detail={selectedDetail} />
 
         <div className="min-w-0 space-y-5">
           {selectedAccount.environment === 'live' ? (
-            <StatePanel
+            <PersistentStatusBanner
               tone="error"
               title="Live Execution"
               message="Live submit remains disabled unless the account explicitly allows live trading and the live confirmation is checked."
               icon={<XCircle className="size-4" />}
+              testId="trade-live-execution-banner"
+            />
+          ) : null}
+
+          {detailErrorMessage ? (
+            <PersistentStatusBanner
+              tone="error"
+              title="Account Detail Unavailable"
+              message={detailErrorMessage}
+              action={
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    void detailQuery.refetch();
+                  }}
+                >
+                  Retry
+                </Button>
+              }
+              testId="trade-detail-error-banner"
             />
           ) : null}
 
@@ -1089,9 +1195,21 @@ export function TradeDeskPage() {
               </TabsList>
             </div>
             <TabsContent value="orders" className="mt-5">
-              {ordersQuery.isLoading ? (
-                <PageLoader variant="panel" text="Loading open orders..." />
-              ) : (
+              <QueryStateBoundary
+                isLoading={ordersQuery.isLoading}
+                loadingText="Loading open orders..."
+                error={ordersQuery.error}
+                errorTitle="Open Orders Unavailable"
+                errorMessage={(error) =>
+                  extractTradeDeskErrorMessage(
+                    error,
+                    'Open orders could not be loaded for this account.'
+                  )
+                }
+                onRetry={() => {
+                  void ordersQuery.refetch();
+                }}
+              >
                 <OrdersTable
                   orders={openOrders}
                   onCancel={(order) => cancelMutation.mutate(order)}
@@ -1099,14 +1217,26 @@ export function TradeDeskPage() {
                   cancelUnavailableReason={cancelUnavailableReason}
                   emptyMessage="No open orders are currently staged for this account."
                 />
-              )}
+              </QueryStateBoundary>
             </TabsContent>
             <TabsContent value="positions" className="mt-5">
-              {positionsQuery.isLoading ? (
-                <PageLoader variant="panel" text="Loading positions..." />
-              ) : (
+              <QueryStateBoundary
+                isLoading={positionsQuery.isLoading}
+                loadingText="Loading positions..."
+                error={positionsQuery.error}
+                errorTitle="Positions Unavailable"
+                errorMessage={(error) =>
+                  extractTradeDeskErrorMessage(
+                    error,
+                    'Positions could not be loaded for this account.'
+                  )
+                }
+                onRetry={() => {
+                  void positionsQuery.refetch();
+                }}
+              >
                 <PositionsTable positions={positions} variant="desk" />
-              )}
+              </QueryStateBoundary>
             </TabsContent>
           </Tabs>
         </div>
@@ -1139,8 +1269,9 @@ export function TradeDeskPage() {
           }}
           previewPending={previewMutation.isPending}
           submitPending={submitMutation.isPending}
+          detailErrorMessage={detailErrorMessage}
         />
-      </div>
+      </DeskGrid>
     </div>
   );
 }

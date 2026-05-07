@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { PageLoader } from '@/app/components/common/PageLoader';
 import { StatCard } from '@/app/components/common/StatCard';
 import { StatePanel } from '@/app/components/common/StatePanel';
+import { useConfirmAction } from '@/app/components/common/ConfirmActionDialog';
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import {
@@ -366,19 +367,15 @@ const ONBOARDING_ENVIRONMENTS: Array<{
   { value: 'live', label: 'Live' }
 ];
 
-const ONBOARDING_PROVIDER_ENVIRONMENTS: Record<
-  BrokerVendor,
-  BrokerAccountOnboardingEnvironment[]
-> = {
-  alpaca: ['paper', 'live'],
-  etrade: ['sandbox', 'live'],
-  schwab: ['live'],
-  kalshi: ['live']
-};
+const ONBOARDING_PROVIDER_ENVIRONMENTS: Record<BrokerVendor, BrokerAccountOnboardingEnvironment[]> =
+  {
+    alpaca: ['paper', 'live'],
+    etrade: ['sandbox', 'live'],
+    schwab: ['live'],
+    kalshi: ['live']
+  };
 
-function defaultOnboardingEnvironment(
-  provider: BrokerVendor
-): BrokerAccountOnboardingEnvironment {
+function defaultOnboardingEnvironment(provider: BrokerVendor): BrokerAccountOnboardingEnvironment {
   return ONBOARDING_PROVIDER_ENVIRONMENTS[provider][0] ?? 'paper';
 }
 
@@ -1224,10 +1221,7 @@ function AccountOnboardingDialog({
               >
                 Provider
               </label>
-              <Select
-                value={provider}
-                onValueChange={handleProviderChange}
-              >
+              <Select value={provider} onValueChange={handleProviderChange}>
                 <SelectTrigger id="onboarding-provider">
                   <SelectValue placeholder="Provider" />
                 </SelectTrigger>
@@ -1248,10 +1242,7 @@ function AccountOnboardingDialog({
               >
                 Environment
               </label>
-              <Select
-                value={environment}
-                onValueChange={handleEnvironmentChange}
-              >
+              <Select value={environment} onValueChange={handleEnvironmentChange}>
                 <SelectTrigger id="onboarding-environment">
                   <SelectValue placeholder="Environment" />
                 </SelectTrigger>
@@ -2413,6 +2404,7 @@ function DeskVerdictRail({
 
 export function AccountOperationsPage() {
   const queryClient = useQueryClient();
+  const { confirmAction, confirmationDialog } = useConfirmAction();
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [configurationDirty, setConfigurationDirty] = useState(false);
@@ -2742,12 +2734,21 @@ export function AccountOperationsPage() {
     blotterError: blotterQuery.error
   };
 
-  const handleOpenDetail = (accountId: string) => {
+  const confirmDiscardConfiguration = () =>
+    confirmAction({
+      title: 'Discard Configuration Changes',
+      description: 'Discard unsaved configuration changes?',
+      confirmLabel: 'Discard Changes',
+      cancelLabel: 'Keep Editing',
+      tone: 'destructive'
+    });
+
+  const handleOpenDetail = async (accountId: string) => {
     if (
       selectedAccountId &&
       selectedAccountId !== accountId &&
       configurationDirty &&
-      !window.confirm('Discard unsaved configuration changes?')
+      !(await confirmDiscardConfiguration())
     ) {
       return;
     }
@@ -2756,11 +2757,11 @@ export function AccountOperationsPage() {
     setConfigurationDirty(false);
   };
 
-  const handleCloseDetail = (open: boolean) => {
+  const handleCloseDetail = async (open: boolean) => {
     if (open) {
       return;
     }
-    if (configurationDirty && !window.confirm('Discard unsaved configuration changes?')) {
+    if (configurationDirty && !(await confirmDiscardConfiguration())) {
       return;
     }
     setSelectedAccountId(null);
@@ -3000,7 +3001,9 @@ export function AccountOperationsPage() {
                     snapshot={displaySnapshot}
                     capabilityState={capabilityState}
                     busy={mutationBusy}
-                    onOpenDetail={() => handleOpenDetail(snapshot.account.accountId)}
+                    onOpenDetail={() => {
+                      void handleOpenDetail(snapshot.account.accountId);
+                    }}
                     onRefresh={() =>
                       setActionTarget({ kind: 'refresh', account: snapshot.account })
                     }
@@ -3027,7 +3030,9 @@ export function AccountOperationsPage() {
 
       <AccountDetailSheet
         open={Boolean(selectedAccountId)}
-        onOpenChange={handleCloseDetail}
+        onOpenChange={(open) => {
+          void handleCloseDetail(open);
+        }}
         snapshot={selectedSnapshot}
         detail={detailQuery.data ?? null}
         configuration={selectedConfiguration}
@@ -3075,6 +3080,7 @@ export function AccountOperationsPage() {
         onOpenChange={setOnboardingOpen}
         onSuccess={handleOnboardingSuccess}
       />
+      {confirmationDialog}
     </div>
   );
 }

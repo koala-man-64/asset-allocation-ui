@@ -62,7 +62,12 @@ export function PortfolioLibraryRail({
         </Button>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div
+        role="region"
+        aria-label="Portfolio library"
+        tabIndex={0}
+        className="flex-1 space-y-3 overflow-y-auto p-4"
+      >
         {loading ? (
           <PageLoader text="Loading portfolios..." variant="panel" className="min-h-[12rem]" />
         ) : errorMessage ? (
@@ -105,7 +110,8 @@ export function PortfolioLibraryRail({
                     <span className="font-medium text-foreground">{portfolio.benchmarkSymbol}</span>
                   </div>
                   <div>
-                    Sleeves <span className="font-medium text-foreground">{portfolio.sleeveCount}</span>
+                    Sleeves{' '}
+                    <span className="font-medium text-foreground">{portfolio.sleeveCount}</span>
                   </div>
                   <div>
                     Gross{' '}
