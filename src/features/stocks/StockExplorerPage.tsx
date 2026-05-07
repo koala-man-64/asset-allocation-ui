@@ -1,4 +1,12 @@
-import { type ComponentType, useEffect, useMemo, useState } from 'react';
+import {
+  type ComponentType,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState
+} from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -66,7 +74,47 @@ interface ScreenerPreset {
 
 const PAGE_SIZE = 250;
 const DEFAULT_PRESET_ID: ScreenerPresetId = 'momentum';
-const TABLE_COL_SPAN = 16;
+
+const SCREENER_COLUMNS = [
+  { id: 'symbol', defaultWidth: 118, minWidth: 88 },
+  { id: 'name', defaultWidth: 230, minWidth: 160 },
+  { id: 'sector', defaultWidth: 150, minWidth: 110 },
+  { id: 'close', defaultWidth: 96, minWidth: 78 },
+  { id: 'return1d', defaultWidth: 88, minWidth: 72 },
+  { id: 'return5d', defaultWidth: 88, minWidth: 72 },
+  { id: 'trend', defaultWidth: 96, minWidth: 80 },
+  { id: 'sma50', defaultWidth: 82, minWidth: 68 },
+  { id: 'vol20', defaultWidth: 88, minWidth: 72 },
+  { id: 'dd1y', defaultWidth: 88, minWidth: 72 },
+  { id: 'atr14', defaultWidth: 88, minWidth: 72 },
+  { id: 'volume', defaultWidth: 106, minWidth: 86 },
+  { id: 'volumePct', defaultWidth: 94, minWidth: 76 },
+  { id: 'compression', defaultWidth: 104, minWidth: 86 },
+  { id: 'coverage', defaultWidth: 116, minWidth: 92 },
+  { id: 'actions', defaultWidth: 58, minWidth: 48 }
+] as const;
+
+type ScreenerColumnId = (typeof SCREENER_COLUMNS)[number]['id'];
+
+const TABLE_COL_SPAN = SCREENER_COLUMNS.length;
+const SCREENER_COLUMN_MAX_WIDTH = 520;
+const SCREENER_COLUMN_RESIZE_STEP = 12;
+
+const DEFAULT_SCREENER_COLUMN_WIDTHS = SCREENER_COLUMNS.reduce(
+  (widths, column) => {
+    widths[column.id] = column.defaultWidth;
+    return widths;
+  },
+  {} as Record<ScreenerColumnId, number>
+);
+
+const SCREENER_COLUMN_MIN_WIDTHS = SCREENER_COLUMNS.reduce(
+  (widths, column) => {
+    widths[column.id] = column.minWidth;
+    return widths;
+  },
+  {} as Record<ScreenerColumnId, number>
+);
 
 const PRESETS: ScreenerPreset[] = [
   {
@@ -121,6 +169,13 @@ const PRESETS: ScreenerPreset[] = [
 
 const DEFAULT_PRESET = PRESETS.find((preset) => preset.id === DEFAULT_PRESET_ID) ?? PRESETS[0];
 
+function clampScreenerColumnWidth(columnId: ScreenerColumnId, width: number): number {
+  return Math.min(
+    SCREENER_COLUMN_MAX_WIDTH,
+    Math.max(SCREENER_COLUMN_MIN_WIDTHS[columnId], Math.round(width))
+  );
+}
+
 function formatPrice(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return '--';
@@ -159,7 +214,10 @@ function formatCoveragePct(value: number | null | undefined): string {
   return `${Math.round(value * 100)}%`;
 }
 
-function coverageRatio(count: number | null | undefined, total: number | null | undefined): number | null {
+function coverageRatio(
+  count: number | null | undefined,
+  total: number | null | undefined
+): number | null {
   if (
     count === null ||
     count === undefined ||
@@ -327,11 +385,114 @@ export function StockExplorerPage() {
   const [maxCompression, setMaxCompression] = useState('');
   const [minVolumeRank, setMinVolumeRank] = useState('');
   const [selectedSymbol, setSelectedSymbol] = useState('');
+  const [columnWidths, setColumnWidths] = useState(DEFAULT_SCREENER_COLUMN_WIDTHS);
 
   useEffect(() => {
     const handle = window.setTimeout(() => setQuery(rawQuery.trim()), 250);
     return () => window.clearTimeout(handle);
   }, [rawQuery]);
+
+  const tableWidth = useMemo(
+    () => SCREENER_COLUMNS.reduce((width, column) => width + columnWidths[column.id], 0),
+    [columnWidths]
+  );
+
+  const updateColumnWidth = (columnId: ScreenerColumnId, width: number) => {
+    setColumnWidths((current) => ({
+      ...current,
+      [columnId]: clampScreenerColumnWidth(columnId, width)
+    }));
+  };
+
+  const resizeColumnBy = (columnId: ScreenerColumnId, delta: number) => {
+    setColumnWidths((current) => ({
+      ...current,
+      [columnId]: clampScreenerColumnWidth(columnId, current[columnId] + delta)
+    }));
+  };
+
+  const resetColumnWidth = (columnId: ScreenerColumnId) => {
+    updateColumnWidth(columnId, DEFAULT_SCREENER_COLUMN_WIDTHS[columnId]);
+  };
+
+  const startColumnResize = (columnId: ScreenerColumnId, event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const ownerDocument = event.currentTarget.ownerDocument;
+    const ownerWindow = ownerDocument.defaultView ?? window;
+    const previousCursor = ownerDocument.body.style.cursor;
+    const previousUserSelect = ownerDocument.body.style.userSelect;
+    const startX = event.clientX;
+    const startWidth = columnWidths[columnId];
+
+    ownerDocument.body.style.cursor = 'col-resize';
+    ownerDocument.body.style.userSelect = 'none';
+
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      pointerEvent.preventDefault();
+      updateColumnWidth(columnId, startWidth + pointerEvent.clientX - startX);
+    };
+
+    const cleanup = () => {
+      ownerWindow.removeEventListener('pointermove', handlePointerMove);
+      ownerWindow.removeEventListener('pointerup', handlePointerUp);
+      ownerWindow.removeEventListener('pointercancel', handlePointerUp);
+      ownerDocument.body.style.cursor = previousCursor;
+      ownerDocument.body.style.userSelect = previousUserSelect;
+    };
+
+    const handlePointerUp = () => cleanup();
+
+    ownerWindow.addEventListener('pointermove', handlePointerMove);
+    ownerWindow.addEventListener('pointerup', handlePointerUp, { once: true });
+    ownerWindow.addEventListener('pointercancel', handlePointerUp, { once: true });
+  };
+
+  const handleColumnResizeKeyDown = (
+    columnId: ScreenerColumnId,
+    event: ReactKeyboardEvent<HTMLElement>
+  ) => {
+    const step = event.shiftKey ? SCREENER_COLUMN_RESIZE_STEP * 3 : SCREENER_COLUMN_RESIZE_STEP;
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      event.stopPropagation();
+      resizeColumnBy(columnId, -step);
+      return;
+    }
+
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      event.stopPropagation();
+      resizeColumnBy(columnId, step);
+      return;
+    }
+
+    if (event.key === 'Home') {
+      event.preventDefault();
+      event.stopPropagation();
+      updateColumnWidth(columnId, SCREENER_COLUMN_MIN_WIDTHS[columnId]);
+      return;
+    }
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      resetColumnWidth(columnId);
+    }
+  };
+
+  const columnResizeProps = {
+    columnWidths,
+    onResizeStart: startColumnResize,
+    onResizeKeyDown: handleColumnResizeKeyDown,
+    onResetColumnWidth: resetColumnWidth
+  };
 
   const activePreset = PRESETS.find((preset) => preset.id === activePresetId);
 
@@ -695,10 +856,28 @@ export function StockExplorerPage() {
                 />
               </div>
             ) : (
-              <Table className="min-w-[1420px]">
+              <Table
+                data-testid="stock-screener-table"
+                className="table-fixed"
+                style={{ minWidth: `${tableWidth}px` }}
+              >
+                <colgroup>
+                  {SCREENER_COLUMNS.map((column) => (
+                    <col
+                      key={column.id}
+                      data-column-id={column.id}
+                      style={{ width: `${columnWidths[column.id]}px` }}
+                    />
+                  ))}
+                </colgroup>
                 <TableHeader>
                   <TableRow className="hover:bg-muted/20">
-                    <TableHead className="sticky left-0 top-0 z-30 w-[118px] bg-mcm-paper font-mono text-[10px] uppercase tracking-[0.18em]">
+                    <ScreenerHeaderCell
+                      columnId="symbol"
+                      resizeLabel="Symbol"
+                      className="left-0 z-30"
+                      {...columnResizeProps}
+                    >
                       <button
                         type="button"
                         onClick={() => onToggleSort('symbol')}
@@ -706,44 +885,108 @@ export function StockExplorerPage() {
                       >
                         Symbol <ArrowUpDown className="h-3.5 w-3.5" />
                       </button>
-                    </TableHead>
-                    <TableHead className="sticky top-0 z-20 min-w-[230px] bg-mcm-paper font-mono text-[10px] uppercase tracking-[0.18em]">
+                    </ScreenerHeaderCell>
+                    <ScreenerHeaderCell columnId="name" resizeLabel="Name" {...columnResizeProps}>
                       Name
-                    </TableHead>
-                    <TableHead className="sticky top-0 z-20 min-w-[150px] bg-mcm-paper font-mono text-[10px] uppercase tracking-[0.18em]">
+                    </ScreenerHeaderCell>
+                    <ScreenerHeaderCell
+                      columnId="sector"
+                      resizeLabel="Sector"
+                      {...columnResizeProps}
+                    >
                       Sector
-                    </TableHead>
-                    <SortableHead label="Close" sortKey="close" onToggleSort={onToggleSort} />
-                    <SortableHead label="1D%" sortKey="return_1d" onToggleSort={onToggleSort} />
-                    <SortableHead label="5D%" sortKey="return_5d" onToggleSort={onToggleSort} />
+                    </ScreenerHeaderCell>
                     <SortableHead
+                      columnId="close"
+                      label="Close"
+                      sortKey="close"
+                      onToggleSort={onToggleSort}
+                      {...columnResizeProps}
+                    />
+                    <SortableHead
+                      columnId="return1d"
+                      label="1D%"
+                      sortKey="return_1d"
+                      onToggleSort={onToggleSort}
+                      {...columnResizeProps}
+                    />
+                    <SortableHead
+                      columnId="return5d"
+                      label="5D%"
+                      sortKey="return_5d"
+                      onToggleSort={onToggleSort}
+                      {...columnResizeProps}
+                    />
+                    <SortableHead
+                      columnId="trend"
                       label="Trend"
                       sortKey="trend_50_200"
                       onToggleSort={onToggleSort}
+                      {...columnResizeProps}
                     />
                     <SortableHead
+                      columnId="sma50"
                       label="SMA50"
                       sortKey="above_sma_50"
                       onToggleSort={onToggleSort}
+                      {...columnResizeProps}
                     />
-                    <SortableHead label="Vol20" sortKey="vol_20d" onToggleSort={onToggleSort} />
-                    <SortableHead label="DD1Y" sortKey="drawdown_1y" onToggleSort={onToggleSort} />
-                    <SortableHead label="ATR14" sortKey="atr_14d" onToggleSort={onToggleSort} />
-                    <SortableHead label="Volume" sortKey="volume" onToggleSort={onToggleSort} />
                     <SortableHead
+                      columnId="vol20"
+                      label="Vol20"
+                      sortKey="vol_20d"
+                      onToggleSort={onToggleSort}
+                      {...columnResizeProps}
+                    />
+                    <SortableHead
+                      columnId="dd1y"
+                      label="DD1Y"
+                      sortKey="drawdown_1y"
+                      onToggleSort={onToggleSort}
+                      {...columnResizeProps}
+                    />
+                    <SortableHead
+                      columnId="atr14"
+                      label="ATR14"
+                      sortKey="atr_14d"
+                      onToggleSort={onToggleSort}
+                      {...columnResizeProps}
+                    />
+                    <SortableHead
+                      columnId="volume"
+                      label="Volume"
+                      sortKey="volume"
+                      onToggleSort={onToggleSort}
+                      {...columnResizeProps}
+                    />
+                    <SortableHead
+                      columnId="volumePct"
                       label="Vol Pct"
                       sortKey="volume_pct_rank_252d"
                       onToggleSort={onToggleSort}
+                      {...columnResizeProps}
                     />
                     <SortableHead
+                      columnId="compression"
                       label="Compress"
                       sortKey="compression_score"
                       onToggleSort={onToggleSort}
+                      {...columnResizeProps}
                     />
-                    <TableHead className="sticky top-0 z-20 w-[116px] bg-mcm-paper text-center font-mono text-[10px] uppercase tracking-[0.18em]">
+                    <ScreenerHeaderCell
+                      columnId="coverage"
+                      resizeLabel="Coverage"
+                      align="center"
+                      {...columnResizeProps}
+                    >
                       Coverage
-                    </TableHead>
-                    <TableHead className="sticky top-0 z-20 w-[58px] bg-mcm-paper" />
+                    </ScreenerHeaderCell>
+                    <ScreenerHeaderCell
+                      columnId="actions"
+                      resizeLabel="Open action"
+                      align="center"
+                      {...columnResizeProps}
+                    />
                   </TableRow>
                 </TableHeader>
 
@@ -766,7 +1009,7 @@ export function StockExplorerPage() {
                         )}
                         onClick={() => setSelectedSymbol(symbol)}
                       >
-                        <TableCell className="sticky left-0 z-20 bg-mcm-paper font-mono font-black">
+                        <TableCell className="sticky left-0 z-20 overflow-hidden bg-mcm-paper font-mono font-black text-ellipsis">
                           <button
                             type="button"
                             onClick={(event) => {
@@ -778,7 +1021,7 @@ export function StockExplorerPage() {
                             {symbol || '--'}
                           </button>
                         </TableCell>
-                        <TableCell className="min-w-[230px]">
+                        <TableCell className="overflow-hidden">
                           <div className="truncate font-semibold text-foreground">
                             {row.name || '--'}
                           </div>
@@ -786,10 +1029,10 @@ export function StockExplorerPage() {
                             {row.industry || '--'}
                           </div>
                         </TableCell>
-                        <TableCell className="min-w-[150px] text-muted-foreground">
+                        <TableCell className="truncate text-muted-foreground">
                           {row.sector || '--'}
                         </TableCell>
-                        <TableCell className="text-right font-mono font-semibold">
+                        <TableCell className="overflow-hidden text-ellipsis text-right font-mono font-semibold">
                           {formatPrice(row.close)}
                         </TableCell>
                         <HeatCell className={returnHeatClass(row.return1d)}>
@@ -798,26 +1041,26 @@ export function StockExplorerPage() {
                         <HeatCell className={returnHeatClass(row.return5d)}>
                           {formatPercent(row.return5d)}
                         </HeatCell>
-                        <TableCell className="text-right font-mono text-muted-foreground">
+                        <TableCell className="overflow-hidden text-ellipsis text-right font-mono text-muted-foreground">
                           {formatPercent(row.trend50_200)}
                         </TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="overflow-hidden text-center">
                           {asBoolean(row.aboveSma50) ? (
                             <CheckCircle2 className="mx-auto h-4 w-4 text-emerald-600" />
                           ) : (
                             <span className="font-mono text-muted-foreground">--</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-muted-foreground">
+                        <TableCell className="overflow-hidden text-ellipsis text-right font-mono text-muted-foreground">
                           {formatPercent(row.vol20d, 1)}
                         </TableCell>
                         <HeatCell className={drawdownHeatClass(row.drawdown1y)}>
                           {formatPercent(row.drawdown1y, 1)}
                         </HeatCell>
-                        <TableCell className="text-right font-mono text-muted-foreground">
+                        <TableCell className="overflow-hidden text-ellipsis text-right font-mono text-muted-foreground">
                           {formatNumber(row.atr14d, 2)}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-muted-foreground">
+                        <TableCell className="overflow-hidden text-ellipsis text-right font-mono text-muted-foreground">
                           {formatMillions(row.volume)}
                         </TableCell>
                         <HeatCell className={liquidityHeatClass(row.volumePctRank252d)}>
@@ -826,13 +1069,13 @@ export function StockExplorerPage() {
                         <HeatCell className={compressionHeatClass(row.compressionScore)}>
                           {formatNumber(row.compressionScore, 2)}
                         </HeatCell>
-                        <TableCell className="text-center">
+                        <TableCell className="overflow-hidden text-center">
                           <div className="flex justify-center gap-1">
                             <CoverageBadge label="S" active={hasSilver} title="Silver coverage" />
                             <CoverageBadge label="G" active={hasGold} title="Gold coverage" />
                           </div>
                         </TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="overflow-hidden text-center">
                           <Button
                             type="button"
                             variant="ghost"
@@ -1014,15 +1257,94 @@ export function StockExplorerPage() {
   );
 }
 
-interface SortableHeadProps {
+interface ScreenerColumnResizeProps {
+  columnWidths: Record<ScreenerColumnId, number>;
+  onResizeStart: (columnId: ScreenerColumnId, event: ReactPointerEvent<HTMLElement>) => void;
+  onResizeKeyDown: (columnId: ScreenerColumnId, event: ReactKeyboardEvent<HTMLElement>) => void;
+  onResetColumnWidth: (columnId: ScreenerColumnId) => void;
+}
+
+interface ScreenerHeaderCellProps extends ScreenerColumnResizeProps {
+  columnId: ScreenerColumnId;
+  resizeLabel: string;
+  align?: 'left' | 'right' | 'center';
+  className?: string;
+  children?: ReactNode;
+}
+
+function ScreenerHeaderCell({
+  columnId,
+  resizeLabel,
+  align = 'left',
+  className,
+  children,
+  columnWidths,
+  onResizeStart,
+  onResizeKeyDown,
+  onResetColumnWidth
+}: ScreenerHeaderCellProps) {
+  const width = columnWidths[columnId];
+  const minWidth = SCREENER_COLUMN_MIN_WIDTHS[columnId];
+
+  return (
+    <TableHead
+      style={{ width: `${width}px`, minWidth: `${minWidth}px` }}
+      className={cn(
+        'sticky top-0 z-20 bg-mcm-paper pr-4 font-mono text-[10px] uppercase tracking-[0.18em] select-none',
+        align === 'right' && 'text-right',
+        align === 'center' && 'text-center',
+        className
+      )}
+    >
+      <div
+        className={cn(
+          'flex min-w-0 items-center gap-1 overflow-hidden',
+          align === 'right' && 'justify-end',
+          align === 'center' && 'justify-center'
+        )}
+      >
+        {children}
+      </div>
+      <span
+        role="separator"
+        tabIndex={0}
+        aria-label={`Resize ${resizeLabel} column`}
+        aria-orientation="vertical"
+        aria-valuemin={minWidth}
+        aria-valuemax={SCREENER_COLUMN_MAX_WIDTH}
+        aria-valuenow={width}
+        aria-keyshortcuts="ArrowLeft ArrowRight Home Enter Space"
+        title={`Drag to resize ${resizeLabel}. Arrow keys resize; Enter resets.`}
+        data-column-resizer={columnId}
+        className="absolute inset-y-0 right-[-1px] z-40 w-2 cursor-col-resize touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mcm-teal/60 focus-visible:ring-offset-0 after:absolute after:inset-y-1 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border/80 hover:after:bg-mcm-teal focus-visible:after:bg-mcm-teal"
+        onPointerDown={(event) => onResizeStart(columnId, event)}
+        onKeyDown={(event) => onResizeKeyDown(columnId, event)}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onResetColumnWidth(columnId);
+        }}
+      />
+    </TableHead>
+  );
+}
+
+interface SortableHeadProps extends ScreenerColumnResizeProps {
+  columnId: ScreenerColumnId;
   label: string;
   sortKey: StockScreenerSortKey;
   onToggleSort: (sortKey: StockScreenerSortKey) => void;
 }
 
-function SortableHead({ label, sortKey, onToggleSort }: SortableHeadProps) {
+function SortableHead({
+  columnId,
+  label,
+  sortKey,
+  onToggleSort,
+  ...resizeProps
+}: SortableHeadProps) {
   return (
-    <TableHead className="sticky top-0 z-20 bg-mcm-paper text-right font-mono text-[10px] uppercase tracking-[0.18em]">
+    <ScreenerHeaderCell columnId={columnId} resizeLabel={label} align="right" {...resizeProps}>
       <button
         type="button"
         onClick={() => onToggleSort(sortKey)}
@@ -1030,7 +1352,7 @@ function SortableHead({ label, sortKey, onToggleSort }: SortableHeadProps) {
       >
         {label} <ArrowUpDown className="h-3.5 w-3.5" />
       </button>
-    </TableHead>
+    </ScreenerHeaderCell>
   );
 }
 
@@ -1041,7 +1363,7 @@ interface HeatCellProps {
 
 function HeatCell({ children, className }: HeatCellProps) {
   return (
-    <TableCell className="text-right">
+    <TableCell className="overflow-hidden text-right">
       <span
         className={cn(
           'inline-flex min-w-16 justify-end rounded px-2 py-1 font-mono text-xs font-semibold',
