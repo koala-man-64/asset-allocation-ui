@@ -278,11 +278,11 @@ const onboardingCandidatesResponse: BrokerAccountOnboardingCandidateListResponse
 const kalshiOnboardingCandidatesResponse: BrokerAccountOnboardingCandidateListResponse = {
   candidates: [
     {
-      candidateId: 'kalshi:live:123',
+      candidateId: 'kalshi:paper:123',
       provider: 'kalshi',
-      environment: 'live',
-      suggestedAccountId: 'kalshi-live-subaccount-0',
-      displayName: 'Kalshi Live Subaccount 0',
+      environment: 'paper',
+      suggestedAccountId: 'kalshi-paper-subaccount-0',
+      displayName: 'Kalshi Paper Subaccount 0',
       accountNumberMasked: 'GEN-0001',
       baseCurrency: 'USD',
       state: 'available',
@@ -290,8 +290,9 @@ const kalshiOnboardingCandidatesResponse: BrokerAccountOnboardingCandidateListRe
       existingAccountId: null,
       allowedExecutionPostures: ['monitor_only'],
       blockedExecutionPostureReasons: {
-        paper: 'Kalshi account operations v1 is live balance visibility only.',
-        sandbox: 'Kalshi account operations v1 is live balance visibility only.',
+        paper:
+          'Kalshi account operations v1 supports balance visibility only; paper trade execution is not supported.',
+        sandbox: 'Kalshi account operations v1 supports paper and live environments.',
         live: 'Kalshi account operations v1 does not support trade execution.'
       },
       canOnboard: true
@@ -1354,7 +1355,7 @@ describe('AccountOperationsPage', () => {
     expect(screen.getByTestId('account-card-acct-kalshi-1')).toBeInTheDocument();
   });
 
-  it('discovers Kalshi account candidates with the live environment', async () => {
+  it('discovers Kalshi account candidates with the paper environment by default', async () => {
     vi.mocked(accountOperationsApi.listAccounts).mockResolvedValue({
       accounts: [],
       generatedAt: '2026-04-20T13:50:00Z'
@@ -1378,16 +1379,16 @@ describe('AccountOperationsPage', () => {
     await user.click(await screen.findByRole('option', { name: 'Kalshi' }));
 
     expect(within(dialog).getByRole('combobox', { name: /environment/i })).toHaveTextContent(
-      'Live'
+      'Paper'
     );
 
     await user.click(within(dialog).getByRole('button', { name: /discover accounts/i }));
 
-    expect(await screen.findByText('Kalshi Live Subaccount 0')).toBeInTheDocument();
+    expect(await screen.findByText('Kalshi Paper Subaccount 0')).toBeInTheDocument();
     await waitFor(() => {
       expect(accountOperationsApi.listOnboardingCandidates).toHaveBeenCalledWith(
         'kalshi',
-        'live',
+        'paper',
         expect.any(AbortSignal)
       );
     });
