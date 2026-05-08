@@ -9,6 +9,8 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const ROUTE_REGISTRY_PATH = path.join(REPO_ROOT, 'src', 'app', 'routeRegistry.ts');
 const STOCK_ROUTES_PATH = path.join(REPO_ROOT, 'src', 'features', 'stocks', 'stockRoutes.ts');
 const DEFAULT_PREVIEW_PORT = '4173';
+const DEFAULT_AZURE_BASE_URL =
+  'https://asset-allocation-ui.braveground-4b8beb5c.eastus.azurecontainerapps.io';
 const rawCliArgs = process.argv.slice(2);
 const cliArgs = new Set(rawCliArgs);
 
@@ -239,7 +241,8 @@ function resolveAzureBaseUrl() {
     localEnv.UI_PUBLIC_HOSTNAME,
     localEnv.VITE_UI_PUBLIC_HOSTNAME,
     webEnv.UI_PUBLIC_HOSTNAME,
-    webEnv.VITE_UI_PUBLIC_HOSTNAME
+    webEnv.VITE_UI_PUBLIC_HOSTNAME,
+    DEFAULT_AZURE_BASE_URL
   ];
 
   for (const candidate of candidates) {

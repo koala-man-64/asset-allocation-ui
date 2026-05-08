@@ -31,7 +31,7 @@ Manual Playwright page checks:
 corepack pnpm test:e2e
 ```
 
-The runner lists registered app pages, prompts for one page, asks whether to use the local preview server or Azure, and launches Playwright headed. Set `PLAYWRIGHT_AZURE_BASE_URL` when the Azure UI hostname is not available in local env files.
+The runner lists registered app pages, prompts for one page, asks whether to use the local preview server or the default Azure deployment, and launches Playwright headed. Set `PLAYWRIGHT_AZURE_BASE_URL` or pass `--azure-url` only when you need to override the built-in Azure UI URL.
 
 Repeatable runs can pass selections directly:
 
