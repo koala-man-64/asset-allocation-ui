@@ -349,9 +349,27 @@ async function promptForTarget(readline) {
   }
 }
 
+function createPnpmSpawn(pnpmArgs) {
+  if (process.platform === 'win32') {
+    const command = process.env.ComSpec || 'cmd.exe';
+    const args = ['/d', '/s', '/c', `corepack pnpm ${pnpmArgs.join(' ')}`];
+    return {
+      command,
+      args,
+      displayCommand: `${command} ${args.join(' ')}`
+    };
+  }
+
+  return {
+    command: 'pnpm',
+    args: pnpmArgs,
+    displayCommand: `pnpm ${pnpmArgs.join(' ')}`
+  };
+}
+
 function runPlaywright(selectedPage, target) {
-  const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
   const args = ['exec', 'playwright', 'test', 'e2e/manual-page.spec.ts', '--headed'];
+  const spawnConfig = createPnpmSpawn(args);
   const env = {
     ...process.env,
     PLAYWRIGHT_MANUAL_PAGE_LABEL: selectedPage.label,
@@ -371,11 +389,11 @@ function runPlaywright(selectedPage, target) {
   }
 
   if (cliArgs.has('--dry-run')) {
-    console.log(`Dry run command: ${pnpmCommand} ${args.join(' ')}`);
+    console.log(`Dry run command: ${spawnConfig.displayCommand}`);
     return;
   }
 
-  const child = spawn(pnpmCommand, args, {
+  const child = spawn(spawnConfig.command, spawnConfig.args, {
     cwd: REPO_ROOT,
     env,
     stdio: 'inherit',
