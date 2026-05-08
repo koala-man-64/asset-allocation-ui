@@ -13,7 +13,7 @@ const { triggerJobSpy, setJobSuspendedSpy } = vi.hoisted(() => ({
 const BACKTEST_JOB_AZURE_ID =
   '/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner';
 const BACKTEST_JOB_AZURE_URL =
-  'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner';
+  'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner/overview';
 
 vi.mock('@/hooks/useJobTrigger', () => ({
   useJobTrigger: () => ({
@@ -141,13 +141,13 @@ describe('OperationalJobMonitorPanel', () => {
     ).toBeDisabled();
   });
 
-  it('opens Azure actions when the icon link is clicked', () => {
+  it('uses browser-native Azure anchor navigation', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     renderWithProviders(<OperationalJobMonitorPanel jobs={JOBS} />);
 
     fireEvent.click(screen.getByRole('link', { name: 'Open aca-job-backtest-runner in Azure' }));
 
-    expect(openSpy).toHaveBeenCalledWith(BACKTEST_JOB_AZURE_URL, '_blank', 'noopener,noreferrer');
+    expect(openSpy).not.toHaveBeenCalled();
   });
 
   it('runs stopped jobs and stops running managed jobs', () => {
