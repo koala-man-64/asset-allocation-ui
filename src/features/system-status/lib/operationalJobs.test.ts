@@ -92,7 +92,7 @@ const DATA_LAYERS_WITH_CATALYST_AND_QUIVER: DataLayer[] = [
         path: 'quiver-data/runs',
         lastUpdated: '2026-04-18T14:30:00Z',
         status: 'healthy',
-        jobName: 'bronze-quiver-data-job'
+        jobName: 'bronze-quiver-job'
       }
     ]
   },
@@ -240,13 +240,14 @@ describe('operational job classification', () => {
     expect(domainJobKeys).toEqual(
       new Set([
         'bronze-economic-catalyst-job',
-        'bronze-quiver-data-job',
+        'bronze-quiver-job',
         'silver-economic-catalyst-job',
         'silver-quiver-data-job',
         'gold-economic-catalyst-job',
         'gold-quiver-data-job'
       ])
     );
+    expect(domainJobKeys.has('bronze-quiver-data-job')).toBe(false);
     expect(domainJobKeys.has('bronze-quiver-backfill-job')).toBe(false);
   });
 

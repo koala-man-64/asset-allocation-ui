@@ -686,7 +686,7 @@ describe('SystemStatusPage', () => {
       'bronze-economic-catalyst-job',
       'silver-economic-catalyst-job',
       'gold-economic-catalyst-job',
-      'bronze-quiver-data-job',
+      'bronze-quiver-job',
       'silver-quiver-data-job',
       'gold-quiver-data-job'
     ];
@@ -716,7 +716,7 @@ describe('SystemStatusPage', () => {
             path: 'quiver-data/runs/',
             lastUpdated: MOCK_RUN_TIMESTAMPS.latest,
             status: 'healthy',
-            jobName: 'bronze-quiver-data-job',
+            jobName: 'bronze-quiver-job',
             frequency: 'Weekdays, hourly',
             cron: '0 * * * 1-5'
           }
@@ -874,7 +874,7 @@ describe('SystemStatusPage', () => {
       'bronze-economic-catalyst-job',
       'silver-economic-catalyst-job',
       'gold-economic-catalyst-job',
-      'bronze-quiver-data-job',
+      'bronze-quiver-job',
       'silver-quiver-data-job',
       'gold-quiver-data-job'
     ];
@@ -980,10 +980,10 @@ describe('SystemStatusPage', () => {
         }),
         expect.objectContaining({
           name: 'quiver-data',
-          jobName: 'bronze-quiver-data-job',
+          jobName: 'bronze-quiver-job',
           status: 'stale',
           lastUpdated: null,
-          jobUrl: jobAzureId('bronze-quiver-data-job')
+          jobUrl: jobAzureId('bronze-quiver-job')
         })
       ])
     );

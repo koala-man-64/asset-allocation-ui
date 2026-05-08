@@ -37,7 +37,7 @@ export const SYSTEM_STATUS_DOMAIN_JOB_CATALOG: readonly DomainJobCatalogEntry[] 
     description: 'Raw Quiver source payloads',
     type: 'blob',
     path: 'quiver-data/runs',
-    jobName: 'bronze-quiver-data-job',
+    jobName: 'bronze-quiver-job',
     frequency: 'Weekdays, hourly',
     cron: '0 * * * 1-5'
   },
