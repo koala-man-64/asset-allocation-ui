@@ -72,7 +72,7 @@ describe('system status domain job catalog', () => {
     expect(findDomain(result, 'Bronze', 'quiver-data')).toEqual(
       expect.objectContaining({
         name: 'quiver-data',
-        jobName: 'bronze-quiver-data-job',
+        jobName: 'bronze-quiver-job',
         path: 'quiver-data/runs',
         status: 'stale',
         lastUpdated: null

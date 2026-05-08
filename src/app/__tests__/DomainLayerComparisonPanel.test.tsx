@@ -178,7 +178,7 @@ function makeQuiverDataLayers(): DataLayer[] {
           path: 'quiver-data/runs',
           lastUpdated: NOW,
           status: 'healthy',
-          jobName: 'bronze-quiver-data-job'
+          jobName: 'bronze-quiver-job'
         }
       ]
     },
@@ -937,9 +937,7 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     await waitFor(() => {
       expect(triggerJobMock).toHaveBeenCalledTimes(3);
     });
-    expect(triggerJobMock).toHaveBeenNthCalledWith(1, 'bronze-quiver-data-job', [
-      ['systemStatusView']
-    ]);
+    expect(triggerJobMock).toHaveBeenNthCalledWith(1, 'bronze-quiver-job', [['systemStatusView']]);
     expect(triggerJobMock).toHaveBeenNthCalledWith(2, 'silver-quiver-data-job', [
       ['systemStatusView']
     ]);
@@ -949,7 +947,12 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     expect(triggerJobMock).not.toHaveBeenCalledWith('bronze-quiver-backfill-job', [
       ['systemStatusView']
     ]);
-    expect(await screen.findByRole('button', { name: 'Expand quiver-data details' })).toBeInTheDocument();
+    expect(triggerJobMock).not.toHaveBeenCalledWith('bronze-quiver-data-job', [
+      ['systemStatusView']
+    ]);
+    expect(
+      await screen.findByRole('button', { name: 'Expand quiver-data details' })
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Expand quiver details' })).not.toBeInTheDocument();
   });
 
@@ -995,9 +998,7 @@ describe('DomainLayerComparisonPanel refresh menu', () => {
     await waitFor(() => {
       expect(triggerJobMock).toHaveBeenCalledTimes(1);
     });
-    expect(triggerJobMock).toHaveBeenCalledWith('aca-job-market-bronze', [
-      ['systemStatusView']
-    ]);
+    expect(triggerJobMock).toHaveBeenCalledWith('aca-job-market-bronze', [['systemStatusView']]);
     expect(triggerJobMock).not.toHaveBeenCalledWith('bronze-government-signals-job', [
       ['systemStatusView']
     ]);
