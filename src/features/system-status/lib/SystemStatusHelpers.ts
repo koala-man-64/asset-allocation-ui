@@ -502,8 +502,25 @@ export const getAzurePortalUrl = (azureId?: string | null) => {
   return normalizeAzurePortalUrl(azureId);
 };
 
-export const getAzureJobExecutionsUrl = (jobPortalUrl?: string | null) => {
+export const getAzureJobPortalUrl = (jobPortalUrl?: string | null) => {
   const normalized = normalizeAzurePortalUrl(jobPortalUrl);
+  if (!normalized) {
+    return '';
+  }
+  const trimmed = String(normalized).trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/\/providers\/Microsoft\.App\/jobs\/[^/]+$/.test(trimmed)) {
+    return `${trimmed}/overview`;
+  }
+
+  return trimmed;
+};
+
+export const getAzureJobExecutionsUrl = (jobPortalUrl?: string | null) => {
+  const normalized = getAzureJobPortalUrl(jobPortalUrl);
   if (!normalized) {
     return '';
   }

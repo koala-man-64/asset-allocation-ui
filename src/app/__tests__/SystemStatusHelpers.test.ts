@@ -4,6 +4,7 @@ import type { JobRun } from '@/types/strategy';
 import {
   buildLatestJobRunIndex,
   effectiveJobStatus,
+  getAzureJobPortalUrl,
   hasActiveJobRunningState,
   isSuspendedJobRunningState,
   normalizeJobStatus,
@@ -122,5 +123,15 @@ describe('SystemStatusHelpers', () => {
       'bronze-finance-job'
     );
     expect(resolveRunnableJobName({ jobName: null, jobUrl: null })).toBe('');
+  });
+
+  it('normalizes Container App Job resource IDs to the Azure overview blade', () => {
+    expect(
+      getAzureJobPortalUrl(
+        '/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/jobs/bronze-market-job'
+      )
+    ).toBe(
+      'https://portal.azure.com/#resource/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/jobs/bronze-market-job/overview'
+    );
   });
 });

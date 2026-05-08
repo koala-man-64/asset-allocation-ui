@@ -54,7 +54,7 @@ test('desktop smoke covers shell navigation, collapse state, and system-status a
   });
   await expect(azureJobLink).toHaveAttribute(
     'href',
-    'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner'
+    'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner/overview'
   );
   const azurePopupPromise = page.waitForEvent('popup');
   await azureJobLink.click();
@@ -62,7 +62,7 @@ test('desktop smoke covers shell navigation, collapse state, and system-status a
   await expect
     .poll(() => azurePopup.url())
     .toContain(
-      'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner'
+      'https://portal.azure.com/#resource/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/aca-job-backtest-runner/overview'
     );
   await azurePopup.close();
   await expect(page.getByRole('button', { name: 'Expand market details' })).toBeVisible();

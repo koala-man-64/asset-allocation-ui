@@ -1,4 +1,3 @@
-import type { MouseEvent } from 'react';
 import {
   Activity,
   ExternalLink,
@@ -28,9 +27,9 @@ import {
   formatDuration,
   formatRecordCount,
   formatTimestamp,
+  getAzureJobPortalUrl,
   getStatusBadge,
-  getStatusIcon,
-  normalizeAzurePortalUrl
+  getStatusIcon
 } from '@/features/system-status/lib/SystemStatusHelpers';
 import {
   OPERATIONAL_JOB_CATEGORY_LABELS,
@@ -63,22 +62,6 @@ const CATEGORY_TONE: Record<OperationalJobCategory, string> = {
 function formatOptionalTimestamp(value?: string | null): string {
   if (!value) return '-';
   return `${formatTimestamp(value)} ago`;
-}
-
-function openPortalLink(event: MouseEvent<HTMLAnchorElement>, url: string) {
-  if (
-    event.defaultPrevented ||
-    event.button !== 0 ||
-    event.metaKey ||
-    event.altKey ||
-    event.ctrlKey ||
-    event.shiftKey
-  ) {
-    return;
-  }
-
-  event.preventDefault();
-  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function CategoryBadge({ category }: { category: OperationalJobCategory }) {
@@ -179,7 +162,7 @@ export function OperationalJobMonitorPanel({
                     (jobControl?.jobName === job.name &&
                       (jobControl.action === 'stop' || jobControl.action === 'suspend'));
                   const controlsDisabled = Boolean(triggeringJob) || Boolean(jobControl);
-                  const jobPortalUrl = normalizeAzurePortalUrl(job.jobUrl);
+                  const jobPortalUrl = getAzureJobPortalUrl(job.jobUrl);
 
                   return (
                     <TableRow key={job.name}>
@@ -221,7 +204,6 @@ export function OperationalJobMonitorPanel({
                                   href={jobPortalUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  onClick={(event) => openPortalLink(event, jobPortalUrl)}
                                   className={cn(
                                     buttonVariants({ variant: 'ghost', size: 'icon' }),
                                     'h-8 w-8'
